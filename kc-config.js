@@ -4,5 +4,5 @@ const KC_CONFIG=Object.freeze({
   env:'staging',
   supabaseUrl:'https://yquaxxzdepqquitlgxkh.supabase.co',
   supabaseKey:'sb_publishable_f5u_hOSlqOpGT-YiraCEeA_nZ94S-7Y',
-  deployed:Object.freeze({pr:51,sha:'4dca5b37ad4ff8f1d21b46436c482bdbc26b5652'}),
+  deployed:Object.freeze({pr:53,sha:'2de2e57fee3a3a7f6966619bad8cdb3280915885'}),
 });
