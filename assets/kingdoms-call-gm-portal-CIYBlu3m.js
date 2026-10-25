@@ -19552,7 +19552,7 @@ function demoteOrDisband(a) {
 	if (!a) return false;
 	const qi = QUALITY_TIERS.indexOf(a.quality);
 	if (qi > 0) {
-		a.quality = QUALITY_TIERS[qi - 1];
+		a.quality = QUALITY_TIERS[qi - 1] ?? a.quality;
 		return false;
 	}
 	a._disbanded = true;
@@ -19562,8 +19562,9 @@ function disbandLine(owner, a, clause) {
 	return `— ${a.unitName && /^the\s/i.test(a.unitName) ? `${a.unitName} (${owner ? owner + "'s " : ""}${a.type})` : `${owner ? owner + "'s " : ""}${a.unitName ? a.unitName + " (" + a.type + ")" : a.type}`}${clause ? `, ${clause},` : ""} have had enough — the survivors slip away to their villages and the unit disbands for good.`;
 }
 function ownedUnitName(ownerName, a) {
-	if (a && a.unitName && /^the\s/i.test(a.unitName)) return `${a.unitName} (${ownerName ? ownerName + "'s " : ""}${a.type})`;
-	return `${ownerName ? ownerName + "'s " : ""}${a && (a.unitName || a.type) || "unit"}`;
+	if (a?.unitName && /^the\s/i.test(a.unitName)) return `${a.unitName} (${ownerName ? ownerName + "'s " : ""}${a.type})`;
+	const nameOrType = a ? a.unitName || a.type : "";
+	return `${ownerName ? ownerName + "'s " : ""}${nameOrType || "unit"}`;
 }
 function unitRef(ownerName, a) {
 	if (a.unitName && /^the\s/i.test(a.unitName)) return `${a.unitName} (${ownerName ? ownerName + "'s " : ""}${a.type}, ${a.quality})`;
@@ -19700,10 +19701,10 @@ var SPELL_FNS_NEED_COLOCATED_TARGET = /* @__PURE__ */ new Set([
 ]);
 var SAFE_START_TURN = 6;
 function safeStartLocked(gs, turn) {
-	return !!(gs && gs.safeStart) && (Number(turn) || 0) < SAFE_START_TURN;
+	return !!gs?.safeStart && (Number(turn) || 0) < SAFE_START_TURN;
 }
 function botSafeWindow(G) {
-	return safeStartLocked(G, (G && G.turn || 0) + 1);
+	return safeStartLocked(G, (G?.turn ?? 0) + 1);
 }
 var LEGACY_UNIT_RENAMES = {
 	Infantry: "Shieldwall Levies",
@@ -19723,56 +19724,901 @@ function migrateLegacyUnitNames(state) {
 	if (!state || typeof state !== "object") return state;
 	let n = 0;
 	const fixArmyList = (list) => {
-		(list || []).forEach((a) => {
-			if (a && a.type && LEGACY_UNIT_RENAMES[a.type]) {
-				a.type = LEGACY_UNIT_RENAMES[a.type];
+		(list ?? []).forEach((a) => {
+			const toType = a?.type ? LEGACY_UNIT_RENAMES[a.type] : void 0;
+			if (a && toType) {
+				a.type = toType;
 				n++;
 			}
-			if (a && a.race && LEGACY_RACE_RENAMES[a.race]) {
-				a.race = LEGACY_RACE_RENAMES[a.race];
+			const toRace = a?.race ? LEGACY_RACE_RENAMES[a.race] : void 0;
+			if (a && toRace) {
+				a.race = toRace;
 				n++;
 			}
 		});
 	};
-	(state.characters || []).forEach((c) => fixArmyList(c.armies));
-	(state.world && state.world.provinces || []).forEach((p) => {
+	(state.characters ?? []).forEach((c) => {
+		fixArmyList(c.armies);
+	});
+	(state.world?.provinces ?? []).forEach((p) => {
 		if (!p) return;
-		if (p.race && LEGACY_RACE_RENAMES[p.race]) {
-			p.race = LEGACY_RACE_RENAMES[p.race];
+		const toRace = p.race ? LEGACY_RACE_RENAMES[p.race] : void 0;
+		if (toRace) {
+			p.race = toRace;
 			n++;
 		}
 		fixArmyList(p.garrisonArmies);
 		fixArmyList(p.neutralDefenders);
 		if (Array.isArray(p.armyTypes)) p.armyTypes = p.armyTypes.map((t) => {
-			if (LEGACY_UNIT_RENAMES[t]) {
+			const to = LEGACY_UNIT_RENAMES[t];
+			if (to) {
 				n++;
-				return LEGACY_UNIT_RENAMES[t];
+				return to;
 			}
 			return t;
 		});
-		(p.battleGraves || []).forEach((g) => {
-			if (g && g.type && LEGACY_UNIT_RENAMES[g.type]) {
-				g.type = LEGACY_UNIT_RENAMES[g.type];
+		(p.battleGraves ?? []).forEach((g) => {
+			const to = g?.type ? LEGACY_UNIT_RENAMES[g.type] : void 0;
+			if (g && to) {
+				g.type = to;
 				n++;
 			}
 		});
 	});
-	(state.heroGraveyard || []).forEach((g) => fixArmyList(g && g.armies));
-	if (n > 0) console.log(`[migration] renamed ${n} legacy unit reference(s) to the current names.`);
+	(state.heroGraveyard ?? []).forEach((g) => {
+		fixArmyList(g?.armies);
+	});
+	if (n > 0) console.log(`[migration] renamed ${String(n)} legacy unit reference(s) to the current names.`);
 	return state;
 }
 //#endregion
+//#region src/content/unit-abilities-their-names-numbers-and-words.ts
+/** The unit abilities the registry holds, in the order the battle code meets them: the strength of a unit in its
+*  whole force (plan P1-19a), then a unit meeting another or shooting over its line (P1-19b), then the whole line
+*  (P1-19c), then a unit's fate after the battle (P1-19d). */
+var UNIT_ABILITIES_THE_REGISTRY_HOLDS = {
+	"sheer-numbers": {
+		unit: "Goblin Horde",
+		name: "Sheer Numbers",
+		numbers: {
+			perOtherOrcFootUnit: {
+				value: .1,
+				theBooksWriteIt: "a fraction added"
+			},
+			atMost: {
+				value: .3,
+				theBooksWriteIt: "a fraction added"
+			}
+		},
+		counts: [
+			"Goblin Horde",
+			"Orc Berserkers",
+			"Orc Garrison"
+		]
+	},
+	"reaver-crews": {
+		unit: "Orcish Longships",
+		name: "Reaver Crews",
+		numbers: { theForceTheyLand: {
+			value: .25,
+			theBooksWriteIt: "a fraction added"
+		} },
+		reaches: "every unit of the force"
+	},
+	"shoal-swarm": {
+		unit: "Shark Shoals",
+		name: "Shoal Swarm",
+		numbers: {
+			perOtherShoal: {
+				value: .1,
+				theBooksWriteIt: "a fraction added"
+			},
+			atMost: {
+				value: .3,
+				theBooksWriteIt: "a fraction added"
+			}
+		},
+		counts: ["Shark Shoals"]
+	},
+	"relentless-hunt": {
+		unit: "Manticore Pride",
+		name: "Relentless Hunt",
+		numbers: { attacking: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"stone-deterrent": {
+		unit: "Basilisk Brood",
+		name: "Stone Deterrent",
+		numbers: { defending: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"tidal-might": {
+		unit: "Sea Giants",
+		name: "Tidal Might",
+		numbers: { inACoastalLandProvince: {
+			value: 1.2,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"deepwater-grasp": {
+		unit: "Eldritch Kraken",
+		name: "Deepwater Grasp",
+		numbers: { atSea: {
+			value: 1.35,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	wyrmscale: {
+		unit: "Elder Dragons",
+		name: "Wyrmscale",
+		numbers: { inEveryBattle: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"air-superiority": {
+		unit: "Crimson Rocs",
+		name: "Air Superiority",
+		numbers: { whenTheEnemyFieldsRangedUnits: {
+			value: 1.3,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	halberds: {
+		unit: "Men-at-Arms",
+		name: "Halberds",
+		numbers: { facingCavalry: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"lance-charge": {
+		unit: "Gilded Lances",
+		name: "Lance Charge",
+		numbers: { facingFoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	frenzy: {
+		unit: "Orc Berserkers",
+		name: "Frenzy",
+		numbers: { facingFoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"wolves-panic-horses": {
+		unit: "Warg Riders",
+		name: "Wolves Panic Horses",
+		numbers: { facingCavalry: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"stoop-on-the-horses": {
+		unit: "Eagle Riders",
+		name: "Stoop on the Horses",
+		numbers: { facingCavalry: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	harriers: {
+		unit: "Free Lances",
+		name: "Harriers",
+		numbers: { inAFlankDuel: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"woodland-skirmish": {
+		unit: "Forest Wardens",
+		name: "Woodland Skirmish",
+		numbers: { inTheWoods: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} },
+		onTheGround: ["forest", "jungle"]
+	},
+	bloodthirsty: {
+		unit: "Orc Garrison",
+		name: "Bloodthirsty",
+		numbers: { defendingFacingFoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	maul: {
+		unit: "Great Bears",
+		name: "Maul",
+		numbers: { facingFoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	trample: {
+		unit: "Mammoth Host",
+		name: "Trample",
+		numbers: { facingFoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"many-heads": {
+		unit: "Dread Hydras",
+		name: "Many Heads",
+		numbers: { facingFoot: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	purity: {
+		unit: "Unicorn Herd",
+		name: "Purity",
+		numbers: { facingMonstersAndSkeletons: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"spear-hedge": {
+		unit: "Shieldwall Levies",
+		name: "Spear Hedge",
+		numbers: { cavalryFacingThemAtMost: {
+			value: .75,
+			theBooksWriteIt: "a multiplier"
+		} },
+		wordsInTheLadder: { whenPurityBreaksIt: "Purity breaks the Spear Hedge" }
+	},
+	"boulder-wall": {
+		unit: "Stone Giants",
+		name: "Boulder Wall",
+		numbers: { cavalryFacingThemAtMost: {
+			value: .75,
+			theBooksWriteIt: "a multiplier"
+		} },
+		wordsInTheLadder: { whenPurityBreaksIt: "Purity breaks the Boulder Wall" }
+	},
+	unbreakable: {
+		unit: "Dwarven Guard",
+		name: "Unbreakable",
+		numbers: { footFacingThem: {
+			value: .85,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"stone-halls": {
+		unit: "Dwarf Garrison",
+		name: "Stone Halls",
+		numbers: { footFacingItInTheMountains: {
+			value: .9,
+			theBooksWriteIt: "a multiplier"
+		} },
+		onTheGround: ["mountain"]
+	},
+	"thorn-hedge": {
+		unit: "Elven Garrison",
+		name: "Thorn Hedge",
+		numbers: { cavalryFacingItInTheWoods: {
+			value: .85,
+			theBooksWriteIt: "a multiplier"
+		} },
+		onTheGround: ["forest", "jungle"]
+	},
+	"bodkin-points": {
+		unit: "Yeoman Longbows",
+		name: "Bodkin Points",
+		numbers: { shootingCavalry: {
+			value: 1,
+			theBooksWriteIt: "no penalty"
+		} }
+	},
+	"volley-at-the-charge": {
+		unit: "Elven Bowmen",
+		name: "Volley at the Charge",
+		numbers: { shootingCavalry: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	marksmen: {
+		unit: "Shadow Archers",
+		name: "Marksmen",
+		numbers: { shootingArchers: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"armour-piercing": {
+		unit: "Ironwood Crossbows",
+		name: "Armour-Piercing",
+		numbers: {
+			shootingAStrongUnit: {
+				value: 1.25,
+				theBooksWriteIt: "a multiplier"
+			},
+			aStrongUnitsBaseStrengthAtLeast: {
+				value: 6,
+				theBooksWriteIt: "a base strength"
+			}
+		}
+	},
+	bombard: {
+		unit: "Mountain Guns",
+		name: "Bombard",
+		numbers: { whateverTheyShoot: {
+			value: 1.15,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"arrow-fodder": {
+		unit: "Goblin Horde",
+		name: "Arrow Fodder",
+		numbers: { archersShootingThem: {
+			value: .75,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	rooted: {
+		unit: "Forest Ents",
+		name: "Rooted",
+		numbers: {}
+	},
+	"hold-the-gate": {
+		unit: "Human Garrison",
+		name: "Hold the Gate",
+		numbers: {},
+		reaches: KC_UNIT_CLASS.garrison
+	},
+	shieldwall: {
+		unit: "Shieldwall Levies",
+		name: "Shieldwall",
+		numbers: { withAnArcherBehind: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"town-watch": {
+		unit: "Human Garrison",
+		name: "Town Watch",
+		numbers: {},
+		countsAs: "Shieldwall Levies"
+	},
+	sergeants: {
+		unit: "Men-at-Arms",
+		name: "Sergeants",
+		numbers: { leviesBesideThem: {
+			value: 1.1,
+			theBooksWriteIt: "a multiplier"
+		} },
+		reaches: ["Shieldwall Levies"]
+	},
+	"driven-before-them": {
+		unit: "Orc Berserkers",
+		name: "Driven Before Them",
+		numbers: {
+			perGoblinHordeBeside: {
+				value: .1,
+				theBooksWriteIt: "a fraction added"
+			},
+			atMost: {
+				value: .3,
+				theBooksWriteIt: "a fraction the books leave out"
+			}
+		},
+		counts: ["Goblin Horde"]
+	},
+	"terror-from-above": {
+		unit: "Wyvern Riders",
+		name: "Terror From Above",
+		numbers: { theStrongestFrontUnit: {
+			value: .85,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"dive-on-the-bowmen": {
+		unit: "Noble Griffons",
+		name: "Dive on the Bowmen",
+		numbers: { theStrongestSecondLineArcher: {
+			value: .75,
+			theBooksWriteIt: "a multiplier"
+		} },
+		wordsInTheLadder: { onTheArcherTheyDiveOn: "Griffon dive" }
+	},
+	"storm-wings": {
+		unit: "Thunderbirds",
+		name: "Storm Wings",
+		numbers: { everyUnitInTheAir: {
+			value: .85,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"battering-horns": {
+		unit: "Ironhoof Rams",
+		name: "Battering Horns",
+		numbers: {}
+	},
+	"flak-gunners": {
+		unit: "Gnomish Gyrocopters",
+		name: "Flak Gunners",
+		numbers: { whenTheEnemyHasFlyers: {
+			value: 1.25,
+			theBooksWriteIt: "a multiplier"
+		} }
+	},
+	"regenerating-hide": {
+		unit: "Cave Trolls",
+		name: "Regenerating Hide",
+		numbers: { afterALostBattle: {
+			value: .3,
+			theBooksWriteIt: "a chance"
+		} }
+	},
+	"knightly-example": {
+		unit: "Gilded Lances",
+		name: "Knightly Example",
+		numbers: {},
+		reaches: ["Shieldwall Levies", "Men-at-Arms"]
+	}
+};
+//#endregion
+//#region src/engine/rules/unit-abilities/the-strength-of-a-unit-in-its-force.ts
+/** How many other units of its force are of the types given: the units of those types, less the one it is. */
+function othersInItsForce(facts, types) {
+	return Math.max(0, facts.itsForce.filter((a) => a && types.has(a.type)).length - 1);
+}
+var ORC_FOOT = new Set(UNIT_ABILITIES_THE_REGISTRY_HOLDS["sheer-numbers"].counts);
+var SHOALS = new Set(UNIT_ABILITIES_THE_REGISTRY_HOLDS["shoal-swarm"].counts);
+var THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE = {
+	"sheer-numbers": (facts) => {
+		const { perOtherOrcFootUnit, atMost } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["sheer-numbers"].numbers;
+		return 1 + Math.min(atMost.value, othersInItsForce(facts, ORC_FOOT) * perOtherOrcFootUnit.value);
+	},
+	"reaver-crews": (facts) => facts.landedFromLongshipsThisPhase ? 1 + UNIT_ABILITIES_THE_REGISTRY_HOLDS["reaver-crews"].numbers.theForceTheyLand.value : 1,
+	"shoal-swarm": (facts) => {
+		const { perOtherShoal, atMost } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["shoal-swarm"].numbers;
+		return 1 + Math.min(atMost.value, othersInItsForce(facts, SHOALS) * perOtherShoal.value);
+	},
+	"relentless-hunt": (facts) => facts.itsSideAttacks ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["relentless-hunt"].numbers.attacking.value : 1,
+	"stone-deterrent": (facts) => !facts.itsSideAttacks ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["stone-deterrent"].numbers.defending.value : 1,
+	"tidal-might": (facts) => facts.ground !== "sea" && facts.coastal ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["tidal-might"].numbers.inACoastalLandProvince.value : 1,
+	"deepwater-grasp": (facts) => facts.ground === "sea" ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["deepwater-grasp"].numbers.atSea.value : 1,
+	wyrmscale: () => UNIT_ABILITIES_THE_REGISTRY_HOLDS.wyrmscale.numbers.inEveryBattle.value,
+	"air-superiority": (facts) => facts.theEnemyFieldsRangedUnits ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["air-superiority"].numbers.whenTheEnemyFieldsRangedUnits.value : 1
+};
+//#endregion
+//#region src/engine/rules/unit-abilities/a-unit-meeting-another-or-shooting-over-the-line.ts
+/** The ability's multiplier, worded by its name. */
+var named$1 = (slug, multiplier) => ({
+	multiplier,
+	words: UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].name
+});
+/** Whether a unit has the ability: its type is the ability's row's unit (another ability is asked by its slug). */
+var has$1 = (unit, slug) => UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].unit === unit.unitType;
+/** Whether the battle's ground is one the ability acts on. */
+var onItsGround = (slug, ground) => ground !== null && UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].onTheGround.some((g) => g === ground);
+var WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS = {
+	halberds: (facts) => facts.theUnitItMeets.role === "cav" ? named$1("halberds", UNIT_ABILITIES_THE_REGISTRY_HOLDS.halberds.numbers.facingCavalry.value) : null,
+	"lance-charge": (facts) => facts.theUnitItMeets.role === "foot" ? named$1("lance-charge", UNIT_ABILITIES_THE_REGISTRY_HOLDS["lance-charge"].numbers.facingFoot.value) : null,
+	frenzy: (facts, m) => facts.theUnitItMeets.role === "foot" ? named$1("frenzy", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.frenzy.numbers.facingFoot.value) : null,
+	"wolves-panic-horses": (facts) => facts.theUnitItMeets.role === "cav" ? named$1("wolves-panic-horses", UNIT_ABILITIES_THE_REGISTRY_HOLDS["wolves-panic-horses"].numbers.facingCavalry.value) : null,
+	"stoop-on-the-horses": (facts) => facts.theUnitItMeets.role === "cav" ? named$1("stoop-on-the-horses", UNIT_ABILITIES_THE_REGISTRY_HOLDS["stoop-on-the-horses"].numbers.facingCavalry.value) : null,
+	harriers: (facts, m) => facts.where === "duel" ? named$1("harriers", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.harriers.numbers.inAFlankDuel.value) : null,
+	"woodland-skirmish": (facts, m) => onItsGround("woodland-skirmish", facts.ground) ? named$1("woodland-skirmish", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["woodland-skirmish"].numbers.inTheWoods.value) : null,
+	bloodthirsty: (facts, m) => !facts.theUnitsSideAttacks && facts.theUnitItMeets.role === "foot" ? named$1("bloodthirsty", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.bloodthirsty.numbers.defendingFacingFoot.value) : null,
+	maul: (facts, m) => facts.theUnitItMeets.role === "foot" ? named$1("maul", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.maul.numbers.facingFoot.value) : null,
+	trample: (facts, m) => facts.theUnitItMeets.role === "foot" ? named$1("trample", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.trample.numbers.facingFoot.value) : null,
+	"many-heads": (facts, m) => facts.theUnitItMeets.role === "foot" ? named$1("many-heads", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["many-heads"].numbers.facingFoot.value) : null,
+	purity: (facts, m) => facts.theUnitItMeetsIsAMonsterOrSkeletal ? named$1("purity", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.purity.numbers.facingMonstersAndSkeletons.value) : null
+};
+/** A cap on the cavalry facing the unit, which Purity breaks: the multiplier held to the cap, or Purity's words. */
+var aCapOnTheCavalryFacingIt = (slug, unit, m) => {
+	const cap = UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].numbers.cavalryFacingThemAtMost.value;
+	if (!(unit.role === "cav" && m > cap)) return null;
+	if (has$1(unit, "purity")) return {
+		multiplier: m,
+		words: UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].wordsInTheLadder.whenPurityBreaksIt
+	};
+	return named$1(slug, cap);
+};
+var WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT = {
+	"spear-hedge": (facts, m) => aCapOnTheCavalryFacingIt("spear-hedge", facts.theUnit, m),
+	"boulder-wall": (facts, m) => aCapOnTheCavalryFacingIt("boulder-wall", facts.theUnit, m),
+	unbreakable: (facts, m) => facts.theUnit.role === "foot" ? named$1("unbreakable", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.unbreakable.numbers.footFacingThem.value) : null,
+	"stone-halls": (facts, m) => facts.theUnit.role === "foot" && onItsGround("stone-halls", facts.ground) ? named$1("stone-halls", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["stone-halls"].numbers.footFacingItInTheMountains.value) : null,
+	"thorn-hedge": (facts, m) => facts.theUnit.role === "cav" && onItsGround("thorn-hedge", facts.ground) ? named$1("thorn-hedge", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["thorn-hedge"].numbers.cavalryFacingItInTheWoods.value) : null
+};
+var WHAT_A_SHOOTER_DOES_TO_ITS_TARGET = {
+	"bodkin-points": (facts) => facts.theTarget.role === "cav" ? named$1("bodkin-points", UNIT_ABILITIES_THE_REGISTRY_HOLDS["bodkin-points"].numbers.shootingCavalry.value) : null,
+	"volley-at-the-charge": (facts) => facts.theTarget.role === "cav" ? named$1("volley-at-the-charge", UNIT_ABILITIES_THE_REGISTRY_HOLDS["volley-at-the-charge"].numbers.shootingCavalry.value) : null,
+	marksmen: (facts) => facts.theTarget.role === "arc" ? named$1("marksmen", UNIT_ABILITIES_THE_REGISTRY_HOLDS.marksmen.numbers.shootingArchers.value) : null,
+	"armour-piercing": (facts, m) => {
+		const { shootingAStrongUnit, aStrongUnitsBaseStrengthAtLeast } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["armour-piercing"].numbers;
+		return facts.theTargetsBaseStrength >= aStrongUnitsBaseStrengthAtLeast.value ? named$1("armour-piercing", m * shootingAStrongUnit.value) : null;
+	},
+	bombard: (_facts, m) => named$1("bombard", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.bombard.numbers.whateverTheyShoot.value)
+};
+var WHAT_THE_TARGET_DOES_TO_THE_SHOOTER = { "arrow-fodder": (_facts, m) => named$1("arrow-fodder", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["arrow-fodder"].numbers.archersShootingThem.value) };
+//#endregion
+//#region src/engine/rules/unit-abilities/a-unit-beside-behind-and-under-the-enemys-line.ts
+/** The ability's multiplier, worded by its name. */
+var named = (slug, multiplier) => ({
+	multiplier,
+	words: UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].name
+});
+/** Whether a unit has the ability: its type is the ability's row's unit. */
+var has = (unit, slug) => unit !== null && UNIT_ABILITIES_THE_REGISTRY_HOLDS[slug].unit === unit.unitType;
+var HELD_WHEN_HIT_FROM_THE_SIDE = {
+	unbreakable: () => UNIT_ABILITIES_THE_REGISTRY_HOLDS.unbreakable.name,
+	rooted: () => UNIT_ABILITIES_THE_REGISTRY_HOLDS.rooted.name,
+	"hold-the-gate": (facts) => facts.theUnitsSideAttacks ? null : UNIT_ABILITIES_THE_REGISTRY_HOLDS["hold-the-gate"].name
+};
+/** Shieldwall: ×1.25 with an archer in the second line behind the unit. */
+var shieldwall = (facts, m) => facts.theUnitBehind?.role === "arc" ? named("shieldwall", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.shieldwall.numbers.withAnArcherBehind.value) : null;
+var BESIDE_AND_BEHIND_IT_IN_THE_FRONT_LINE = {
+	shieldwall,
+	"town-watch": (facts, m) => shieldwall(facts, m),
+	sergeants: (facts, m) => facts.theUnitsEitherSide.some((u) => has(u, "sergeants")) ? named("sergeants", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS.sergeants.numbers.leviesBesideThem.value) : null,
+	"driven-before-them": (facts, m) => {
+		const { name, numbers, counts } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["driven-before-them"];
+		const n = facts.theUnitsEitherSide.filter((u) => u !== null && counts.some((t) => t === u.unitType)).length;
+		if (!n) return null;
+		const g = 1 + Math.min(numbers.atMost.value, numbers.perGoblinHordeBeside.value * n);
+		return {
+			multiplier: m * g,
+			words: `${name} ×${g.toFixed(1)}`
+		};
+	}
+};
+/** The strongest of the units given that `may` allows, the first of two as strong; or none. */
+function theStrongest(units, may) {
+	let strongest = null;
+	for (const [place, u] of units.entries()) if (u && may(u, place) && (!strongest || u.s > strongest.s)) strongest = u;
+	return strongest;
+}
+var MARKED_BY_THE_ENEMY_LINE = {
+	"terror-from-above": (myLine) => {
+		const strongest = theStrongest(myLine.theFront, () => true);
+		const { name, numbers } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["terror-from-above"];
+		return strongest ? {
+			theUnitsMarked: [strongest],
+			factor: numbers.theStrongestFrontUnit.value,
+			words: name
+		} : null;
+	},
+	"dive-on-the-bowmen": (myLine) => {
+		const strongest = theStrongest(myLine.theSecondLine, (x, column) => {
+			const f = myLine.theFront[column];
+			return x.role === "arc" && !!f && f.role !== "arc";
+		});
+		const { numbers, wordsInTheLadder } = UNIT_ABILITIES_THE_REGISTRY_HOLDS["dive-on-the-bowmen"];
+		return strongest ? {
+			theUnitsMarked: [strongest],
+			factor: numbers.theStrongestSecondLineArcher.value,
+			words: wordsInTheLadder.onTheArcherTheyDiveOn
+		} : null;
+	},
+	"storm-wings": (myLine) => ({
+		theUnitsMarked: myLine.theAir,
+		factor: UNIT_ABILITIES_THE_REGISTRY_HOLDS["storm-wings"].numbers.everyUnitInTheAir.value,
+		words: UNIT_ABILITIES_THE_REGISTRY_HOLDS["storm-wings"].name
+	})
+};
+//#endregion
+//#region src/engine/rules/the-registry-of-content-effects.ts
+/** One entry for each content row, and no other (a row with no entry fails to compile, TS1360; an entry with no row,
+*  TS2353). */
+var THE_REGISTRY_OF_UNIT_ABILITIES = {
+	"sheer-numbers": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["sheer-numbers"] } },
+	"reaver-crews": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["reaver-crews"] } },
+	"shoal-swarm": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["shoal-swarm"] } },
+	"relentless-hunt": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["relentless-hunt"] } },
+	"stone-deterrent": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["stone-deterrent"] } },
+	"tidal-might": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["tidal-might"] } },
+	"deepwater-grasp": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["deepwater-grasp"] } },
+	wyrmscale: { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE.wyrmscale } },
+	"air-superiority": { strength: { "the whole force": THE_STRENGTH_OF_A_UNIT_IN_ITS_FORCE["air-superiority"] } },
+	halberds: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.halberds } },
+	"lance-charge": { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS["lance-charge"] } },
+	frenzy: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.frenzy } },
+	"wolves-panic-horses": { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS["wolves-panic-horses"] } },
+	"stoop-on-the-horses": { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS["stoop-on-the-horses"] } },
+	harriers: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.harriers } },
+	"woodland-skirmish": { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS["woodland-skirmish"] } },
+	bloodthirsty: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.bloodthirsty } },
+	maul: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.maul } },
+	trample: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.trample } },
+	"many-heads": { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS["many-heads"] } },
+	purity: { strength: { "what a unit does to the unit it meets": WHAT_A_UNIT_DOES_TO_THE_UNIT_IT_MEETS.purity } },
+	"spear-hedge": { strength: { "what the unit it meets does to it": WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT["spear-hedge"] } },
+	"boulder-wall": { strength: { "what the unit it meets does to it": WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT["boulder-wall"] } },
+	unbreakable: { strength: {
+		"what the unit it meets does to it": WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT.unbreakable,
+		"held when hit from the side": HELD_WHEN_HIT_FROM_THE_SIDE.unbreakable
+	} },
+	"stone-halls": { strength: { "what the unit it meets does to it": WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT["stone-halls"] } },
+	"thorn-hedge": { strength: { "what the unit it meets does to it": WHAT_THE_UNIT_IT_MEETS_DOES_TO_IT["thorn-hedge"] } },
+	"bodkin-points": { strength: { "what a shooter does to its target": WHAT_A_SHOOTER_DOES_TO_ITS_TARGET["bodkin-points"] } },
+	"volley-at-the-charge": { strength: { "what a shooter does to its target": WHAT_A_SHOOTER_DOES_TO_ITS_TARGET["volley-at-the-charge"] } },
+	marksmen: { strength: {
+		"what a shooter does to its target": WHAT_A_SHOOTER_DOES_TO_ITS_TARGET.marksmen,
+		"a shooter picks its target": { marksmen: (facts) => {
+			const worth = facts.theWorthOfAShotAtEachUnitOfTheEnemyFront;
+			return worth.length ? worth.reduce((best, w, i) => w > (worth[best] ?? w) ? i : best, 0) : null;
+		} }.marksmen
+	} },
+	"armour-piercing": { strength: { "what a shooter does to its target": WHAT_A_SHOOTER_DOES_TO_ITS_TARGET["armour-piercing"] } },
+	bombard: { strength: { "what a shooter does to its target": WHAT_A_SHOOTER_DOES_TO_ITS_TARGET.bombard } },
+	"arrow-fodder": { strength: { "what the target does to the shooter": WHAT_THE_TARGET_DOES_TO_THE_SHOOTER["arrow-fodder"] } },
+	rooted: { strength: { "held when hit from the side": HELD_WHEN_HIT_FROM_THE_SIDE.rooted } },
+	"hold-the-gate": { strength: { "held when hit from the side": HELD_WHEN_HIT_FROM_THE_SIDE["hold-the-gate"] } },
+	shieldwall: { strength: { "beside and behind it in the front line": BESIDE_AND_BEHIND_IT_IN_THE_FRONT_LINE.shieldwall } },
+	"town-watch": { strength: { "beside and behind it in the front line": BESIDE_AND_BEHIND_IT_IN_THE_FRONT_LINE["town-watch"] } },
+	sergeants: { strength: { "beside and behind it in the front line": BESIDE_AND_BEHIND_IT_IN_THE_FRONT_LINE.sergeants } },
+	"driven-before-them": { strength: { "beside and behind it in the front line": BESIDE_AND_BEHIND_IT_IN_THE_FRONT_LINE["driven-before-them"] } },
+	"terror-from-above": { strength: { "marked by the enemy line": MARKED_BY_THE_ENEMY_LINE["terror-from-above"] } },
+	"dive-on-the-bowmen": { strength: { "marked by the enemy line": MARKED_BY_THE_ENEMY_LINE["dive-on-the-bowmen"] } },
+	"storm-wings": { strength: { "marked by the enemy line": MARKED_BY_THE_ENEMY_LINE["storm-wings"] } },
+	"battering-horns": { strength: { "turns an anchored line": { "battering-horns": (facts) => facts.theFreeEnemyRiders.some((u) => has(u, "battering-horns")) ? UNIT_ABILITIES_THE_REGISTRY_HOLDS["battering-horns"].name : null }["battering-horns"] } },
+	"flak-gunners": { strength: { "what a flyer does": { "flak-gunners": (facts, m) => facts.theEnemyHasFlyers ? named("flak-gunners", m * UNIT_ABILITIES_THE_REGISTRY_HOLDS["flak-gunners"].numbers.whenTheEnemyHasFlyers.value) : null }["flak-gunners"] } },
+	"regenerating-hide": { fate: { "a beaten unit fails its death roll": { "regenerating-hide": (facts) => !facts.itsSideWon && facts.theDice() < (facts.theChanceOfRegeneratingHideTheCallGives ?? UNIT_ABILITIES_THE_REGISTRY_HOLDS["regenerating-hide"].numbers.afterALostBattle.value) ? "a unit is cut down and rises again by its regenerating hide" : null }["regenerating-hide"] } },
+	"knightly-example": { fate: { "a beaten unit fails its demotion roll": { "knightly-example": (facts) => facts.theKnightlyExampleTheCallGives ?? facts.itsForce.some((u) => u?.type === UNIT_ABILITIES_THE_REGISTRY_HOLDS["knightly-example"].unit) ? "a unit keeps its nerve under the knightly example" : null }["knightly-example"] } }
+};
+/** Each stage's order: the entries with an effect at the stage, each once, in the order they run (the battle code's
+*  order before the registry took them). */
+var THE_ORDER_OF_EACH_STAGE = {
+	strength: {
+		"the whole force": [
+			"sheer-numbers",
+			"reaver-crews",
+			"shoal-swarm",
+			"relentless-hunt",
+			"stone-deterrent",
+			"tidal-might",
+			"deepwater-grasp",
+			"wyrmscale",
+			"air-superiority"
+		],
+		"what a unit does to the unit it meets": [
+			"halberds",
+			"lance-charge",
+			"frenzy",
+			"wolves-panic-horses",
+			"stoop-on-the-horses",
+			"harriers",
+			"woodland-skirmish",
+			"bloodthirsty",
+			"maul",
+			"trample",
+			"many-heads",
+			"purity"
+		],
+		"what the unit it meets does to it": [
+			"spear-hedge",
+			"boulder-wall",
+			"unbreakable",
+			"stone-halls",
+			"thorn-hedge"
+		],
+		"what a shooter does to its target": [
+			"bodkin-points",
+			"volley-at-the-charge",
+			"marksmen",
+			"armour-piercing",
+			"bombard"
+		],
+		"what the target does to the shooter": ["arrow-fodder"],
+		"held when hit from the side": [
+			"unbreakable",
+			"rooted",
+			"hold-the-gate"
+		],
+		"beside and behind it in the front line": [
+			"shieldwall",
+			"town-watch",
+			"sergeants",
+			"driven-before-them"
+		],
+		"marked by the enemy line": [
+			"terror-from-above",
+			"dive-on-the-bowmen",
+			"storm-wings"
+		],
+		"a shooter picks its target": ["marksmen"],
+		"turns an anchored line": ["battering-horns"],
+		"what a flyer does": ["flak-gunners"]
+	},
+	fate: {
+		"a beaten unit fails its death roll": ["regenerating-hide"],
+		"a beaten unit fails its demotion roll": ["knightly-example"]
+	}
+};
+var ROWS = UNIT_ABILITIES_THE_REGISTRY_HOLDS;
+var ENTRIES = THE_REGISTRY_OF_UNIT_ABILITIES;
+/** The effects of "the whole force" that reach a unit of the type given (its own and those that reach every unit), in
+*  the stage's order. */
+function theWholeForceEffectsReaching(unitType) {
+	return THE_ORDER_OF_EACH_STAGE.strength["the whole force"].flatMap((slug) => {
+		const effect = ENTRIES[slug].strength?.["the whole force"];
+		const row = ROWS[slug];
+		return effect && (row.unit === unitType || row.reaches === "every unit of the force") ? [effect] : [];
+	});
+}
+var THE_WHOLE_FORCE_BY_UNIT = new Map(Object.values(ROWS).map((row) => [row.unit, theWholeForceEffectsReaching(row.unit)]));
+var THE_WHOLE_FORCE_FOR_ANY_OTHER_UNIT = theWholeForceEffectsReaching(null);
+/** The runner of "strength: the whole force": the product of the unit's factors, in the stage's order. */
+function theStrengthOfAUnitInItsWholeForce(facts) {
+	let m = 1;
+	for (const effect of THE_WHOLE_FORCE_BY_UNIT.get(facts.unitType) ?? THE_WHOLE_FORCE_FOR_ANY_OTHER_UNIT) m *= effect(facts);
+	return m;
+}
+/** Each unit type's effects at a stage, in the stage's order: an ability's effect is the effect of its own unit, or of
+*  each unit its row says it reaches (Hold the Gate: every garrison; Sergeants: the Levies). Built once, as the file
+*  loads, from the content. */
+function theEffectsOfEachUnitAt(order, effectOf) {
+	const byUnit = /* @__PURE__ */ new Map();
+	for (const slug of order) {
+		const effect = effectOf(ENTRIES[slug]);
+		if (!effect) continue;
+		const { unit, reaches } = ROWS[slug];
+		for (const reached of typeof reaches === "object" ? reaches : [unit]) byUnit.set(reached, [...byUnit.get(reached) ?? [], effect]);
+	}
+	return byUnit;
+}
+var THE_ORDER_OF_STRENGTH = THE_ORDER_OF_EACH_STAGE.strength;
+var WHAT_A_UNIT_DOES_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["what a unit does to the unit it meets"], (entry) => entry.strength?.["what a unit does to the unit it meets"]);
+var WHAT_THE_UNIT_IT_MEETS_DOES_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["what the unit it meets does to it"], (entry) => entry.strength?.["what the unit it meets does to it"]);
+var WHAT_A_SHOOTER_DOES_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["what a shooter does to its target"], (entry) => entry.strength?.["what a shooter does to its target"]);
+var WHAT_THE_TARGET_DOES_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["what the target does to the shooter"], (entry) => entry.strength?.["what the target does to the shooter"]);
+var HELD_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["held when hit from the side"], (entry) => entry.strength?.["held when hit from the side"]);
+var BESIDE_AND_BEHIND_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["beside and behind it in the front line"], (entry) => entry.strength?.["beside and behind it in the front line"]);
+var A_SHOOTER_PICKS_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["a shooter picks its target"], (entry) => entry.strength?.["a shooter picks its target"]);
+var WHAT_A_FLYER_DOES_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_STRENGTH["what a flyer does"], (entry) => entry.strength?.["what a flyer does"]);
+/** The effects of "marked by the enemy line", in the stage's order, each with the unit the enemy's line must hold. */
+var THE_MARKS_OF_THE_ENEMY_LINE = THE_ORDER_OF_STRENGTH["marked by the enemy line"].flatMap((slug) => {
+	const effect = ENTRIES[slug].strength?.["marked by the enemy line"];
+	return effect ? [{
+		unit: ROWS[slug].unit,
+		effect
+	}] : [];
+});
+/** The effects of "turns an anchored line", in the stage's order (each looks for its unit among the free riders). */
+var TURNS_AN_ANCHORED_LINE_EFFECTS = THE_ORDER_OF_STRENGTH["turns an anchored line"].flatMap((slug) => {
+	const effect = ENTRIES[slug].strength?.["turns an anchored line"];
+	return effect ? [effect] : [];
+});
+var THE_ORDER_OF_FATE = THE_ORDER_OF_EACH_STAGE.fate;
+var THE_DEATH_ROLL_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_FATE["a beaten unit fails its death roll"], (entry) => entry.fate?.["a beaten unit fails its death roll"]);
+var THE_DEMOTION_ROLL_BY_UNIT = theEffectsOfEachUnitAt(THE_ORDER_OF_FATE["a beaten unit fails its demotion roll"], (entry) => entry.fate?.["a beaten unit fails its demotion roll"]);
+var NO_EFFECTS = [];
+/** Runs a stage's effects in order on the multiplier so far, and adds the words of each that acts. */
+function runOnTheMultiplier(effects, facts, soFar) {
+	for (const effect of effects) {
+		const moved = effect(facts, soFar.multiplier);
+		if (!moved) continue;
+		soFar.multiplier = moved.multiplier;
+		soFar.words.push(moved.words);
+	}
+}
+/** The runner of abilityFront's two stages: from the role matchup's multiplier, what the unit does to the unit it
+*  meets, then what the unit it meets does to it, each in its stage's order. */
+function theStrengthOfAUnitMeetingAnother(facts, theRoleMatchup) {
+	const soFar = {
+		multiplier: theRoleMatchup,
+		words: []
+	};
+	runOnTheMultiplier(WHAT_A_UNIT_DOES_BY_UNIT.get(facts.theUnit.unitType) ?? NO_EFFECTS, facts, soFar);
+	runOnTheMultiplier(WHAT_THE_UNIT_IT_MEETS_DOES_BY_UNIT.get(facts.theUnitItMeets.unitType) ?? NO_EFFECTS, facts, soFar);
+	return soFar;
+}
+/** The runner of abilityBack's two stages: from the role's multiplier, what the shooter does to its target, then what
+*  the target does to the shooter, each in its stage's order. */
+function theStrengthOfAShooterOverTheLine(facts, theRolesMultiplier) {
+	const soFar = {
+		multiplier: theRolesMultiplier,
+		words: []
+	};
+	runOnTheMultiplier(WHAT_A_SHOOTER_DOES_BY_UNIT.get(facts.theShooter.unitType) ?? NO_EFFECTS, facts, soFar);
+	runOnTheMultiplier(WHAT_THE_TARGET_DOES_BY_UNIT.get(facts.theTarget.unitType) ?? NO_EFFECTS, facts, soFar);
+	return soFar;
+}
+/** The runner of "held when hit from the side" (battleFaceSide): the words of the first of the unit's abilities that
+*  holds it, in the stage's order, or nothing (it is hit from the side). */
+function theAbilityThatHoldsAUnitHitFromTheSide(facts) {
+	for (const effect of HELD_BY_UNIT.get(facts.theUnit.unitType) ?? NO_EFFECTS) {
+		const words = effect(facts);
+		if (words !== null) return words;
+	}
+	return null;
+}
+/** The runner of "beside and behind it in the front line" (battleFaceSide): from the multiplier so far, the unit's
+*  effects in the stage's order. */
+function theStrengthOfAUnitBesideAndBehindOthers(facts, theMultiplierSoFar) {
+	const soFar = {
+		multiplier: theMultiplierSoFar,
+		words: []
+	};
+	runOnTheMultiplier(BESIDE_AND_BEHIND_BY_UNIT.get(facts.theUnit.unitType) ?? NO_EFFECTS, facts, soFar);
+	return soFar;
+}
+/** The runner of "marked by the enemy line" (battleFaceSide): in the stage's order, the mark of each ability whose
+*  unit the enemy's line holds (the resolver says which it holds, from its grid). */
+function theMarksTheEnemyLineLeavesOnMine(myLine, theEnemyLineHoldsAUnitOf) {
+	const marks = [];
+	for (const { unit, effect } of THE_MARKS_OF_THE_ENEMY_LINE) {
+		if (!theEnemyLineHoldsAUnitOf(unit)) continue;
+		const mark = effect(myLine);
+		if (mark) marks.push(mark);
+	}
+	return marks;
+}
+/** The runner of "a shooter picks its target" (battleFaceSide): the place, in the enemy front's list, of the unit the
+*  first of the shooter's abilities that picks one picks, or nothing. The worth of each shot is worked out only for a
+*  shooter with such an ability (the resolver hands the work, not its result). */
+function theTargetAShooterPicks(theShooter, theWorthOfAShotAtEachUnitOfTheEnemyFront) {
+	const effects = A_SHOOTER_PICKS_BY_UNIT.get(theShooter.unitType) ?? NO_EFFECTS;
+	if (!effects.length) return null;
+	const facts = {
+		theShooter,
+		theWorthOfAShotAtEachUnitOfTheEnemyFront: theWorthOfAShotAtEachUnitOfTheEnemyFront()
+	};
+	for (const effect of effects) {
+		const pick = effect(facts);
+		if (pick !== null) return pick;
+	}
+	return null;
+}
+/** The runner of "turns an anchored line" (battleFaceSide): the words of the first ability, in the stage's order, by
+*  which the free enemy riders turn an anchored line, or nothing. */
+function theAbilityThatTurnsAnAnchoredLine(facts) {
+	for (const effect of TURNS_AN_ANCHORED_LINE_EFFECTS) {
+		const words = effect(facts);
+		if (words !== null) return words;
+	}
+	return null;
+}
+/** The runner of "what a flyer does" (battleFaceSide): from ×1, the flyer's effects in the stage's order. */
+function theStrengthOfAFlyer(facts) {
+	const soFar = {
+		multiplier: 1,
+		words: []
+	};
+	runOnTheMultiplier(WHAT_A_FLYER_DOES_BY_UNIT.get(facts.theFlyer.unitType) ?? NO_EFFECTS, facts, soFar);
+	return soFar;
+}
+/** The runner of "a beaten unit fails its death roll" (rollUnitFates): the line of the first of the unit's abilities,
+*  in the stage's order, by which it lives, or nothing (it dies). An effect that rolls draws its die only when it runs,
+*  so a unit with no such ability draws none. */
+function theLineByWhichAUnitLivesThroughItsDeathRoll(facts) {
+	for (const effect of THE_DEATH_ROLL_BY_UNIT.get(facts.unitType) ?? NO_EFFECTS) {
+		const line = effect(facts);
+		if (line !== null) return line;
+	}
+	return null;
+}
+/** The runner of "a beaten unit fails its demotion roll" (rollUnitFates): the line of the first ability reaching the
+*  unit, in the stage's order, by which it holds its tier, or nothing (it loses one). */
+function theLineByWhichABeatenUnitHoldsItsTier(facts) {
+	for (const effect of THE_DEMOTION_ROLL_BY_UNIT.get(facts.unitType) ?? NO_EFFECTS) {
+		const line = effect(facts);
+		if (line !== null) return line;
+	}
+	return null;
+}
+//#endregion
 //#region src/engine/battle/fates.ts
-var TROLL_REGEN_CHANCE = .3;
 function rollUnitFates(force, o) {
-	const rng = o.rng || kcRng, tiers = o.tiers || QUALITY_TIERS, say = o.say || (() => {}), ref = o.unitRef || unitRef, who = o.owner || "";
+	const rng = o.rng ?? kcRng, tiers = o.tiers ?? QUALITY_TIERS, say = o.say ?? (() => {}), ref = o.unitRef ?? unitRef, who = o.owner ?? "";
 	const dust = (a) => a._isSkeletal ? " Their bones crumble to dust — gone forever." : "";
-	const diedVerb = o.diedVerb || (o.won ? "were destroyed in the fighting." : "were destroyed in the rout!"), promoteVerb = o.promoteVerb || "earn promotion to";
+	const diedVerb = o.diedVerb ?? (o.won ? "were destroyed in the fighting." : "were destroyed in the rout!"), promoteVerb = o.promoteVerb ?? "earn promotion to";
 	const clauseOf = (a) => {
 		const f = o.faced;
 		if (!f || !a) return "";
-		const c = typeof f === "function" ? f(a) : typeof f.get === "function" ? f.get(a) : null;
-		return c ? String(c) : "";
+		return (typeof f === "function" ? f(a) : typeof f.get === "function" ? f.get(a) : null) ?? "";
 	};
 	const head = (a, q0) => {
 		const c = clauseOf(a);
@@ -19789,19 +20635,33 @@ function rollUnitFates(force, o) {
 		held: 0,
 		survived: 0
 	};
-	const knightly = o.knightly != null ? !!o.knightly : (force || []).some((a) => a && a.type === "Gilded Lances");
-	(force || []).forEach((a) => {
+	const theForce = force ?? [];
+	theForce.forEach((a) => {
 		if (!a) return;
 		const idx = tiers.indexOf(a.quality), roll = rng();
 		if (roll < o.dieAt(a)) {
-			if (a.type === "Cave Trolls" && !o.won && rng() < (o.regen != null ? o.regen : TROLL_REGEN_CHANCE)) {
+			const lives = theLineByWhichAUnitLivesThroughItsDeathRoll({
+				unitType: a.type,
+				itsSideWon: o.won,
+				theDice: rng,
+				theChanceOfRegeneratingHideTheCallGives: o.regen
+			});
+			if (lives) {
 				r.survived++;
-				say(`— ${head(a)} are cut down — and rise again, the Regenerating Hide knitting flesh as they stagger clear.`);
+				say({
+					kind: lives,
+					unitReference: head(a)
+				});
 				return;
 			}
 			a._died = true;
 			r.died++;
-			say(`— ${head(a)} ${diedVerb}${dust(a)}`);
+			say({
+				kind: "a unit dies in the battle",
+				unitReference: head(a),
+				diedVerb,
+				wordsIfSkeletal: dust(a)
+			});
 			return;
 		}
 		if (a._isSkeletal) {
@@ -19811,10 +20671,15 @@ function rollUnitFates(force, o) {
 		if (o.won) {
 			if (roll < o.promoteTo(a) && idx >= 0 && idx < 4) {
 				const q0 = a.quality;
-				a.quality = tiers[idx + 1];
+				a.quality = tiers[idx + 1] ?? q0;
 				r.promoted++;
 				if (o.notable) a._notable = true;
-				say(`— ${head(a, q0)} ${promoteVerb} ${a.quality}!`);
+				say({
+					kind: "a unit is promoted after the battle",
+					unitReferenceAtItsOldQuality: head(a, q0),
+					promoteVerb,
+					unitQuality: a.quality
+				});
 			} else r.survived++;
 			return;
 		}
@@ -19822,10 +20687,23 @@ function rollUnitFates(force, o) {
 		if (roll2 < o.demoteAt(a)) {
 			if (o.shieldFort) {
 				r.held++;
-				say(`— ${head(a)} fall back behind the shield wall in good order.`);
-			} else if (knightly && (a.type === "Shieldwall Levies" || a.type === "Men-at-Arms")) {
+				say({
+					kind: "a unit falls back behind the shield wall in good order",
+					unitReference: head(a)
+				});
+				return;
+			}
+			const holds = theLineByWhichABeatenUnitHoldsItsTier({
+				unitType: a.type,
+				itsForce: theForce,
+				theKnightlyExampleTheCallGives: o.knightly
+			});
+			if (holds) {
 				r.held++;
-				say(`— ${head(a)} keep their nerve under the Knightly Example of the Gilded Lances and lose nothing in defeat.`);
+				say({
+					kind: holds,
+					unitReference: head(a)
+				});
 			} else {
 				const q0 = a.quality;
 				if (demoteOrDisband(a)) {
@@ -19834,15 +20712,23 @@ function rollUnitFates(force, o) {
 				} else {
 					r.demoted++;
 					if (o.notable) a._notable = true;
-					say(`— ${head(a, q0)} lost heart in defeat, reduced to ${a.quality}.`);
+					say({
+						kind: "a unit loses heart in defeat and is reduced a tier",
+						unitReferenceAtItsOldQuality: head(a, q0),
+						unitQuality: a.quality
+					});
 				}
 			}
 		} else if (roll2 < o.promoteTo(a) && idx >= 0 && idx < 4) {
 			const q0 = a.quality;
-			a.quality = tiers[idx + 1];
+			a.quality = tiers[idx + 1] ?? q0;
 			r.promoted++;
 			if (o.notable) a._notable = true;
-			say(`— Despite defeat, ${head(a, q0)} improved to ${a.quality}!`);
+			say({
+				kind: "a unit improves a tier despite defeat",
+				unitReferenceAtItsOldQuality: head(a, q0),
+				unitQuality: a.quality
+			});
 		} else r.survived++;
 	});
 	return r;
@@ -19851,8 +20737,8 @@ var BATTLE_CAS_HEAD_RE = /^(⚔|🛡) \*\*(.+?)(?:'s|') forces\*\* \((attacker|d
 function battleLineTiers(texts) {
 	const t = [];
 	let inCas = false, casIdx = -1;
-	(texts || []).forEach((raw, i) => {
-		const s = String(raw == null ? "" : raw);
+	(texts ?? []).forEach((raw, i) => {
+		const s = raw ?? "";
 		let tier = "k";
 		if (s.startsWith("⚑FORCE⚑")) tier = "k";
 		else if (BATTLE_CAS_HEAD_RE.test(s)) {
@@ -19860,12 +20746,12 @@ function battleLineTiers(texts) {
 			if (casIdx < 0) casIdx = i;
 			tier = "d";
 		} else if (inCas && s.startsWith("— ")) tier = /masterless hero|None left to fight/.test(s) ? "k" : "d";
-		else if (/^\s/.test(s)) tier = /Fortune of battle/.test(s) ? "k" : "d";
-		else if (s.startsWith("📊")) tier = /completely destroyed/.test(s) ? "k" : "d";
+		else if (/^\s/.test(s)) tier = s.includes("Fortune of battle") ? "k" : "d";
+		else if (s.startsWith("📊")) tier = s.includes("completely destroyed") ? "k" : "d";
 		else if (/^(🤝 Kinship|🏹|⚠|〰)/.test(s)) tier = "d";
 		else if (/^The \w+ terrain sets a /.test(s)) tier = "d";
 		else if (/^✨ .+ — \*\*[^*]+\*\*: /.test(s)) tier = "d";
-		else if (/find no room to ride/.test(s)) tier = "d";
+		else if (s.includes("find no room to ride")) tier = "d";
 		t.push(tier);
 	});
 	return {
@@ -19873,8 +20759,26 @@ function battleLineTiers(texts) {
 		casIdx
 	};
 }
+/** `value[key]`, as JavaScript reads it: a field of an object, of an array or of a string, undefined where it has
+*  none, and a TypeError for null or undefined. */
+function fieldAsJavaScriptReadsIt(value, key) {
+	if (value === null || value === void 0) throw new TypeError(`Cannot read properties of ${String(value)}`);
+	return Reflect.get(Object(value), key);
+}
+/** `value.startsWith(prefix)`, as JavaScript calls it: a TypeError for a value that isn't a string. */
+function startsWithAsJavaScriptCallsIt(value, prefix) {
+	if (typeof value !== "string") throw new TypeError("value.startsWith is not a function");
+	return value.startsWith(prefix);
+}
+/** `(list || []).filter((a) => a && !a.phantom)` on a row's units, as JavaScript runs it: a TypeError for a truthy
+*  value that isn't a list. */
+function theUnitsOnAForcesRow(list) {
+	if (!list) return [];
+	if (!Array.isArray(list)) throw new TypeError("list.filter is not a function");
+	return list.filter((a) => a && !fieldAsJavaScriptReadsIt(a, "phantom"));
+}
 function battleTallyLine(texts) {
-	const T = (texts || []).map((x) => String(x == null ? "" : x));
+	const T = (texts ?? []).map((x) => x ?? "");
 	const roster = {
 		attacker: [],
 		defender: []
@@ -19882,17 +20786,21 @@ function battleTallyLine(texts) {
 	T.forEach((s) => {
 		if (s.startsWith("⚑FORCE⚑")) try {
 			const f = JSON.parse(s.slice(7));
-			if (f && roster[f.role]) roster[f.role] = roster[f.role].concat((f.armies || []).filter((a) => a && !a.phantom));
+			if (f) {
+				const role = String(fieldAsJavaScriptReadsIt(f, "role"));
+				const units = roster[role];
+				if (units) roster[role] = units.concat(theUnitsOnAForcesRow(fieldAsJavaScriptReadsIt(f, "armies")));
+			}
 		} catch (_) {}
 	});
 	const sides = [];
 	let cur = null;
 	const _heads = [];
 	T.forEach((s) => {
-		const h = s.match(BATTLE_CAS_HEAD_RE);
+		const h = BATTLE_CAS_HEAD_RE.exec(s);
 		if (h && !_heads.some((x) => x.role === h[3])) _heads.push({
-			name: h[2],
-			role: h[3]
+			name: h[2] ?? "",
+			role: h[3] ?? ""
 		});
 	});
 	const sideFor = (role) => {
@@ -19914,69 +20822,75 @@ function battleTallyLine(texts) {
 	const ownerSide = (s) => {
 		const body = s.replace(/^— (Despite defeat, )?/, "");
 		let best = null;
-		_heads.forEach((h) => {
+		for (const h of _heads) {
 			const i = [body.startsWith(`${h.name}'s `) ? 0 : -1, body.indexOf(`(${h.name}'s `)].filter((x) => x >= 0).sort((a, b) => a - b)[0];
-			if (i == null) return;
+			if (i == null) continue;
 			if (!best || i < best.i || i === best.i && h.name.length > best.h.name.length) best = {
 				i,
 				h
 			};
-		});
+		}
 		return best ? sideFor(best.h.role) : null;
 	};
+	const lengthOf = (x) => Number(fieldAsJavaScriptReadsIt(x, "length"));
 	const typeOf = (s, role) => {
-		const R = roster[role] || [];
-		const types = [...new Set(R.map((a) => a.type))].map((ty) => ({
+		const R = roster[role] ?? [];
+		const types = [...new Set(R.map((a) => fieldAsJavaScriptReadsIt(a, "type")))].map((ty) => ({
 			ty,
-			i: s.indexOf(ty)
-		})).filter((x) => x.i >= 0).sort((a, b) => a.i - b.i || b.ty.length - a.ty.length);
+			i: s.indexOf(String(ty))
+		})).filter((x) => x.i >= 0).sort((a, b) => a.i - b.i || lengthOf(b.ty) - lengthOf(a.ty));
 		if (types[0]) return types[0].ty;
-		const byName = R.filter((a) => a.unitName && a.unitName !== a.type && s.includes(a.unitName)).map((a) => ({
+		const nameOf = (a) => fieldAsJavaScriptReadsIt(a, "unitName");
+		const byName = R.filter((a) => nameOf(a) && nameOf(a) !== fieldAsJavaScriptReadsIt(a, "type") && s.includes(String(nameOf(a)))).map((a) => ({
 			a,
-			i: s.indexOf(a.unitName)
-		})).sort((x, y) => x.i - y.i || y.a.unitName.length - x.a.unitName.length)[0];
-		return byName ? byName.a.type : null;
+			i: s.indexOf(String(nameOf(a)))
+		})).sort((x, y) => x.i - y.i || lengthOf(nameOf(y.a)) - lengthOf(nameOf(x.a)))[0];
+		return byName ? fieldAsJavaScriptReadsIt(byName.a, "type") : null;
+	};
+	const orUnit = (ty) => {
+		if (ty) return ty;
+		return "unit";
 	};
 	const _atkForceName = (() => {
-		const f = T.find((s) => s.startsWith("⚑FORCE⚑") && /"role":"attacker"/.test(s));
+		const f = T.find((s) => s.startsWith("⚑FORCE⚑") && s.includes("\"role\":\"attacker\""));
 		try {
-			return f ? JSON.parse(f.slice(7)).name : "";
+			return f ? fieldAsJavaScriptReadsIt(JSON.parse(f.slice(7)), "name") : "";
 		} catch (_) {
 			return "";
 		}
 	})();
 	T.forEach((s) => {
-		const br = s.match(/^🌊 A (?:(.+?) )?whale cohort breaches beneath the /);
+		const br = /^🌊 A (?:(.+?) )?whale cohort breaches beneath the /.exec(s);
 		if (br) {
-			const loser = br[1] && _atkForceName && !_atkForceName.startsWith(br[1]) ? "attacker" : "defender";
-			sideFor(loser).lost.push(typeOf(s.slice(br[0].length), loser) || "unit");
+			const loser = br[1] && _atkForceName && !startsWithAsJavaScriptCallsIt(_atkForceName, br[1]) ? "attacker" : "defender";
+			sideFor(loser).lost.push(orUnit(typeOf(s.slice(br[0].length), loser)));
 			return;
 		}
-		const h = s.match(BATTLE_CAS_HEAD_RE);
+		const h = BATTLE_CAS_HEAD_RE.exec(s);
 		if (h) {
-			cur = sideFor(h[3]);
+			cur = sideFor(h[3] ?? "");
 			return;
 		}
 		if (!cur || !s.startsWith("— ")) return;
-		const sd = ownerSide(s) || cur;
+		const sd = ownerSide(s) ?? cur;
 		if (/promotion to|hardened by victory|improved to/.test(s)) sd.pro++;
-		else if (/lost heart in defeat/.test(s)) sd.dem++;
-		else if (/have had enough|slip away/.test(s)) sd.fled.push(typeOf(s, sd.role) || "unit");
-		else if (/annihilated|destroyed|cut down|slain|sunk|drown|lost at sea|crumble/.test(s)) sd.lost.push(typeOf(s, sd.role) || "unit");
+		else if (s.includes("lost heart in defeat")) sd.dem++;
+		else if (/have had enough|slip away/.test(s)) sd.fled.push(orUnit(typeOf(s, sd.role)));
+		else if (/annihilated|destroyed|cut down|slain|sunk|drown|lost at sea|crumble/.test(s)) sd.lost.push(orUnit(typeOf(s, sd.role)));
 	});
 	if (!sides.length) return null;
 	const grp = (a) => {
 		const m = /* @__PURE__ */ new Map();
-		a.forEach((x) => m.set(x, (m.get(x) || 0) + 1));
-		return [...m].map(([k, n]) => n > 1 ? `${n}× ${k}` : k).join(", ");
+		a.forEach((x) => m.set(x, (m.get(x) ?? 0) + 1));
+		return [...m].map(([k, n]) => n > 1 ? `${String(n)}× ${String(k)}` : k).join(", ");
 	};
 	sides.sort((a, b) => (a.role === "attacker" ? 0 : 1) - (b.role === "attacker" ? 0 : 1));
 	return `⚰ Losses — ${sides.map((sd) => {
-		const tot = (roster[sd.role] || []).length, n = sd.lost.length;
-		const bits = [n ? `${n}${tot ? ` of ${tot}` : ""} unit${(tot || n) !== 1 ? "s" : ""} lost (${grp(sd.lost)})` : "no units lost"];
-		if (sd.fled.length) bits.push(`${sd.fled.length} disbanded (${grp(sd.fled)})`);
-		if (sd.dem) bits.push(`${sd.dem} demoted`);
-		if (sd.pro) bits.push(`${sd.pro} promoted`);
+		const tot = (roster[sd.role] ?? []).length, n = sd.lost.length;
+		const bits = [n ? `${String(n)}${tot ? ` of ${String(tot)}` : ""} unit${(tot || n) !== 1 ? "s" : ""} lost (${grp(sd.lost)})` : "no units lost"];
+		if (sd.fled.length) bits.push(`${String(sd.fled.length)} disbanded (${grp(sd.fled)})`);
+		if (sd.dem) bits.push(`${String(sd.dem)} demoted`);
+		if (sd.pro) bits.push(`${String(sd.pro)} promoted`);
 		return `**${sd.name}**: ${bits.join(", ")}`;
 	}).join(" · ")}.`;
 }
@@ -20038,7 +20952,7 @@ var BATTLE_MARGIN_BANDS = [
 ];
 function battleMarginBand(margRatio) {
 	const r = Math.max(0, margRatio || 0);
-	return BATTLE_MARGIN_BANDS.find((b) => r < b.max) || BATTLE_MARGIN_BANDS[BATTLE_MARGIN_BANDS.length - 1];
+	return BATTLE_MARGIN_BANDS.find((b) => r < b.max) ?? BATTLE_MARGIN_BANDS[BATTLE_MARGIN_BANDS.length - 1];
 }
 //#endregion
 //#region src/engine/battle/a-multiplier-written-as-the-strength-ladder-shows-it.ts
@@ -20049,8 +20963,9 @@ function ladderFm(v) {
 }
 //#endregion
 //#region src/engine/rules-on-plain-values/unit-types-and-base-strength.ts
+var UNIT_TYPE_WORD_OF = KC_UNIT_TYPE;
 function unitTypeOf(armyType) {
-	return typeof KC_UNIT_TYPE !== "undefined" && KC_UNIT_TYPE[armyType] || "infantry";
+	return typeof KC_UNIT_TYPE !== "undefined" && UNIT_TYPE_WORD_OF[armyType] || "infantry";
 }
 var UNIT_BASE_STR = { ...KC_UNIT_BASE_STR };
 var UNIT_Q_MULT = { ...KC_UNIT_Q_MULT };
@@ -20100,35 +21015,36 @@ function getFlyCapability(armies) {
 }
 //#endregion
 //#region src/engine/grand-design.ts
+var isAProvince = (p) => Boolean(p);
 function gdActiveFor(gs, playerIndex, align) {
-	const pl = gs && gs.players && gs.players[playerIndex];
+	const pl = gs?.players?.[playerIndex];
 	if (!pl) return false;
 	if (align && pl.alignment !== align) return false;
-	if (!(pl.discoveries || []).some((d) => d && d.id === "gd")) return false;
+	if (!(pl.discoveries ?? []).some((d) => d?.id === "gd")) return false;
 	const pid = pl.gdProvinceId;
 	if (pid == null) return true;
-	const pv = gs.world && gs.world.provinces && gs.world.provinces[pid];
+	const pv = gs.world?.provinces?.[pid];
 	return !!pv && pv.owner === playerIndex;
 }
 function homeProvinceIdFor(gs, playerIndex) {
-	const pl = (gs && gs.players || [])[playerIndex];
+	const pl = (gs?.players ?? [])[playerIndex];
 	if (!pl) return null;
 	if (pl.homeProvinceId != null) return pl.homeProvinceId;
-	let fallback = pl.provinces && pl.provinces.length && pl.provinces[0] != null ? pl.provinces[0] : null;
+	let fallback = pl.provinces?.length && pl.provinces[0] != null ? pl.provinces[0] : null;
 	if (fallback == null) {
-		const king = (gs.characters || []).find((c) => c.player === playerIndex && c.isKing);
+		const king = (gs?.characters ?? []).find((c) => c.player === playerIndex && c.isKing);
 		fallback = king ? king.location : null;
 	}
 	if (fallback != null) pl.homeProvinceId = fallback;
 	return fallback;
 }
 function homeFounderOf(gs, provId) {
-	const pls = gs && gs.players || [];
+	const pls = gs?.players ?? [];
 	for (let i = 0; i < pls.length; i++) if (pls[i] && homeProvinceIdFor(gs, i) === provId) return i;
 	return null;
 }
 function neutralTradeGold(pl, income) {
-	return pl && pl.alignment === "Neutral" ? Math.floor((income || 0) / 5) : 0;
+	return pl?.alignment === "Neutral" ? Math.floor((Number(income) || 0) / 5) : 0;
 }
 var HOME_FLEET_BY_RACE = {
 	Human: "Galleon Fleet",
@@ -20137,7 +21053,7 @@ var HOME_FLEET_BY_RACE = {
 	Orcish: "Orcish Longships"
 };
 function retireCorsairPools(gs) {
-	(gs && gs.world && gs.world.provinces || []).forEach((p) => {
+	(gs?.world?.provinces ?? []).forEach((p) => {
 		if (!p || !Array.isArray(p.armyTypes)) return;
 		const i = p.armyTypes.indexOf("Corsair Fleet");
 		if (i < 0) return;
@@ -20149,24 +21065,24 @@ function retireCorsairPools(gs) {
 	});
 }
 function monarchRestProvId(gs, playerIndex) {
-	const pl = (gs && gs.players || [])[playerIndex];
+	const pl = (gs?.players ?? [])[playerIndex];
 	if (!pl) return null;
-	const owned = (pl.provinces || []).map((id) => (gs.world && gs.world.provinces || [])[id]).filter(Boolean);
-	if (!owned.length) return null;
+	const owned = (pl.provinces ?? []).map((id) => (gs?.world?.provinces ?? [])[id]).filter(isAProvince);
+	const first = owned[0];
+	if (!first) return null;
 	const home = homeProvinceIdFor(gs, playerIndex);
-	if (home != null && (pl.provinces || []).includes(home)) return home;
-	return owned.reduce((best, pv) => pv.tax >= (best ? best.tax || 0 : 0) ? pv : best, owned[0]).id;
+	if (home != null && (pl.provinces ?? []).includes(home)) return home;
+	return owned.reduce((best, pv) => pv.tax >= (best.tax || 0) ? pv : best, first).id;
 }
 function mapCentreColFor(gs, playerIndex) {
 	const hid = homeProvinceIdFor(gs, playerIndex);
 	if (hid == null) return null;
-	const hp = (gs.world && gs.world.provinces || [])[hid];
-	return hp && hp.col != null ? hp.col : null;
+	return (gs?.world?.provinces ?? [])[hid]?.col ?? null;
 }
 //#endregion
 //#region src/engine/titles/perks.ts
 function TM(c) {
-	if (!c.tm) c.tm = {
+	c.tm ??= {
 		marshal: 0,
 		sea: 0,
 		monster: 0,
@@ -20186,8 +21102,8 @@ var TITLE_MONSTER_ARMIES = new Set(KC_UNIT_CLASS.monster);
 function noteEspionage(G, c, provId, kind) {
 	if (!G || !c || provId == null) return;
 	try {
-		(G._espionageLedger = G._espionageLedger || []).push({
-			byPi: c.player != null ? c.player : null,
+		(G._espionageLedger ??= []).push({
+			byPi: c.player ?? null,
 			charId: c.id,
 			charName: c.name,
 			isKing: !!c.isKing,
@@ -20197,7 +21113,7 @@ function noteEspionage(G, c, provId, kind) {
 	} catch (_e) {}
 }
 function creditMapped(c, before, after) {
-	const d = (after || 0) - (before || 0);
+	const d = (Number(after) || 0) - (Number(before) || 0);
 	if (d > 0) TM(c).explored = (TM(c).explored || 0) + d;
 }
 function creditBeastUnit(tmRec, unit, n) {
@@ -20226,11 +21142,11 @@ function reckoningAllyStepPct(nPlayers) {
 }
 var RECKONING_MIN_TURN = 10;
 function reckoningBasePct(nPlayers) {
-	return RECKONING_BASE_PCT[nPlayers] || RECKONING_DEFAULT_PCT;
+	return RECKONING_BASE_PCT[nPlayers] ?? RECKONING_DEFAULT_PCT;
 }
 function reckoningThresholdPct(nPlayers, decaySteps, blocSize) {
-	const steps = Math.max(0, decaySteps | 0);
-	const k = Math.max(1, blocSize | 0 || 1);
+	const steps = Math.max(0, Number(decaySteps) | 0);
+	const k = Math.max(1, Number(blocSize) | 0 || 1);
 	const base = Math.max(RECKONING_FLOOR_PCT, reckoningBasePct(nPlayers) - RECKONING_DECAY_STEP_PCT * steps);
 	return Math.min(RECKONING_CAP_PCT, base + reckoningAllyStepPct(nPlayers) * (k - 1));
 }
@@ -20238,15 +21154,16 @@ function reckoningThreshold(nPlayers, decaySteps, blocSize) {
 	return reckoningThresholdPct(nPlayers, decaySteps, blocSize) / 100;
 }
 function reckoningDecayOf(state) {
-	return (state && state.reckoningDecaySteps) | 0;
+	return Number(state?.reckoningDecaySteps) | 0;
 }
 var _MAGIC_SCHOOLS = KC_MAGIC_SCHOOLS.slice();
 function itemKeyOf(it) {
-	return it && it.id != null ? "#" + it.id : "@" + (it && it.name || "");
+	return it?.id != null ? "#" + String(it.id) : "@" + (it?.name ?? "");
 }
+var isAnItem = (it) => Boolean(it);
 function snapshotHeldItems(gs) {
-	(gs && gs.characters || []).forEach((c) => {
-		if (c) c._itemsAtTurnStart = (c.items || []).filter(Boolean).map(itemKeyOf);
+	(gs?.characters ?? []).forEach((c) => {
+		if (c) c._itemsAtTurnStart = (c.items ?? []).filter(isAnItem).map(itemKeyOf);
 	});
 }
 function itemAcquiredThisTurn(c, it) {
@@ -20254,16 +21171,16 @@ function itemAcquiredThisTurn(c, it) {
 	return !c._itemsAtTurnStart.includes(itemKeyOf(it));
 }
 function skillLevel(c, stat) {
-	return Math.max(0, Math.min(9, (c && c.skills || {})[stat] || 0));
+	return Math.max(0, Math.min(9, Number(c?.skills?.[stat]) || 0));
 }
 function perkTier(c, stat) {
 	return Math.max(0, skillLevel(c, stat) - 5);
 }
 function pcSkillCap(v) {
-	return Math.max(0, Math.min(SKILL_MAX, Math.round(v || 0)));
+	return Math.max(0, Math.min(SKILL_MAX, Math.round(Number(v) || 0)));
 }
 function pcFoeCat(foe) {
-	return foe.cat || (foe.kind === "character" ? foe.isUndead ? "undead" : "humanoid" : "beast");
+	return (foe.cat ?? "") || (foe.kind === "character" ? foe.isUndead ? "undead" : "humanoid" : "beast");
 }
 //#endregion
 //#region src/engine/rules-on-plain-values/beasts-a-hero-may-lead-and-the-druid-each-unit-needs.ts
@@ -20335,13 +21252,522 @@ function druidMasteryGainOver(levelCounted, levelNeeded) {
 	return Math.min(DRUID_MASTERY_CAP, DRUID_MASTERY_PER_LVL * Math.max(0, levelCounted - levelNeeded));
 }
 //#endregion
+//#region src/engine/battle/the-facts-a-battles-lines-record.ts
+/** The place of a battle's losses tally, as emitBattle files it. */
+var THE_PLACE_OF_A_BATTLES_LOSSES_TALLY = { kind: "a battle's losses, tallied from its lines" };
+/** Each kind's audience: the fight's, or its event's for a kind filed on its own (its type says so, so a kind given
+*  its hero's realm alone is a compile error). */
+var THE_AUDIENCE_OF_EACH_KIND_OF_A_BATTLES_LINE = {
+	"a force drawn up for battle": "the fight's",
+	"a battle's losses, tallied from its lines": "the fight's",
+	"the attacker's lightning advance catches the defender unready": "the fight's",
+	"the attacker moves into the province and a battle is initiated": "the fight's",
+	"the battle for a province begins": "the fight's",
+	"the province still cowers under a reign of fear": "the fight's",
+	"the attacker is cut down before the lines join, and a captain takes command": "the fight's",
+	"the defender is slain before his army, and a veteran takes command": "the fight's",
+	"the attacker fights to win back his realm's capital": "the fight's",
+	"the attacker's siegecraft wears down the defenders' fortifications": "the fight's",
+	"the defender's host defends ground held justly": "the fight's",
+	"the defender's realm holds its own ground the harder": "the fight's",
+	"the defender's banner of the realm rallies the home defence": "the fight's",
+	"the attacker's siege mastery halves the defenders' fortifications": "the fight's",
+	"the defenders fight on home ground": "the fight's",
+	"a side's skeletal legions fight with fanaticism under their undead king": "the fight's",
+	"a side's monsters are driven to savage fury": "the fight's",
+	"a side's skeletal legions know no fear": "the fight's",
+	"the attacker's forces fight with fanatical zeal": "the fight's",
+	"the defenders fight with fanatical zeal on consecrated ground": "the fight's",
+	"the defender's forces fight with fanatical zeal": "the fight's",
+	"the caster casts a spell before the battle": "the fight's",
+	"the spell before the battle fizzles": "the fight's",
+	"a fireball halves the enemy's strongest units": "the fight's",
+	"a telekinetic storm scatters the enemy commander's formations": "the fight's",
+	"a telekinetic storm finds no tactical command to disrupt": "the fight's",
+	"a psychic blast severs the enemy commander's bond with his beasts": "the fight's",
+	"a lightning bolt weakens enemy units": "the fight's",
+	"a curse withers the enemy commander's skill": "the fight's",
+	"control undead turns an enemy undead unit to the caster's side": "the fight's",
+	"control undead finds no enemy undead to turn": "the fight's",
+	"a holy symbol weakens enemy undead units": "the fight's",
+	"a holy symbol finds no enemy undead to smite": "the fight's",
+	"spiritwrack halves enemy missile units": "the fight's",
+	"spiritwrack finds no enemy missile troops": "the fight's",
+	"a unit's power gathers but never strikes": "the fight's",
+	"a unit uses its power in battle": "the fight's",
+	"a unit's power hits all enemy units": "the fight's",
+	"a unit's power hits one enemy unit": "the fight's",
+	"the hero's archers find no target among the forest wardens": "the fight's",
+	"the hero's archery volley begins": "the fight's",
+	"a unit's shot glances off its target": "the fight's",
+	"a unit's shot weakens its target": "the fight's",
+	"a unit's target is already softened as far as arrows allow": "the fight's",
+	"a side's whale cohort sinks an enemy ship": "the fight's",
+	"the terrain's effect on each side": "the fight's",
+	"hosts airborne over open water fight at a penalty": "the fight's",
+	"land units fight at sea at a penalty": "the fight's",
+	"a side's realm discoveries strengthen its army": "the fight's",
+	"the illusory ground of the province confuses a side's forces": "the fight's",
+	"the sanctuary wards of the province sap a side's attackers": "the fight's",
+	"the attacker unfolds a grand stratagem": "the fight's",
+	"the defender unfolds a grand stratagem": "the fight's",
+	"the defender's feigned retreat springs shut": "the fight's",
+	"the attacker storms ashore in a raid on the coast": "the fight's",
+	"the consecrated ground of the province weakens the attacker's host": "the fight's",
+	"the battle's statistics begin": "the fight's",
+	"the fortune of the battle": "the fight's",
+	"the battle's outcome and its margin": "the fight's",
+	"a side's war-horn of the plains lets its free lances ride in rough country": "the fight's",
+	"a side's free lances find no room to ride": "the fight's",
+	"the loser's dwarven guard leave the manticore pride nothing to hunt": "the fight's",
+	"the winner's manticore pride hunt the broken companies": "the fight's",
+	"the loser's dwarven guard leave the shark shoals nothing in the water": "the fight's",
+	"the winner's shark shoals tear into the beaten crews": "the fight's",
+	"a unit is cut down with no escape": "the fight's",
+	"a side's other forces survive the engagement": "the fight's",
+	"no units were left on the field to count": "the fight's",
+	"the attacker wins the battle and seizes the province": "the fight's",
+	"the attacker's casualties begin": "the fight's",
+	"the defender's casualties begin": "the fight's",
+	"the loser's dwarven guard leave the free lances no broken backs": "the fight's",
+	"the winner's free lances ride down the broken companies": "the fight's",
+	"the loser's dwarven guard leave the warg riders no broken backs": "the fight's",
+	"the winner's warg riders run down the broken companies": "the fight's",
+	"the winner's corsairs close the sea lanes to the loser": "the fight's",
+	"the loser's skeletal host stands its ground in a deathless march": "the fight's",
+	"the loser's dwarven guard hold a shield fort with no road out": "the fight's",
+	"the defender has nowhere to retreat": "the fight's",
+	"the defender's stronger host is pushed back but stays": "the fight's",
+	"the loser's force is destroyed to the last": "the fight's",
+	"the loser's dwarven guard withdraw behind a shield fort": "the fight's",
+	"the loser retreats to a province": "the fight's",
+	"the loser's surviving forces": "the fight's",
+	"the loser's forces are completely destroyed and he retreats alone": "the fight's",
+	"the attacker wins the battle but the defender's survivors hold the province": "the fight's",
+	"the attacker's assault is repelled and driven from the province": "the fight's",
+	"the attacker has nowhere to retreat": "the fight's",
+	"the attacker's stronger host is thrown back but stays": "the fight's",
+	"the attacker's assault is repelled but not driven from the province": "the fight's",
+	"a commander's force is demoralised": "the fight's",
+	"a commander rides out and challenges the other to single combat": "the fight's",
+	"the challenged commander will not answer the call": "the fight's",
+	"a personal duel before the battle begins": "the fight's",
+	"the duel's loser falls at death's door but is not slain": "the fight's",
+	"the duel's loser is slain": "the fight's",
+	"the duel ends inconclusively": "the fight's",
+	"a hero cries out his battlecry to his foe": "the fight's",
+	"a side's Druid cannot fully command its units": "the fight's",
+	"the attacker moves into a province held by its defenders and a battle is initiated": "the fight's",
+	"the guard is slain before his host, and a sergeant of the garrison takes up the banner": "the fight's",
+	"the attacker is cut down before the lines join, and the eldest captain takes command": "the fight's",
+	"the attacker's Tactical command does not apply at sea": "the fight's",
+	"the defenders of a province defend ground held justly": "the fight's",
+	"the defenders fight on home soil": "the fight's",
+	"the attacker casts a spell before the battle against the defenders": "the fight's",
+	"a fireball engulfs the defenders' strongest units": "the fight's",
+	"a telekinetic storm finds no command among leaderless defenders": "the fight's",
+	"a psychic blast finds no commander among the defenders": "the fight's",
+	"a lightning bolt sears the defending units": "the fight's",
+	"a curse finds no commander among leaderless defenders": "the fight's",
+	"control undead turns a defending undead unit to the attacker's side": "the fight's",
+	"control undead finds no undead among the defenders": "the fight's",
+	"a holy symbol sears the defending undead": "the fight's",
+	"a holy symbol finds no undead among the defenders": "the fight's",
+	"spiritwrack halves the defenders' missile units": "the fight's",
+	"spiritwrack finds no missile troops among the defenders": "the fight's",
+	"the attacker's spell before the battle fizzles": "the fight's",
+	"a unit's power hits every defending unit": "the fight's",
+	"a unit's power hits one unit of the other side": "the fight's",
+	"a whale cohort sinks a defending ship before a shot is fired": "the fight's",
+	"the attacker's archery volley begins": "the fight's",
+	"a unit fires at its target and the shot glances off": "the fight's",
+	"a unit fires at its target and weakens it": "the fight's",
+	"an attacking unit's target is already softened as far as arrows allow": "the fight's",
+	"the attacker's archery volley's total": "the fight's",
+	"the defender casts a spell before the battle": "the fight's",
+	"a fireball halves the attackers' strongest unit": "the fight's",
+	"a lightning bolt sears the attacking units": "the fight's",
+	"control undead finds no undead among the attackers": "the fight's",
+	"a holy symbol sears the attacking undead": "the fight's",
+	"a holy symbol finds no undead among the attackers": "the fight's",
+	"spiritwrack halves the attackers' missile units": "the fight's",
+	"spiritwrack finds no missile troops among the attackers": "the fight's",
+	"the defender's spell before the battle fizzles": "the fight's",
+	"the attacker's lightning advance catches the defenders unready": "the fight's",
+	"the defenders' archers find no target among the attacker's forest wardens": "the fight's",
+	"the defenders' archery volley begins": "the fight's",
+	"a defending unit's target is already softened as far as arrows allow": "the fight's",
+	"the defenders' archery volley's total": "the fight's",
+	"a defending unit uses its power in battle": "the fight's",
+	"a unit's power hits every attacking unit": "the fight's",
+	"the terrain's effect on the attacker's units": "the fight's",
+	"hosts airborne over open water fight at a penalty against the defenders": "the fight's",
+	"land units fight at sea at a penalty against the defenders": "the fight's",
+	"the attacker unfolds a grand stratagem against the defenders": "the fight's",
+	"the attacker storms ashore in a raid on the coast against the defenders": "the fight's",
+	"the attacker's monsters are driven to savage fury": "the fight's",
+	"the attacker's troops fight with fanatical zeal": "the fight's",
+	"the attacker's realm discoveries strengthen his army": "the fight's",
+	"the attacker's free lances find no room to ride": "the fight's",
+	"the attacker sweeps into a province with no one left to stand against him": "the fight's",
+	"the attacker wins the battle against the defenders": "the fight's",
+	"the attacker's warg riders halve his losses": "the fight's",
+	"every defending unit was lost before the lines closed": "the fight's",
+	"the defenders' dwarven guard leave the attacker's free lances no broken backs": "the fight's",
+	"the attacker's free lances ride down the defenders' broken companies": "the fight's",
+	"a defending unit is destroyed in the rout": "the fight's",
+	"the defenders have nowhere to retreat and hold a shield fort": "the fight's",
+	"the defenders have nowhere to retreat and take further losses": "the fight's",
+	"the attacker is repelled by the defenders": "the fight's",
+	"a defending unit is destroyed in the fighting": "the fight's",
+	"the guard's host is destroyed and he is a masterless hero": "the fight's",
+	"the attacker's dwarven guard leave the defenders' free lances no broken backs": "the fight's",
+	"the defenders' free lances ride down the attacker's broken companies": "the fight's",
+	"the attacker's corsairs take his beaten force back to the ships": "the fight's",
+	"the attacker's shield-wall holds and the infantry stand their ground": "the fight's",
+	"the attacker has nowhere to retreat and takes further losses": "the fight's",
+	"an attacking unit is cut down in the rout with no escape": "the fight's",
+	"the attacker's forces retreat to a province": "the fight's",
+	"the onlookers' summary of a battle": "the fight's",
+	"the most seasoned captain takes command of the combined host": "its event's",
+	"the blood harvest claims offerings from the fallen enemy units": "the fight's",
+	"the iron throne of skulls raises the enemy's fallen as skeletons": "the fight's",
+	"terror radiates from a province after an evil victory": "the fight's",
+	"terror lingers in a province and its defenders fight demoralised": "the fight's",
+	"a unit is cut down and rises again by its regenerating hide": "the fight's",
+	"a unit dies in the battle": "the fight's",
+	"a unit is promoted after the battle": "the fight's",
+	"a unit falls back behind the shield wall in good order": "the fight's",
+	"a unit keeps its nerve under the knightly example": "the fight's",
+	"a unit loses heart in defeat and is reduced a tier": "the fight's",
+	"a unit improves a tier despite defeat": "the fight's",
+	"a hero not at war with the province's realm gains a host inside it": "its event's",
+	"a hero's new host is still forming up in a province": "its event's",
+	"no one stands to defend a province and the hero takes control of it": "its event's",
+	"with fresh troops the hero takes control of a province": "its event's",
+	"the hero turns a newly gathered host on a province and a battle is initiated": "the fight's",
+	"the defenders riding in were keeping watch and are already in the line": "the fight's",
+	"the defender is reinforced by other heroes in the defence of a province": "the fight's",
+	"the province's standing troops rally to the defender": "the fight's",
+	"a hero fell in the battle line beside the commander of the defence": "its event's",
+	"a hero stands in the battle line beside the commander of the defence": "its event's",
+	"the province's standing troops fall back with the defender": "its event's",
+	"the province's standing troops fall in with the defender as the battle continues": "its event's",
+	"the province's garrison is overwhelmed as the province falls": "its event's",
+	"the hero has the better of the fighting but the guard still holds the field": "its event's",
+	"the hero has the better of the fighting but leaderless defenders still hold the field": "its event's",
+	"the hero has the better of the fighting but enemy forces still hold their ground": "its event's",
+	"the hero has the better of the fighting but the province's garrison still holds": "its event's",
+	"the hero overcomes the defenders and claims the province for his realm": "its event's",
+	"the province's owner learns his defenders still hold against the hero": "its event's",
+	"the province's owner learns the hero was beaten back": "its event's",
+	"a beaten guard's surviving unit breaks ranks and flees as mercenaries": "its event's",
+	"a beaten guard's surviving unit loses heart and is reduced a tier": "its event's",
+	"a beaten guard's surviving unit holds its ground unbroken": "its event's",
+	"a side's strength ladder begins": "the fight's",
+	"the strength ladder's units": "the fight's",
+	"the strength ladder's command": "the fight's",
+	"the strength ladder's force-wide modifiers": "the fight's",
+	"the strength ladder has no force-wide modifiers": "the fight's",
+	"the strength ladder's pre-battle damage": "the fight's",
+	"the strength ladder's battle lines": "the fight's",
+	"the strength ladder's who faces whom": "the fight's",
+	"the strength ladder's units behind the front": "the fight's",
+	"the ground allows a front of a width": "the fight's",
+	"a side's front line in the battle grid": "the fight's",
+	"a side's second line in the battle grid": "the fight's",
+	"the scouting side chooses the front": "the fight's",
+	"each side shifts its battle line": "the fight's",
+	"an unfinished battle against a province's defenders resumes": "its event's",
+	"the guard still holds a contested province with survivors": "its event's",
+	"commanderless survivors still contest a province": "its event's",
+	"the attacker finally overcomes the defenders and claims a province": "its event's",
+	"the attacker breaks off a stalled battle and retreats": "its event's",
+	"the attacker is pinned in a province with no way out": "its event's",
+	"a contest for a province lapses as the realms are no longer at war": "its event's",
+	"war comes to a province two realms' hosts share": "its event's",
+	"an unfinished battle between two hosts resumes": "its event's",
+	"the winner of a stalled battle secures a province": "its event's",
+	"a host holds a province unopposed and secures it": "its event's",
+	"the eagle riders mark the forest wardens and spoil the ambush": "the fight's",
+	"the gyrocopters harry a flying unit off its line": "the fight's",
+	"a side's gyrocopters climb to meet the enemy's flyers": "the fight's",
+	"a side's units fight beside their own kin": "the fight's",
+	"a hero's host turns on a province it has shared with a realm at war": "its event's"
+};
+//#endregion
+//#region src/engine/personal-combat/the-facts-a-personal-combats-lines-record.ts
+/** Each kind's audience: its hero's realm alone for the two kinds above, the fight's for every other (its type says
+*  which, so a kind given another is a compile error). */
+var THE_AUDIENCE_OF_EACH_KIND_OF_A_PERSONAL_COMBATS_LINE = {
+	"the caster cannot cast a spell without its skill": "the fight's",
+	"the caster's spell already cast this combat": "the fight's",
+	"the caster's spell limit reached this combat": "the fight's",
+	"the caster calls on a school's arts, weaving a spell": "the fight's",
+	"but the spell guts and fizzles": "the fight's",
+	"the target is open to the school's arts": "the fight's",
+	"the caster marks the target's weakness well": "the fight's",
+	"the caster's lightning bolt arcs into the target": "the fight's",
+	"a fireball engulfs the target and will burn": "the fight's",
+	"the caster raises a holy symbol": "the fight's",
+	"the light closes the caster's hurts": "the fight's",
+	"the holy light's damage": "the fight's",
+	"the caster binds the target with spiritwrack": "the fight's",
+	"psychic blast sears the target's mind": "the fight's",
+	"a telekinetic storm rips the target": "the fight's",
+	"the caster conjures a mirror image": "the fight's",
+	"the caster weaves a second mirror image": "the fight's",
+	"the caster conjures a phantom of the target": "the fight's",
+	"the caster fades from sight": "the fight's",
+	"the hand of death claims part of the target's health": "the fight's",
+	"the caster's hand of death fails": "the fight's",
+	"the caster's curse withers the target": "the fight's",
+	"the caster's curse finds no ability": "the fight's",
+	"the caster seizes the undead target": "the fight's",
+	"control undead has no hold over the living": "the fight's",
+	"the caster's charm washes over a crowned will": "the fight's",
+	"the caster's charm slides off a mind lately swayed": "the fight's",
+	"the caster's charm breaks against the target's will": "the fight's",
+	"the caster charms the target's wits": "the fight's",
+	"the caster casts a spell": "the fight's",
+	"a fighter uses a power": "the fight's",
+	"a power tears into the foe": "the fight's",
+	"the guardian reaches for its own wounds again but the well is dry": "the fight's",
+	"the guardian knits its wounds": "the fight's",
+	"the foe reels from the blow, losing actions": "the fight's",
+	"the foe is caught helpless, losing actions": "the fight's",
+	"the foe is thrown off balance from the next round": "the fight's",
+	"the foe is thrown off balance": "the fight's",
+	"the foe's guard is beaten down next round": "the fight's",
+	"the foe's guard is beaten down now": "the fight's",
+	"the guardian's melee surges": "the fight's",
+	"a power festers on the foe": "the fight's",
+	"every blow against the guardian will bite back": "the fight's",
+	"a ward shrouds the guardian": "the fight's",
+	"death's touch tears the foe's strength in half": "the fight's",
+	"the foe is struck down where they stand": "the fight's",
+	"the foe cannot be gripped by it": "the fight's",
+	"the foe must hold their nerve": "the fight's",
+	"the foe is overcome with sheer terror": "the fight's",
+	"the foe steels their nerve": "the fight's",
+	"the foe feels dragged towards the creature": "the fight's",
+	"a hero bears magic items into the fight": "the fight's",
+	"the runner scrambles clear with a chance of dropping something": "the fight's",
+	"in the rout the runner drops an item the one who stays claims": "the fight's",
+	"a gained item noted": "the fight's",
+	"the runner breaks off the duel and slips away": "the fight's",
+	"the attacker meets the defender in a personal encounter": "the fight's",
+	"the attacker goes for the defender's purse and comes away with nothing": "the fight's",
+	"the attacker lifts gold from the defender's purse": "the fight's",
+	"the attacker finds the defender's purse empty": "the fight's",
+	"the one who flees breaks away and escapes": "the fight's",
+	"the attacker is overwhelmed": "the fight's",
+	"the defender is overcome": "the fight's",
+	"the guardian has turned the hoard's magic to its own use": "the fight's",
+	"the hero enters the feature": "the fight's",
+	"within lurks the guardian blocking the path": "the fight's",
+	"the guardian is already wounded by someone before": "the fight's",
+	"the guardian's speed and plan": "the fight's",
+	"after tense negotiations the guardian agrees": "the fight's",
+	"the hero slips away with the prize": "the fight's",
+	"the hero turns and flees from the guardian": "the fight's",
+	"in the rout the hero drops an item into the hoard": "the fight's",
+	"with a final effort the guardian is defeated": "the fight's",
+	"the hero falls to their knees overwhelmed": "the fight's",
+	"neither the hero nor the guardian gains the upper hand": "the fight's",
+	"the guardian draws back into its lair": "the fight's",
+	"the hero seizes the opening and counterattacks": "the fight's",
+	"the counterstroke strikes the foe": "the fight's",
+	"the hero lunges to counterattack but the foe recovers": "the fight's",
+	"a fighter's attack fails, still reeling from a crippling wound": "the fight's",
+	"a fighter attacks with a roll to hit": "the fight's",
+	"a fighter strikes the foe": "the fight's",
+	"a fighter drinks the wound": "the fight's",
+	"the foe's shield lashes back": "the fight's",
+	"the foe's thorns bite a fighter": "the fight's",
+	"a fighter's blow is turned aside": "the fight's",
+	"but a fighter is too dazed to punish it": "the fight's",
+	"but a fighter is still reeling and the chance is lost": "the fight's",
+	"a fighter takes a free strike at the foe's back": "the fight's",
+	"a fighter lands the free strike": "the fight's",
+	"the foe bursts into ash then blazes back to life": "the fight's",
+	"the free strike misses": "the fight's",
+	"a fighter tries to flee": "the fight's",
+	"a fighter escapes the fight": "the fight's",
+	"a fighter fails to get clear": "the fight's",
+	"a fighter advances and the combatants close": "the fight's",
+	"the foe looses a parting shot as a fighter comes on": "the fight's",
+	"a fighter draws as they come and looses a snap shot": "the fight's",
+	"a fighter's shot fails, still reeling from a crippling wound": "the fight's",
+	"a fighter draws and looses a volley": "the fight's",
+	"a fighter shoots with a roll to hit": "the fight's",
+	"a fighter's shot hits the foe": "the fight's",
+	"a fighter's arrow impales the foe": "the fight's",
+	"a fighter's shot strikes a vital point": "the fight's",
+	"a fighter's shot flies wide": "the fight's",
+	"a guardian's perk is named": "the fight's",
+	"a druid has hunted this kind of beast before": "the fight's",
+	"one fighter has the initiative": "the fight's",
+	"the victim fights their own mirror image": "the fight's",
+	"but there is no escaping one's own reflection": "the fight's",
+	"but an illusion cast upon an illusion": "the fight's",
+	"the victim shatters the phantom": "the fight's",
+	"the phantom of the victim thins to nothing": "the fight's",
+	"the victim is struck down by their own mirror image": "the fight's",
+	"a guardian's aura sears the foe": "the fight's",
+	"the victim sees through the illusion": "the fight's",
+	"a fighter takes a free strike at the foe": "the fight's",
+	"a fighter's free strike lands": "the fight's",
+	"a fighter finds their second wind and fights on": "the fight's",
+	"as their strength fails a fighter begs the foe for mercy": "the fight's",
+	"as the foe draws for the killing shot a fighter begs for their life": "the fight's",
+	"pinned and bleeding a fighter cries out for mercy": "the fight's",
+	"as the foe readies a power for the killing stroke a fighter begs": "the fight's",
+	"beaten and bleeding a fighter sees the killing blow coming": "the fight's",
+	"as the foe closes for the kill a fighter cries out for mercy": "the fight's",
+	"a fighter drops to their knees before the final stroke": "the fight's",
+	"the guardian pauses over its prey and lets a fighter crawl away": "the fight's",
+	"the foe lets a fighter go": "the fight's",
+	"the foe lowers their bow and lets a fighter go": "the fight's",
+	"the foe lets a power die unspent": "the fight's",
+	"the foe stays the blow and lets a fighter go": "the fight's",
+	"the foe lowers their weapon in disgust and lets a fighter go": "the fight's",
+	"the stroke never falls and the foe spares a fighter": "the fight's",
+	"a fighter surrenders an item to the foe as the price of mercy": "the fight's",
+	"the foe knows nothing of mercy": "the fight's",
+	"the foe laughs at the plea": "the fight's",
+	"the foe is deaf to the plea": "the fight's",
+	"there is no pity in the foe": "the fight's",
+	"a combat item strikes the foe": "the fight's",
+	"a fighter uses a combat item": "the fight's",
+	"a fighter recovers hit points": "the fight's",
+	"warmth spreads through a fighter each round": "the fight's",
+	"a fighter recovers hit points and every lingering affliction lifts": "the fight's",
+	"a combat item blazes twice as bright against the foe": "the fight's",
+	"a combat item keeps burning on the foe": "the fight's",
+	"the foe is thrown off from the next round": "the fight's",
+	"the foe reels losing actions from the next round": "the fight's",
+	"a fighter drinks the stolen vigour": "the fight's",
+	"the foe is held fast, losing actions": "the fight's",
+	"the foe can barely see to strike": "the fight's",
+	"the foe can barely see to strike for now": "the fight's",
+	"the foe is sapped for the rest of the fight": "the fight's",
+	"the foe is overcome with dread and flees": "the fight's",
+	"the foe holds their ground badly shaken": "the fight's",
+	"the foe's magic and powers are bound": "the fight's",
+	"a fighter surges with strength": "the fight's",
+	"a fighter's eye sharpens": "the fight's",
+	"a ward settles over a fighter": "the fight's",
+	"shimmering doubles step out of a fighter": "the fight's",
+	"a fighter is ready to break away": "the fight's",
+	"a fighter fades from sight the foe": "the fight's",
+	"every poison burn and blinding on a fighter lifts": "the fight's",
+	"but nothing happens": "the fight's",
+	"a fighter is stunned and cannot act": "the fight's",
+	"a fighter bound by spiritwrack cannot shoot and closes in": "the fight's",
+	"a fighter has no ranged attack and presses forward": "the fight's",
+	"a fighter gives ground and gets to firing range first": "the fight's",
+	"a fighter moves up to firing range": "the fight's",
+	"a fighter cannot close the distance in time": "the fight's",
+	"a fighter tries to break away to firing range": "the fight's",
+	"the foe stays right on top of a fighter": "the fight's",
+	"a fighter disengages to bow range": "the fight's",
+	"a fighter's power is bound and it attacks with tooth and claw": "the fight's",
+	"a fighter gathers itself for a power but the moment slips away": "the fight's",
+	"a fighter is silenced and cannot cast": "the fight's",
+	"a fighter knows nothing of retreat": "the fight's",
+	"a fighter calls for parley with a druid's roll": "the fight's",
+	"the foe lowers its guard and stands aside": "the fight's",
+	"the foe answers with a roar": "the fight's",
+	"a fighter calls for parley but blades are already drawn": "the fight's",
+	"a fighter has no thief skill and cannot steal": "the fight's",
+	"a fighter slips past the guardian and seizes the prize": "the fight's",
+	"a fighter's theft is noticed": "the fight's",
+	"a fighter scouts the feature and its guardian": "the fight's",
+	"a fighter scouts the ground but there is nothing to guard": "the fight's",
+	"a fighter reads the ground and steadies their aim": "the fight's",
+	"the target cannot be held": "the fight's",
+	"a fighter's harm strikes a mirror image": "the fight's",
+	"the first harm to reach the target is drunk by their armour": "the fight's",
+	"the target's shield takes the blow square on": "the fight's",
+	"the arrow glances off the target's shield": "the fight's",
+	"the target's shield turns the harm away": "the fight's",
+	"the ward on the target's shield soaks some of the harm": "the fight's",
+	"the target's mithril armour turns aside some of the harm": "the fight's",
+	"the hunter finds the target's weakness": "the fight's",
+	"the hunter sees the target's weakness plainly now": "the fight's",
+	"the target reads the beast's every move": "the fight's",
+	"the target rolls with the blow and takes less": "the fight's",
+	"the target takes the harm on raw fury": "the fight's",
+	"a ward around the target drinks some of the blow": "the fight's",
+	"the target parries turning aside some of the blow": "the fight's",
+	"the target's elemental armour absorbs some of the harm": "the fight's",
+	"the target's armour turns aside some of the harm": "the fight's",
+	"the target turns aside all they can but the harm still lands": "the fight's",
+	"the target's armour will not let any single hit bite deeper": "the fight's",
+	"the target will not go down and restores hit points": "the fight's",
+	"a fighter ignores the daze": "the fight's",
+	"a fighter's armour sloughs off every burn poison and bleeding": "the fight's",
+	"a guardian's regeneration knits its flesh": "the fight's",
+	"a fighter has nothing left to knit": "the fight's",
+	"a fighter shrugs off the daze, held steady by their armour": "the fight's",
+	"a lingering harm afflicts a fighter": "the fight's",
+	"a healing knits a fighter": "the fight's",
+	"a fighter tears free of the spiritwrack": "the fight's",
+	"a hero's hit points rise in a fight, for his realm alone": "its hero's realm alone",
+	"the surgeons reach a fallen duellist too late, for his realm alone": "its hero's realm alone"
+};
+/** Whether a fact is one of a personal combat's lines (or of the two kinds for one realm alone). */
+function isAPersonalCombatsLine(fact) {
+	return Object.hasOwn(THE_AUDIENCE_OF_EACH_KIND_OF_A_PERSONAL_COMBATS_LINE, fact.kind);
+}
+//#endregion
 //#region src/engine/turn/events-and-their-audiences.ts
+/** An event's hero when the line is the deed of the hero whose order is resolving, whoever he is: emit files it under
+*  him only when the line already reaches his realm, else under no hero. The area rows of P1-12c replace it with the
+*  hero each fact names. */
+var THE_HERO_WHOSE_ORDER_IS_RESOLVING = "the hero whose order is resolving";
+/** Each kind's audience, of every area's kinds. */
+var THE_AUDIENCE_OF_EACH_KIND = {
+	...THE_AUDIENCE_OF_EACH_KIND_OF_A_BATTLES_LINE,
+	...THE_AUDIENCE_OF_EACH_KIND_OF_A_PERSONAL_COMBATS_LINE
+};
+/** Whether a fight's line is for its hero's realm alone, by its kind's audience. */
+function isForItsHerosRealmAlone(fact) {
+	return THE_AUDIENCE_OF_EACH_KIND[fact.kind] === "its hero's realm alone";
+}
+/** Whether a line of a fight's narrative is for everyone in the fight: its words, or a fact of a kind whose audience is
+*  the fight's (not its hero's realm alone). */
+function isALineForEveryoneInTheFight(line) {
+	return typeof line === "string" || !isForItsHerosRealmAlone(line);
+}
+/** A battle's line whose tier ('k' key or 'd' detail) the views work out from the words of the battle's lines, as
+*  emitBattle did before P1-12c3 (theTurnsLinesInWords, src/views/prose/the-words-of-each-line.ts). The GM's log is
+*  stored with the tier in its place. */
+var A_TIER_WORKED_OUT_FROM_THE_WORDS_OF_THE_BATTLES_LINES = "worked out from the words of the battle's lines";
+/** The hero a line naming THE_HERO_WHOSE_ORDER_IS_RESOLVING is filed under: that hero, but only when the line already
+*  reaches his realm by its audience (told to it, its deed, seen by the world or seen there; a battle's line reaches
+*  those who fought in it by being told). Otherwise no hero, so that filing it under him never shows his realm a line
+*  its audience keeps from it (playerEvents gives a realm every line filed under one of its heroes). A hero who serves
+*  no realm has no realm to reach: the line is filed under him as before. */
+function theHeroWhoseOrderIsResolvingIfTheLineReachesHisRealm(turnContext, audience) {
+	const resolving = turnContext._logCtx.charId;
+	if (resolving == null) return null;
+	const hisRealm = turnContext.G.characters.find((c) => c.id === resolving)?.player;
+	if (hisRealm == null) return resolving;
+	return audience.actor === hisRealm || (audience.realms ?? []).includes(hisRealm) || audience.seen === "world" || audience.seen === "there" ? resolving : null;
+}
 /** Files an event in the GM's log of the turn: the one way a line enters it. */
 function emit(turnContext, event) {
 	const { audience } = event;
+	const heroAsHanded = event.hero;
+	const wordsOrFact = event.fact === void 0 ? `"${event.text}"` : `recording "${event.fact.kind}"`;
+	if (heroAsHanded === void 0) throw new Error(`emit: the event ${wordsOrFact} names no hero. Every event names its hero: a hero's id, null for no hero, or THE_HERO_WHOSE_ORDER_IS_RESOLVING (docs/traps.md, "Every event names its hero").`);
+	const wordsAsHanded = event.text;
+	if (event.fact !== void 0 && wordsAsHanded !== void 0) throw new Error(`emit: the event ${wordsOrFact} has words as well: the views write a fact's words.`);
 	const line = {
 		type: event.type,
-		text: event.text,
+		text: event.fact === void 0 ? event.text : null,
 		actor: audience.actor ?? null,
 		targets: audience.realms ?? [],
 		provinceId: event.province ?? null,
@@ -20349,7 +21775,7 @@ function emit(turnContext, event) {
 		spy: event.spy ?? false,
 		system: event.system ?? false,
 		armyEstimate: event.armyEstimate ?? null,
-		charId: event.hero === "none" ? null : event.hero ?? turnContext._logCtx.charId,
+		charId: event.hero === THE_HERO_WHOSE_ORDER_IS_RESOLVING ? theHeroWhoseOrderIsResolvingIfTheLineReachesHisRealm(turnContext, audience) : event.hero,
 		charIds: event.heroes ?? null,
 		phase: event.phase === "none" ? null : event.phase ?? turnContext._logCtx.phase ?? turnContext._currentPhase ?? (turnContext._afterPhases ? 99 : null),
 		pinNotice: event.pinNotice ?? false,
@@ -20361,67 +21787,64 @@ function emit(turnContext, event) {
 		line.gameEnd = event.gameEnd ?? false;
 	}
 	if (audience.except !== void 0) line.notFor = audience.except;
+	if (event.fact !== void 0) line.fact = event.fact;
 	turnContext.turnLog.push(line);
-	console.log(`[${event.type}] ${event.text}`);
+	console.log(`[${event.type}] ${event.fact === void 0 ? event.text : event.fact.kind}`);
 }
-/** Adds a line for everyone in the fight. */
-function narrate(narrative, text) {
-	narrative.push(text);
+/** A line's words, or the fact its words are written from, as an event takes them (emit's text or fact). */
+function theWordsOrTheFactOfALine(line) {
+	return typeof line === "string" ? { text: line } : { fact: line };
 }
-/** Adds a line for one realm alone, filed under its hero. */
-function narrateTo(narrative, realm, heroId, text) {
-	narrative.push({
-		text,
-		onlyPlayer: realm,
-		charId: heroId
-	});
+/** Adds a line to the fight: its words, or the fact they are written from. */
+function narrate(narrative, line) {
+	narrative.push(line);
 }
 /** Adds lines already written for a fight, each as it is (for everyone, or for one realm alone): a duel's narrative
 *  inside a battle's, a battle's grid and ladder rows. */
 function narrateAll(narrative, lines) {
 	narrative.push(...lines);
 }
-/** Adds lines for everyone in the fight before the line at `index` (a host's forming-up before "Battle for …", a plea
-*  before the blow it begged against). */
-function narrateAt(narrative, index, texts) {
-	narrative.splice(index, 0, ...texts);
+/** Adds lines to the fight before the line at `index` (a host's forming-up before "Battle for …", a plea before the
+*  blow it begged against). */
+function narrateAt(narrative, index, lines) {
+	narrative.splice(index, 0, ...lines);
 }
 /** Takes the lines from `index` on out of a fight's narrative (a killing blow that never landed), and returns them. */
 function takeBackLinesFrom(narrative, index) {
 	return narrative.splice(index);
 }
 function emitNarrLine(turnContext, line, fight) {
-	if (typeof line === "object") {
-		if (line.onlyPlayer == null) {
-			emit(turnContext, {
-				...fight,
-				text: line.text
-			});
-			return;
-		}
+	if (typeof line === "string") {
 		emit(turnContext, {
 			...fight,
-			text: line.text,
-			audience: {
-				realms: [line.onlyPlayer],
-				actor: null
-			},
-			heroes: null,
-			hero: line.charId ?? fight.hero
+			text: line
+		});
+		return;
+	}
+	if (!isForItsHerosRealmAlone(line)) {
+		emit(turnContext, {
+			...fight,
+			fact: line
 		});
 		return;
 	}
 	emit(turnContext, {
 		...fight,
-		text: line
+		fact: line,
+		audience: {
+			realms: [line.realm],
+			actor: null
+		},
+		heroes: null,
+		hero: ("hero" in line ? line.hero : void 0) ?? fight.hero
 	});
 }
-function notifyTarget(turnContext, targetChar, text, ph, type) {
+function notifyTarget(turnContext, targetChar, line, ph, type) {
 	if (!targetChar) return;
 	const _ph = ph ?? turnContext._logCtx.phase ?? turnContext._currentPhase;
 	emit(turnContext, {
 		type: type ?? "system",
-		text,
+		...theWordsOrTheFactOfALine(line),
 		audience: {
 			actor: null,
 			realms: targetChar.player != null ? [targetChar.player] : []
@@ -20453,23 +21876,23 @@ function logSplit(turnContext, type, privText, pubText, place) {
 			except: [actor].concat(alsoNotFor ?? []).filter((x) => x != null)
 		},
 		province: line.province,
-		hero: "none",
+		hero: null,
 		phase: line.phase,
 		form: "bare"
 	});
 }
-function notifyProvinceOwner(turnContext, prov, text, casterPlayer, ph) {
+function notifyProvinceOwner(turnContext, prov, line, casterPlayer, ph) {
 	if (prov?.owner == null || prov.owner === casterPlayer) return;
 	const _ph = ph ?? turnContext._logCtx.phase ?? turnContext._currentPhase;
 	emit(turnContext, {
 		type: "system",
-		text,
+		...theWordsOrTheFactOfALine(line),
 		audience: {
 			actor: null,
 			realms: [prov.owner]
 		},
 		province: prov.id,
-		hero: "none",
+		hero: null,
 		phase: _ph ?? "none",
 		form: "bare"
 	});
@@ -20513,6 +21936,7 @@ function writeDeferredSkillLines(turnContext, list, inPlace) {
 }
 //#endregion
 //#region src/engine/world/map-helpers.ts
+var isThere = (p) => Boolean(p);
 function getNeighborsP(prov, cols, rows, provinces) {
 	const { row, col } = prov;
 	return (row % 2 === 0 ? [
@@ -20534,20 +21958,21 @@ function getNeighborsP(prov, cols, rows, provinces) {
 		if (nr < 0 || nr >= rows) return null;
 		const nc = ((col + dc) % cols + cols) % cols;
 		return provinces[nr * cols + nc];
-	}).filter(Boolean);
+	}).filter(isThere);
 }
 var _WRAITH_DOWN = { ...KC_QUALITY_DOWN };
 function applyWraithTouch(friendly, enemy, narr) {
 	if (!Array.isArray(friendly) || !Array.isArray(enemy)) return;
-	if (!friendly.some((a) => a && a._isWraith)) return;
+	if (!friendly.some((a) => a?._isWraith)) return;
 	const tiers = QUALITY_TIERS.slice();
-	const dem = enemy.filter((a) => a && tiers.indexOf(a.quality) > 0);
+	const dem = enemy.filter((a) => !!a && tiers.indexOf(a.quality) > 0);
 	if (dem.length === 0) return;
 	const maxT = Math.max.apply(null, dem.map((a) => tiers.indexOf(a.quality)));
 	const top = dem.filter((a) => tiers.indexOf(a.quality) === maxT);
 	const v = top[Math.floor(kcRng() * top.length)];
+	if (!v) return;
 	const was = v.quality;
-	v.quality = _WRAITH_DOWN[v.quality] || v.quality;
+	v.quality = _WRAITH_DOWN[v.quality] ?? v.quality;
 	if (narr) narrate(narr, `  \u2620 Wraith's Touch withers ${v.unitName || v.type} \u2014 permanently reduced from ${was} to ${v.quality}.`);
 }
 var _PH_TIERS = QUALITY_TIERS.slice();
@@ -20558,13 +21983,16 @@ function injectPhantoms(ch, real) {
 	if (!ch || !Array.isArray(ch._phantoms) || ch._phantoms.length === 0 || !Array.isArray(ch.armies)) return;
 	const byTag = {};
 	ch.armies.forEach((a) => {
-		if (a && a._phTag && !a._phantom) byTag[a._phTag] = a;
+		if (a?._phTag && !a._phantom) byTag[a._phTag] = a;
 	});
 	ch._phantoms = ch._phantoms.filter((ph) => ph && byTag[ph._phantomOf]);
 	if (real && real !== ch) real._phantoms = ch._phantoms;
+	const armies = ch.armies;
 	ch._phantoms.forEach((ph) => {
+		if (!ph) return;
 		const o = byTag[ph._phantomOf];
-		const _baseNm = o.unitName && o.unitName !== o.type && !String(o.unitName).startsWith("undefined") ? o.unitName : o.type;
+		if (!o) return;
+		const _baseNm = o.unitName && o.unitName !== o.type && !o.unitName.startsWith("undefined") ? o.unitName : o.type;
 		const _phQ = _phBetterQuality(ph.quality || o.quality, o.quality);
 		const copy = {
 			type: o.type,
@@ -20577,7 +22005,7 @@ function injectPhantoms(ch, real) {
 		if (o._isSkeletal) copy._isSkeletal = true;
 		if (o._tacUp) copy._tacUp = true;
 		if (o._drumUp) copy._drumUp = true;
-		ch.armies.push(copy);
+		armies.push(copy);
 	});
 }
 function clearPhantomCopies(ch, lost, real) {
@@ -20585,7 +22013,7 @@ function clearPhantomCopies(ch, lost, real) {
 	const store = real && Array.isArray(real._phantoms) ? real._phantoms : ch._phantoms;
 	if (Array.isArray(ch.armies) && Array.isArray(store)) {
 		ch.armies.forEach((a) => {
-			if (a && a._phantom) {
+			if (a?._phantom) {
 				const rec = store.find((ph) => ph && ph._phantomOf === a._phantomOf && !ph._synced);
 				if (rec) {
 					rec.quality = _phBetterQuality(a.quality, rec.quality || a.quality);
@@ -20597,7 +22025,7 @@ function clearPhantomCopies(ch, lost, real) {
 			if (ph) delete ph._synced;
 		});
 	}
-	if (Array.isArray(ch.armies)) ch.armies = ch.armies.filter((a) => !(a && a._phantom));
+	if (Array.isArray(ch.armies)) ch.armies = ch.armies.filter((a) => !a?._phantom);
 	if (lost) {
 		ch._phantoms = [];
 		if (real) real._phantoms = [];
@@ -20636,7 +22064,9 @@ function neighborInDir(turnContext, prov, dir) {
 	];
 	const idx = HEX_DIRS.indexOf(dir);
 	if (idx < 0) return null;
-	const [dr, dc] = (row % 2 === 0 ? even : odd)[idx];
+	const step = (row % 2 === 0 ? even : odd)[idx];
+	if (!step) throw new TypeError("no step to a neighbour in that direction");
+	const [dr, dc] = step;
 	const nr = row + dr;
 	if (nr < 0 || nr >= rows) return null;
 	const nc = ((col + dc) % cols + cols) % cols;
@@ -20983,6 +22413,8 @@ var BATTLE_FRONT_RANGE = {
 	jungle: [4, 6],
 	mountain: [2, 4]
 };
+/** The same table, read by any terrain: one it doesn't hold reads the plain's. */
+var FRONT_RANGE_ON = BATTLE_FRONT_RANGE;
 var BATTLE_FLANK_TERRAINS = /* @__PURE__ */ new Set(["plain", "desert"]);
 var BATTLE_LINE_MULTS = [
 	1,
@@ -21004,20 +22436,27 @@ var GRID_FLY_TYPES = new Set(KC_UNIT_CLASS.aerial);
 var GRID_CAV_TYPES = new Set(KC_UNIT_CLASS.cavalry);
 var GRID_SEA_TYPES = new Set(KC_UNIT_CLASS.sea);
 function rollBattleWidth(terrain) {
-	const r = BATTLE_FRONT_RANGE[terrain] || BATTLE_FRONT_RANGE.plain;
+	const r = FRONT_RANGE_ON[terrain] ?? BATTLE_FRONT_RANGE.plain;
 	return r[0] + Math.floor(kcRng() * (r[1] - r[0] + 1));
 }
 function battleFrontWidth(terrain) {
-	const r = BATTLE_FRONT_RANGE[terrain] || BATTLE_FRONT_RANGE.plain;
+	const r = FRONT_RANGE_ON[terrain] ?? BATTLE_FRONT_RANGE.plain;
 	return Math.round((r[0] + r[1]) / 2);
 }
+/** The discoveries by id, as this file reads them: discoveries.ts keeps its ts-nocheck line, so its table is `{}` to the
+*  compiler. */
+var DISCOVERY_BY_ID = DISC_BY_ID;
+/** A discovery's `lines` that flankLineMults takes: a list of four (its numbers are the data file's). */
+function isFourLineMultipliers(l) {
+	return Array.isArray(l) && l.length === 4;
+}
 function flankLineMults() {
-	const l = typeof DISC_BY_ID !== "undefined" && DISC_BY_ID.sd09 && DISC_BY_ID.sd09.effect && DISC_BY_ID.sd09.effect.lines;
-	return Array.isArray(l) && l.length === 4 ? l : BATTLE_LINE_MULTS_FLANK;
+	const l = DISCOVERY_BY_ID["sd09"]?.effect?.lines;
+	return isFourLineMultipliers(l) ? l : BATTLE_LINE_MULTS_FLANK;
 }
 function battleRole(row, terrain) {
-	const t = row && row.a && row.a.type;
-	if (t == null) return row && row.fly ? "fly" : "foot";
+	const t = row?.a?.type;
+	if (t == null) return row?.fly ? "fly" : "foot";
 	if (GRID_FLY_TYPES.has(t)) return "fly";
 	if (terrain !== "sea" && GRID_CAV_TYPES.has(t)) return "cav";
 	if (unitTypeOf(t) === "ranged") return "arc";
@@ -21079,18 +22518,18 @@ var UNIT_SHORT = {
 	"Darkness Elemental": "DrkEl"
 };
 function shortUnit(row) {
-	const t = row && row.a && row.a.type || row && row.name || "unit";
-	return UNIT_SHORT[t] || String(t).replace(/[^A-Za-z]/g, "").slice(0, 5);
+	const t = (row?.a ? row.a.type : "") || (row?.name ?? "") || "unit";
+	return UNIT_SHORT[t] ?? t.replace(/[^A-Za-z]/g, "").slice(0, 5);
 }
 function battleGrid(rows, width, terrain, opts) {
-	opts = opts || {};
+	opts = opts ?? {};
 	const W = Math.max(1, width | 0);
 	const mults = opts.flank ? flankLineMults() : BATTLE_LINE_MULTS;
-	const tac = Math.max(0, Math.min(BATTLE_FLANK_TAC_CAP, opts.tac | 0));
-	const R = (rows || []).filter(Boolean).map((r) => ({
+	const tac = Math.max(0, Math.min(BATTLE_FLANK_TAC_CAP, Number(opts.tac) | 0));
+	const R = (rows ?? []).filter((r) => Boolean(r)).map((r) => ({
 		r,
 		role: battleRole(r, terrain),
-		s: +r.base || 0
+		s: Number(r.base) || 0
 	}));
 	const byS = (a, b) => b.s - a.s;
 	const fly = R.filter((x) => x.role === "fly").sort(byS);
@@ -21103,8 +22542,9 @@ function battleGrid(rows, width, terrain, opts) {
 		cav = cav.slice(slots);
 	} else if (slots) {
 		const i = cav.findIndex((x) => abilityFlanksRough(x, terrain));
-		if (i >= 0) {
-			flanks = [cav[i]];
+		const rider = cav[i];
+		if (i >= 0 && rider) {
+			flanks = [rider];
 			cav = cav.filter((_, k) => k !== i);
 		}
 	}
@@ -21118,22 +22558,28 @@ function battleGrid(rows, width, terrain, opts) {
 	const front = fighters.slice(0, W), spare = fighters.slice(W);
 	const back = arcs.slice(0, front.length);
 	let arcLeft = arcs.slice(front.length);
-	while (front.length < W && arcLeft.length) front.push(arcLeft.shift());
+	while (front.length < W && arcLeft.length) {
+		const next = arcLeft.shift();
+		if (!next) break;
+		front.push(next);
+	}
 	const pool = back.concat(spare, arcLeft);
 	const second = pool.slice(0, W), reserve = pool.slice(W);
 	const mid = (W - 1) / 2, order = [...Array(W).keys()].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
-	const frontCells = Array(W).fill(null), secondCells = Array(W).fill(null);
+	const frontCells = new Array(W).fill(null), secondCells = new Array(W).fill(null);
 	{
 		const n = front.length, off = Math.floor((W - n) / 2);
 		const occ = [...Array(n).keys()].map((k) => k + off).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
 		front.forEach((x, k) => {
-			frontCells[occ[k]] = x;
+			const col = occ[k];
+			if (col !== void 0) frontCells[col] = x;
 		});
 	}
 	{
 		const a = second.filter((x) => x.role === "arc"), o = second.filter((x) => x.role !== "arc");
 		order.forEach((c) => {
-			if (frontCells[c] && frontCells[c].role !== "arc" && a.length) secondCells[c] = a.shift();
+			const f = frontCells[c];
+			if (f && f.role !== "arc" && a.length) secondCells[c] = a.shift();
 		});
 		const q = a.concat(o);
 		order.forEach((c) => {
@@ -21155,11 +22601,11 @@ function battleGrid(rows, width, terrain, opts) {
 		fly,
 		cap: isFinite(cap) ? cap : null,
 		mults,
-		frontSet: frontCells.filter(Boolean).map((x) => x.role).sort().join()
+		frontSet: frontCells.filter((x) => Boolean(x)).map((x) => x.role).sort().join()
 	});
 }
 function battleRegrid(g) {
-	const W = g.W, mults = g.mults || BATTLE_LINE_MULTS, cap = g.cap == null ? Infinity : g.cap;
+	const W = g.W, mults = g.mults ?? BATTLE_LINE_MULTS, cap = g.cap ?? Infinity;
 	const units = [];
 	let total = 0;
 	const put = (x, place, col, mult, why) => {
@@ -21191,15 +22637,22 @@ function battleRegrid(g) {
 		else if (typeOfX(x) === "Titan Warbeasts") put(x, "second", c, 1, "Colossal Bulk: full strength from the second line");
 		else put(x, "second", c, mults[1], "second line");
 	});
-	g.reserve.forEach((x, k) => put(x, "reserve", k, k < W ? mults[2] : mults[3], k < W ? "reserve" : "deep reserve"));
-	g.flanks.forEach((x, k) => put(x, "flank", k, 1, "on the flank"));
-	g.fly.forEach((x, k) => put(x, "air", k, k < cap ? 1 : BATTLE_FLYER_BEYOND_CAP, k < cap ? "in the air" : "in the air, beyond the line"));
-	g.units = units;
-	g.total = total;
-	return g;
+	g.reserve.forEach((x, k) => {
+		put(x, "reserve", k, k < W ? mults[2] : mults[3], k < W ? "reserve" : "deep reserve");
+	});
+	g.flanks.forEach((x, k) => {
+		put(x, "flank", k, 1, "on the flank");
+	});
+	g.fly.forEach((x, k) => {
+		put(x, "air", k, k < cap ? 1 : BATTLE_FLYER_BEYOND_CAP, k < cap ? "in the air" : "in the air, beyond the line");
+	});
+	return Object.assign(g, {
+		units,
+		total
+	});
 }
 function battleLineTotal(rows, width, flank, opts) {
-	return battleGrid(rows, width, opts && opts.terrain || null, Object.assign({}, opts || {}, { flank })).total;
+	return battleGrid(rows, width, (opts?.terrain ?? "") || null, Object.assign({}, opts ?? {}, { flank })).total;
 }
 var GROUND_WORDS = {
 	plain: ["open ground", "allows"],
@@ -21210,27 +22663,43 @@ var GROUND_WORDS = {
 	sea: ["open water", "allows"]
 };
 function battleWidthLine(terrain, W) {
-	const g = GROUND_WORDS[terrain] || [String(terrain || "ground"), "allows"];
-	return `📊 Battle lines — the ${g[0]} ${g[1]} a front of ${W}.`;
+	const g = GROUND_WORDS[terrain] ?? [terrain || "ground", "allows"];
+	return {
+		kind: "the ground allows a front of a width",
+		groundWords: g[0],
+		allowsWord: g[1],
+		frontWidth: W
+	};
 }
 function battleGridLines(label, g, defender) {
 	if (!g) return [];
 	const cell = (x) => (x ? shortUnit(x.r) : "·").padEnd(5).slice(0, 5);
-	const lab = String(label || "").split(/\s+/)[0].slice(0, 8).padEnd(8);
+	const lab = ((label ?? "").split(/\s+/)[0] ?? "").slice(0, 8).padEnd(8);
 	const extras = [];
 	if (g.flanks.length) extras.push("flanks: " + g.flanks.map((x) => shortUnit(x.r)).join(", "));
 	if (g.fly.length) extras.push("air: " + g.fly.map((x) => shortUnit(x.r)).join(", "));
 	if (g.reserve.length) extras.push("reserve: " + g.reserve.map((x) => shortUnit(x.r)).join(", "));
-	const l1 = `📊 ${lab} 1st │ ${g.front.map(cell).join(" ")} │${extras.length ? " " + extras.join(" · ") : ""}`;
-	const l2 = g.second.some(Boolean) ? `📊 ${lab} 2nd │ ${g.second.map(cell).join(" ")} │` : null;
-	return defender ? [l2, l1].filter(Boolean) : [l1, l2].filter(Boolean);
+	const l1 = {
+		kind: "a side's front line in the battle grid",
+		sideLabel: lab,
+		frontLineCells: g.front.map(cell).join(" "),
+		wordsIfFlanksAirOrReserve: extras.length ? " " + extras.join(" · ") : ""
+	};
+	const l2 = g.second.some(Boolean) ? {
+		kind: "a side's second line in the battle grid",
+		sideLabel: lab,
+		secondLineCells: g.second.map(cell).join(" ")
+	} : null;
+	const isALine = (l) => Boolean(l);
+	return defender ? [l2, l1].filter(isALine) : [l1, l2].filter(isALine);
 }
 function battleGridStage(g) {
 	const groups = /* @__PURE__ */ new Map();
 	g.units.forEach((u) => {
-		const k = `${u.place} ×${u.mult}`;
-		if (!groups.has(k)) groups.set(k, []);
-		groups.get(k).push(shortUnit(u.row));
+		const k = `${u.place} ×${String(u.mult)}`;
+		const group = groups.get(k);
+		if (group) group.push(shortUnit(u.row));
+		else groups.set(k, [shortUnit(u.row)]);
 	});
 	return [...groups].map(([k, v]) => `${k}: ${v.join(", ")}`).join("; ");
 }
@@ -21255,149 +22724,80 @@ var BATTLE_FACING = {
 	turned: .75
 };
 var faceMult = (t, a, b) => {
-	const r = t && t[a];
-	const m = r && r[b];
+	const m = (t?.[a])?.[b];
 	return typeof m === "number" ? m : 1;
 };
+/** BATTLE_FACING.back, read by any role. */
+var BACK_MULT_OF = BATTLE_FACING.back;
 var backMult = (r) => {
-	const m = BATTLE_FACING.back[r];
+	const m = BACK_MULT_OF[r];
 	return typeof m === "number" ? m : 1;
 };
 var ABILITY_WOODS = /* @__PURE__ */ new Set(["forest", "jungle"]);
-var GRID_GARRISON_TYPES = new Set(KC_UNIT_CLASS.garrison);
-var typeOfX = (x) => x && x.r && x.r.a && x.r.a.type;
+/** A cell's unit type: any cell, or an empty place (null). */
+var typeOfX = (x) => x?.r?.a?.type;
 var abilityHas = (g, type) => !!g && [
 	"front",
 	"second",
 	"reserve",
 	"flanks",
 	"fly"
-].some((k) => (g[k] || []).some((x) => x && typeOfX(x) === type));
+].some((k) => (g[k] ?? []).some((x) => x && typeOfX(x) === type));
 var GRID_MONSTER_TYPES = new Set(KC_UNIT_CLASS.monster);
 function abilityFlanksRough(x, terrain) {
 	const t = typeOfX(x);
 	return ABILITY_WOODS.has(terrain) && (t === "Stag Riders" || t === "Unicorn Herd") || terrain === "mountain" && t === "Ironhoof Rams";
 }
 function abilityFront(x, e, terrain, where, meIsAtk) {
-	const t = typeOfX(x), et = typeOfX(e);
-	let m = faceMult(BATTLE_FACING.front, x.role, e.role);
-	const names = [];
-	if (t === "Men-at-Arms" && e.role === "cav") {
-		m = 1.25;
-		names.push("Halberds");
-	}
-	if (t === "Gilded Lances" && e.role === "foot") {
-		m = 1.15;
-		names.push("Lance Charge");
-	}
-	if (t === "Orc Berserkers" && e.role === "foot") {
-		m *= 1.15;
-		names.push("Frenzy");
-	}
-	if (t === "Warg Riders" && e.role === "cav") {
-		m = 1.25;
-		names.push("Wolves Panic Horses");
-	}
-	if (t === "Eagle Riders" && e.role === "cav") {
-		m = 1.25;
-		names.push("Stoop on the Horses");
-	}
-	if (t === "Free Lances" && where === "duel") {
-		m *= 1.15;
-		names.push("Harriers");
-	}
-	if (t === "Forest Wardens" && ABILITY_WOODS.has(terrain)) {
-		m *= 1.15;
-		names.push("Woodland Skirmish");
-	}
-	if (t === "Orc Garrison" && !meIsAtk && e.role === "foot") {
-		m *= 1.15;
-		names.push("Bloodthirsty");
-	}
-	if (t === "Great Bears" && e.role === "foot") {
-		m *= 1.15;
-		names.push("Maul");
-	}
-	if (t === "Mammoth Host" && e.role === "foot") {
-		m *= 1.15;
-		names.push("Trample");
-	}
-	if (t === "Dread Hydras" && e.role === "foot") {
-		m *= 1.25;
-		names.push("Many Heads");
-	}
-	if (t === "Unicorn Herd" && (GRID_MONSTER_TYPES.has(et) || e.r && e.r.a && e.r.a._isSkeletal)) {
-		m *= 1.25;
-		names.push("Purity");
-	}
-	if (et === "Shieldwall Levies" && x.role === "cav" && m > .75) {
-		if (t === "Unicorn Herd") names.push("Purity breaks the Spear Hedge");
-		else {
-			m = .75;
-			names.push("Spear Hedge");
-		}
-	}
-	if (et === "Stone Giants" && x.role === "cav" && m > .75) {
-		if (t === "Unicorn Herd") names.push("Purity breaks the Boulder Wall");
-		else {
-			m = .75;
-			names.push("Boulder Wall");
-		}
-	}
-	if (et === "Dwarven Guard" && x.role === "foot") {
-		m *= .85;
-		names.push("Unbreakable");
-	}
-	if (et === "Dwarf Garrison" && x.role === "foot" && terrain === "mountain") {
-		m *= .9;
-		names.push("Stone Halls");
-	}
-	if (et === "Elven Garrison" && x.role === "cav" && ABILITY_WOODS.has(terrain)) {
-		m *= .85;
-		names.push("Thorn Hedge");
-	}
+	const et = typeOfX(e);
+	const moved = theStrengthOfAUnitMeetingAnother({
+		theUnit: {
+			unitType: typeOfX(x),
+			role: x.role
+		},
+		theUnitItMeets: {
+			unitType: et,
+			role: e.role
+		},
+		theUnitItMeetsIsAMonsterOrSkeletal: GRID_MONSTER_TYPES.has(et) || !!e.r.a?._isSkeletal,
+		ground: terrain,
+		where,
+		theUnitsSideAttacks: meIsAtk
+	}, faceMult(BATTLE_FACING.front, x.role, e.role));
 	return {
-		m,
-		why: names.map((n) => ", " + n).join("")
+		m: moved.multiplier,
+		why: moved.words.map((n) => ", " + n).join("")
 	};
 }
 function abilityBack(x, e) {
-	const t = typeOfX(x), et = typeOfX(e);
-	let m = backMult(e.role);
-	const names = [];
-	if (t === "Yeoman Longbows" && e.role === "cav") {
-		m = 1;
-		names.push("Bodkin Points");
-	}
-	if (t === "Elven Bowmen" && e.role === "cav") {
-		m = 1.25;
-		names.push("Volley at the Charge");
-	}
-	if (t === "Shadow Archers" && e.role === "arc") {
-		m = 1.25;
-		names.push("Marksmen");
-	}
-	if (t === "Ironwood Crossbows" && (UNIT_BASE_STR[et] || 0) >= 6) {
-		m *= 1.25;
-		names.push("Armour-Piercing");
-	}
-	if (t === "Mountain Guns") {
-		m *= 1.15;
-		names.push("Bombard");
-	}
-	if (et === "Goblin Horde") {
-		m *= .75;
-		names.push("Arrow Fodder");
-	}
+	const et = typeOfX(e);
+	const moved = theStrengthOfAShooterOverTheLine({
+		theShooter: {
+			unitType: typeOfX(x),
+			role: x.role
+		},
+		theTarget: {
+			unitType: et,
+			role: e.role
+		},
+		theTargetsBaseStrength: et !== void 0 ? UNIT_BASE_STR[et] ?? 0 : 0
+	}, backMult(e.role));
 	return {
-		m,
-		why: names.map((n) => ", " + n).join("")
+		m: moved.multiplier,
+		why: moved.words.map((n) => ", " + n).join("")
 	};
 }
+/** A placed unit as the rule registry's stages read it: its type and its part in the line (none for an empty place). */
+var inTheLine = (x) => ({
+	unitType: typeOfX(x),
+	role: x.role
+});
+var inTheLineOrNone = (x) => x ? inTheLine(x) : null;
 function battleEngage(gA, gD) {
 	const span = (g) => {
 		const i = g.front.map((x, k) => x ? k : -1).filter((k) => k >= 0);
-		return i.length ? [i[0], i[i.length - 1]] : null;
+		const first = i[0], last = i[i.length - 1];
+		return first !== void 0 && last !== void 0 ? [first, last] : null;
 	};
 	const over = (me, ts) => {
 		const L = [], R = [];
@@ -21436,8 +22836,10 @@ function battleEngage(gA, gD) {
 		let side = "L";
 		while (e.free > 0 && (o.L.length || o.R.length)) {
 			const s = o[side].length ? side : side === "L" ? "R" : "L";
+			const col = o[s].shift();
+			if (col === void 0) break;
 			e.blocking.push({
-				col: o[s].shift(),
+				col,
 				side: s
 			});
 			e.free--;
@@ -21484,18 +22886,28 @@ function battleFaceSide(me, them, mine, theirs, terrain, meIsAtk) {
 		if (hitR) endHit.add(idx[idx.length - 1]);
 	}
 	const footish = (x) => !!x && x.role === "foot";
-	const anchored = idx.length > 0 && footish(me.front[idx[0]]) && footish(me.front[idx[idx.length - 1]]);
+	const firstCol = idx[0], lastCol = idx[idx.length - 1];
+	const anchored = firstCol !== void 0 && lastCol !== void 0 && footish(me.front[firstCol]) && footish(me.front[lastCol]);
 	const freeRiders = them.flanks.slice(theirs.duel + theirs.blocking.length);
-	const rams = freeRiders.some((x) => typeOfX(x) === "Ironhoof Rams");
-	const turned = BATTLE_FLANK_TERRAINS.has(terrain) && freeRiders.length > 0 && (!anchored || rams);
-	let terrorCol = -1;
-	if (abilityHas(them, "Wyvern Riders")) me.front.forEach((x, c) => {
-		if (x && (terrorCol < 0 || x.s > me.front[terrorCol].s)) terrorCol = c;
-	});
+	const horns = theAbilityThatTurnsAnAnchoredLine({ theFreeEnemyRiders: freeRiders.map(inTheLine) });
+	const turned = BATTLE_FLANK_TERRAINS.has(terrain) && freeRiders.length > 0 && (!anchored || horns !== null);
+	const marks = theMarksTheEnemyLineLeavesOnMine({
+		theFront: me.front,
+		theSecondLine: me.second,
+		theAir: me.fly
+	}, (t) => abilityHas(them, t));
+	/** The marks on a unit, in the stage's order: its multiplier and words after them. */
+	const marked = (x, m, why) => {
+		for (const mark of marks) if (mark.theUnitsMarked.includes(x)) {
+			m *= mark.factor;
+			why += ", " + mark.words;
+		}
+		return [m, why];
+	};
+	const theEnemyFront = them.front.filter((y) => Boolean(y));
 	me.front.forEach((x, c) => {
 		if (!x) return;
 		const e = them.front[c];
-		const t = typeOfX(x);
 		let m = 1, kind = "even", vs = null, why = shortUnit(x.r);
 		if (e) {
 			vs = e;
@@ -21519,41 +22931,27 @@ function battleFaceSide(me, them, mine, theirs, terrain, meIsAtk) {
 				why += " wraps the end";
 			}
 		}
+		const unit = inTheLine(x);
 		if (endHit.has(c)) {
-			const held = t === "Dwarven Guard" ? "Unbreakable" : t === "Forest Ents" ? "Rooted" : !meIsAtk && GRID_GARRISON_TYPES.has(t) ? "Hold the Gate" : null;
+			const held = theAbilityThatHoldsAUnitHitFromTheSide({
+				theUnit: unit,
+				theUnitsSideAttacks: meIsAtk
+			});
 			if (held) why += `, ${held}`;
 			else {
 				m *= BATTLE_FACING.sideHit;
 				why += ", hit from the side";
 			}
 		}
-		const s = me.second[c];
-		if ((t === "Shieldwall Levies" || t === "Human Garrison") && s && s.role === "arc") {
-			m *= 1.25;
-			why += ", Shieldwall";
-		}
-		if (t === "Shieldwall Levies" && [c - 1, c + 1].some((j) => me.front[j] && typeOfX(me.front[j]) === "Men-at-Arms")) {
-			m *= 1.1;
-			why += ", Sergeants";
-		}
-		if (t === "Orc Berserkers") {
-			const n = [c - 1, c + 1].filter((j) => me.front[j] && typeOfX(me.front[j]) === "Goblin Horde").length;
-			if (n) {
-				const g = 1 + Math.min(.3, .1 * n);
-				m *= g;
-				why += `, Driven Before Them ×${g.toFixed(1)}`;
-			}
-		}
-		if (c === terrorCol) {
-			m *= .85;
-			why += ", Terror From Above";
-		}
+		const beside = theStrengthOfAUnitBesideAndBehindOthers({
+			theUnit: unit,
+			theUnitsEitherSide: [inTheLineOrNone(me.front[c - 1]), inTheLineOrNone(me.front[c + 1])],
+			theUnitBehind: inTheLineOrNone(me.second[c])
+		}, m);
+		m = beside.multiplier;
+		why += beside.words.map((w) => ", " + w).join("");
+		[m, why] = marked(x, m, why);
 		put(x, m, kind, vs, why);
-	});
-	let dive = null;
-	if (abilityHas(them, "Noble Griffons")) me.second.forEach((x, c) => {
-		const f = me.front[c];
-		if (x && x.role === "arc" && f && f.role !== "arc" && (!dive || x.s > dive.s)) dive = x;
 	});
 	me.second.forEach((x, c) => {
 		if (!x) return;
@@ -21561,10 +22959,8 @@ function battleFaceSide(me, them, mine, theirs, terrain, meIsAtk) {
 		if (x.role === "arc" && f && f.role !== "arc") {
 			let e = them.front[c];
 			let m = 1, why = shortUnit(x.r);
-			if (typeOfX(x) === "Shadow Archers") {
-				const cands = them.front.filter(Boolean);
-				if (cands.length) e = cands.reduce((b, y) => abilityBack(x, y).m * y.s > abilityBack(x, b).m * b.s ? y : b);
-			}
+			const pick = theTargetAShooterPicks(inTheLine(x), () => theEnemyFront.map((y) => abilityBack(x, y).m * y.s));
+			if (pick !== null) e = theEnemyFront[pick];
 			if (e) {
 				const b = abilityBack(x, e);
 				m = b.m;
@@ -21572,43 +22968,40 @@ function battleFaceSide(me, them, mine, theirs, terrain, meIsAtk) {
 			} else why += " shoots at an empty column";
 			if (turned) {
 				m *= BATTLE_FACING.turned;
-				why += rams && anchored ? ", flank turned (Battering Horns)" : ", flank turned";
+				why += horns !== null && anchored ? `, flank turned (${horns})` : ", flank turned";
 			}
-			if (x === dive) {
-				m *= .75;
-				why += ", Griffon dive";
-			}
-			put(x, m, e ? "shoots" : "even", e || null, why);
+			[m, why] = marked(x, m, why);
+			put(x, m, e ? "shoots" : "even", e ?? null, why);
 		} else put(x, 1, "even", null, shortUnit(x.r));
 	});
-	me.reserve.forEach((x) => put(x, 1, "even", null, shortUnit(x.r)));
+	me.reserve.forEach((x) => {
+		put(x, 1, "even", null, shortUnit(x.r));
+	});
 	me.flanks.forEach((x, i) => {
 		if (i < mine.duel) {
 			const e = them.flanks[i];
+			if (!e) return;
 			const f = abilityFront(x, e, terrain, "duel", meIsAtk);
 			put(x, f.m, "duel", e, `${shortUnit(x.r)} duels ${shortUnit(e.r)}${f.why}`);
 		} else if (i < mine.duel + mine.blocking.length) {
-			const e = them.front[mine.blocking[i - mine.duel].col];
+			const block = mine.blocking[i - mine.duel];
+			if (!block) return;
+			const e = them.front[block.col];
 			const f = e ? abilityFront(x, e, terrain, "guard", meIsAtk) : {
 				m: 1,
 				why: ""
 			};
-			put(x, f.m, "guards", e || null, `${shortUnit(x.r)} guards the end v ${e ? shortUnit(e.r) : "nobody"}${f.why}`);
+			put(x, f.m, "guards", e ?? null, `${shortUnit(x.r)} guards the end v ${e ? shortUnit(e.r) : "nobody"}${f.why}`);
 		} else put(x, BATTLE_FACING.freeFlank, "free", null, `${shortUnit(x.r)} rides free`);
 	});
 	const enemyFlyers = them.fly.length > 0 || them.flanks.some((x) => x.role === "fly");
-	const storm = abilityHas(them, "Thunderbirds");
 	me.fly.forEach((x) => {
-		let m = 1, why = shortUnit(x.r), kind = "even";
-		if (typeOfX(x) === "Gnomish Gyrocopters" && enemyFlyers) {
-			m *= 1.25;
-			why += ", Flak Gunners";
-			kind = "faces";
-		}
-		if (storm) {
-			m *= .85;
-			why += ", Storm Wings";
-		}
+		const flyer = theStrengthOfAFlyer({
+			theFlyer: inTheLine(x),
+			theEnemyHasFlyers: enemyFlyers
+		});
+		const kind = flyer.words.length ? "faces" : "even";
+		const [m, why] = marked(x, flyer.multiplier, shortUnit(x.r) + flyer.words.map((w) => ", " + w).join(""));
 		put(x, m, kind, null, why);
 	});
 	return {
@@ -21632,7 +23025,7 @@ function battleFacing(gA, gD, terrain) {
 	};
 }
 function battleFacingStage(g) {
-	const f = g && g.face;
+	const f = g?.face;
 	if (!f) return "";
 	const groups = /* @__PURE__ */ new Map();
 	let even = 0;
@@ -21642,21 +23035,21 @@ function battleFacingStage(g) {
 			return;
 		}
 		const k = `${u.why} ${ladderFm(u.m)}`;
-		groups.set(k, (groups.get(k) || 0) + 1);
+		groups.set(k, (groups.get(k) ?? 0) + 1);
 	});
-	const parts = [...groups].map(([k, n]) => n > 1 ? `${k} (${n} units)` : k);
-	if (even) parts.push(`${even} even`);
+	const parts = [...groups].map(([k, n]) => n > 1 ? `${k} (${String(n)} units)` : k);
+	if (even) parts.push(`${String(even)} even`);
 	return parts.join("; ");
 }
 function battleFacedClauses(g, enemyOwner) {
 	const m = /* @__PURE__ */ new Map();
 	if (!g || !Array.isArray(g.units)) return m;
 	g.units.forEach((u) => {
-		const r = u && u.row, f = r && r._faced;
-		if (!r || !r.a) return;
-		const vs = f && f.vs && f.vs.a ? ownedUnitName(enemyOwner, f.vs.a) : null;
+		const r = u?.row, f = r?._faced;
+		if (!u || !r?.a) return;
+		const vs = f?.vs?.a ? ownedUnitName(enemyOwner, f.vs.a) : null;
 		let c = null;
-		if (vs) switch (f.kind) {
+		if (vs && f) switch (f.kind) {
 			case "faces":
 				c = `facing ${vs}`;
 				break;
@@ -21684,7 +23077,7 @@ function battleFacedClauses(g, enemyOwner) {
 			else if (k === "guards") c = "guarding the end of the line";
 			else if (p === "air" || r.fly) c = "fighting from the air";
 			else if (p === "reserve") c = "in the reserve";
-			else if (p === "second") c = /empty column/.test(f && f.why || "") ? "shooting at an empty column" : "in the second line";
+			else if (p === "second") c = (f?.why ?? "").includes("empty column") ? "shooting at an empty column" : "in the second line";
 			else c = "with nobody opposite";
 		}
 		m.set(r.a, c);
@@ -21693,10 +23086,10 @@ function battleFacedClauses(g, enemyOwner) {
 }
 var BATTLE_LINEUP_MAX = 30;
 function battleScout(explAtk, explDef) {
-	return (+explAtk || 0) > (+explDef || 0) ? "atk" : "def";
+	return (Number(explAtk) || 0) > (Number(explDef) || 0) ? "atk" : "def";
 }
 function battleWidthChoices(terrain, roll) {
-	const r = BATTLE_FRONT_RANGE[terrain] || BATTLE_FRONT_RANGE.plain;
+	const r = FRONT_RANGE_ON[terrain] ?? BATTLE_FRONT_RANGE.plain;
 	return [
 		roll - 1,
 		roll,
@@ -21708,7 +23101,7 @@ function battleLegal(g) {
 	if (f >= 0) {
 		for (let c = f; c <= l; c++) if (!occ[c]) return false;
 	}
-	return g.front.filter(Boolean).map((x) => x.role).sort().join() === g.frontSet;
+	return g.front.filter((x) => Boolean(x)).map((x) => x.role).sort().join() === g.frontSet;
 }
 function battleFrontsMeet(g1, g2) {
 	const sp = (g) => {
@@ -21725,7 +23118,9 @@ function battleFrontsMeet(g1, g2) {
 }
 function battleLineRatio(gA, gD, terrain, meIsAtk) {
 	battleFacing(gA, gD, terrain);
-	const r = Math.log(Math.max(gA.face.total, 1e-9) / Math.max(gD.face.total, 1e-9));
+	const atk = gA.face, def = gD.face;
+	if (!atk || !def) throw new TypeError("battleLineRatio: battleFacing has just faced both grids");
+	const r = Math.log(Math.max(atk.total, 1e-9) / Math.max(def.total, 1e-9));
 	return meIsAtk ? r : -r;
 }
 function battleBestSwap(me, them, terrain, meIsAtk) {
@@ -21738,9 +23133,11 @@ function battleBestSwap(me, them, terrain, meIsAtk) {
 		cells.push(["second", c]);
 	}
 	for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) {
-		const [ra, ca] = cells[i], [rb, cb] = cells[j], a = me[ra][ca], b = me[rb][cb];
+		const ci = cells[i], cj = cells[j];
+		if (!ci || !cj) continue;
+		const [ra, ca] = ci, [rb, cb] = cj, a = me[ra][ca], b = me[rb][cb];
 		if (!a && !b) continue;
-		if (a && b && a.role === b.role && a.s === b.s) continue;
+		if (a && b?.role === a.role && a.s === b.s) continue;
 		me[ra][ca] = b;
 		me[rb][cb] = a;
 		if (battleLegal(me) && battleFrontsMeet(me, them)) {
@@ -21759,7 +23156,9 @@ function battleBestSwap(me, them, terrain, meIsAtk) {
 		battleFacing(gA, gD, terrain);
 		return null;
 	}
-	const [ra, ca] = cells[best[0]], [rb, cb] = cells[best[1]];
+	const from = cells[best[0]], to = cells[best[1]];
+	if (!from || !to) throw new TypeError("battleBestSwap: the best swap is of two of the cells");
+	const [ra, ca] = from, [rb, cb] = to;
 	const t = me[ra][ca];
 	me[ra][ca] = me[rb][cb];
 	me[rb][cb] = t;
@@ -21810,7 +23209,7 @@ function battleDeploy(rowsA, rowsD, o) {
 	const W = pick.w, gA = pick.gA, gD = pick.gD, me = scoutAtk ? gA : gD, other = scoutAtk ? gD : gA;
 	let lineup = 0;
 	while (lineup < BATTLE_LINEUP_MAX && battleBestSwap(me, other, o.terrain, scoutAtk)) lineup++;
-	const capT = (t) => Math.max(0, Math.min(BATTLE_FLANK_TAC_CAP, t | 0));
+	const capT = (t) => Math.max(0, Math.min(BATTLE_FLANK_TAC_CAP, Number(t) | 0));
 	let mo = capT(scoutAtk ? o.tacD : o.tacA), ms = capT(scoutAtk ? o.tacA : o.tacD);
 	const moves = {
 		scout: 0,
@@ -21847,13 +23246,26 @@ function battleDeploy(rowsA, rowsD, o) {
 }
 function battleScoutLine(d, atkName, defName, explAtk, explDef) {
 	const atk = d.scout === "atk", s = atk ? atkName : defName;
-	return `📊 Scouting — ${s} ${(atk ? explAtk : explDef) > (atk ? explDef : explAtk) ? `knows the ground better (${s}'s side has explored more of it than ${atk ? defName : atkName}'s)` : `knows the ground as well as the enemy (neither side has explored more of it), and the defender's claim stands`}: ${s} ${d.W === d.roll ? `takes the front of ${d.W} the dice allow` : d.W > d.roll ? `widens the front from ${d.roll} to ${d.W}` : `narrows the front from ${d.roll} to ${d.W}`} and lines up second${d.lineup ? ` (${d.lineup} ${d.lineup === 1 ? "adjustment" : "adjustments"})` : ""}.`;
+	return {
+		kind: "the scouting side chooses the front",
+		scoutName: s,
+		whyItScouts: (atk ? explAtk : explDef) > (atk ? explDef : explAtk) ? `knows the ground better (${s}'s side has explored more of it than ${atk ? defName : atkName}'s)` : `knows the ground as well as the enemy (neither side has explored more of it), and the defender's claim stands`,
+		scoutName2: s,
+		whatItDoesWithTheFront: d.W === d.roll ? `takes the front of ${String(d.W)} the dice allow` : d.W > d.roll ? `widens the front from ${String(d.roll)} to ${String(d.W)}` : `narrows the front from ${String(d.roll)} to ${String(d.W)}`,
+		wordsIfAdjustments: d.lineup ? ` (${String(d.lineup)} ${d.lineup === 1 ? "adjustment" : "adjustments"})` : ""
+	};
 }
 function battleMovesLine(d, atkName, defName) {
 	if (!d.moves.other && !d.moves.scout) return null;
 	const atk = d.scout === "atk", s = atk ? atkName : defName, o = atk ? defName : atkName;
-	const n = (k) => k === 0 ? "holds the line as it stands" : k === 1 ? "shifts the line once" : k === 2 ? "shifts the line twice" : `shifts the line ${k} times`;
-	return `📊 Tactics — ${o} ${n(d.moves.other)}; ${s} ${n(d.moves.scout)}.`;
+	const n = (k) => k === 0 ? "holds the line as it stands" : k === 1 ? "shifts the line once" : k === 2 ? "shifts the line twice" : `shifts the line ${String(k)} times`;
+	return {
+		kind: "each side shifts its battle line",
+		otherSideName: o,
+		otherSidesMoves: n(d.moves.other),
+		scoutName: s,
+		scoutsMoves: n(d.moves.scout)
+	};
 }
 //#endregion
 //#region src/engine/battle/ladder.ts
@@ -21902,18 +23314,66 @@ function ladderLines(role, name, rows, width, flank, forceMods, final, opt) {
 	const fm = (forceMods || []).filter((x) => x && Math.abs(x.m - 1) > 1e-9);
 	const hit = rows.filter((r) => (r._dmg || 0) > 1e-9);
 	const ground = rows.filter((r) => !r.fly).length;
-	const L = [`  ${role} (${name}): ${pl(nUnits, "unit")} — strength **${r0(final)}**`];
-	L.push(`    · Units: base ${r0(base)} → ${r0(unitSum)}${unitMods.length ? ` (${unitMods.join("; ")})` : ""}`);
-	if (cmd.length || r0(cmdSum) !== r0(unitSum)) L.push(`    · Command: ${r0(unitSum)} → ${r0(cmdSum)}${cmd.length ? ` (${cmd.join("; ")})` : ""}`);
-	L.push(fm.length ? `    · Whole force: ${r0(cmdSum)} ${fm.map((x) => `× ${x.label} ${ladderFm(x.m)}`).join(" ")} = ${r0(preSum)}` : `    · Whole force: no force-wide modifiers — ${r0(preSum)}`);
-	if (hit.length && r0(preSum - postSum) > 0) L.push(`    · Pre-battle volleys & spells: ${r0(preSum)} − ${r0(preSum - postSum)} = ${r0(postSum)} (${pl(hit.length, "unit")} hit; taken off the finished figures)`);
+	const L = [{
+		kind: "a side's strength ladder begins",
+		roleWords: role,
+		sideName: name,
+		unitsWords: pl(nUnits, "unit"),
+		strength: r0(final)
+	}];
+	L.push({
+		kind: "the strength ladder's units",
+		baseStrength: r0(base),
+		unitsStrength: r0(unitSum),
+		wordsIfUnitModifiers: unitMods.length ? ` (${unitMods.join("; ")})` : ""
+	});
+	if (cmd.length || r0(cmdSum) !== r0(unitSum)) L.push({
+		kind: "the strength ladder's command",
+		unitsStrength: r0(unitSum),
+		commandStrength: r0(cmdSum),
+		wordsIfCommand: cmd.length ? ` (${cmd.join("; ")})` : ""
+	});
+	L.push(fm.length ? {
+		kind: "the strength ladder's force-wide modifiers",
+		commandStrength: r0(cmdSum),
+		forceModifiersWords: fm.map((x) => `× ${x.label} ${ladderFm(x.m)}`).join(" "),
+		wholeForceStrength: r0(preSum)
+	} : {
+		kind: "the strength ladder has no force-wide modifiers",
+		wholeForceStrength: r0(preSum)
+	});
+	if (hit.length && r0(preSum - postSum) > 0) L.push({
+		kind: "the strength ladder's pre-battle damage",
+		wholeForceStrength: r0(preSum),
+		preBattleDamage: r0(preSum - postSum),
+		afterPreBattleDamage: r0(postSum),
+		unitsHitWords: pl(hit.length, "unit")
+	});
 	if (opt.grid) {
 		const face = opt.grid.face;
-		L.push(`    · Battle lines (front of ${opt.grid.W}): ${r0(postSum)} → ${face ? r0(lineTot) : "**" + r0(lineTot) + "**"} (${battleGridStage(opt.grid)})`);
-		if (face) L.push(`    · Who faces whom: ${r0(lineTot)} → **${r0(face.total)}** (${battleFacingStage(opt.grid)})`);
+		L.push({
+			kind: "the strength ladder's battle lines",
+			frontWidth: opt.grid.W,
+			afterPreBattleDamage: r0(postSum),
+			battleLinesStrengthWords: face ? r0(lineTot) : "**" + r0(lineTot) + "**",
+			gridStageWords: battleGridStage(opt.grid)
+		});
+		if (face) L.push({
+			kind: "the strength ladder's who faces whom",
+			battleLinesStrength: r0(lineTot),
+			facingStrength: r0(face.total),
+			facingStageWords: battleFacingStage(opt.grid)
+		});
 	} else if (ground > width) {
 		const m = flank ? flankLineMults() : BATTLE_LINE_MULTS;
-		L.push(`    · Battle lines: ${r0(postSum)} → **${r0(lineTot)}** (${pl(ground - width, "unit")} behind the ${width}-unit front at ${m.slice(1).map((x) => "×" + x).join(" / ")})`);
+		L.push({
+			kind: "the strength ladder's units behind the front",
+			afterPreBattleDamage: r0(postSum),
+			battleLinesStrength: r0(lineTot),
+			unitsBehindTheFrontWords: pl(ground - width, "unit"),
+			frontWidth: width,
+			lineMultipliersWords: m.slice(1).map((x) => "×" + x).join(" / ")
+		});
 	}
 	return L;
 }
@@ -21959,7 +23419,9 @@ var FORTUNE_CURVE = [
 function battleFortune() {
 	const u = kcRng();
 	for (let i = 1; i < FORTUNE_CURVE.length; i++) {
-		const [a, fa] = FORTUNE_CURVE[i - 1], [b, fb] = FORTUNE_CURVE[i];
+		const below = FORTUNE_CURVE[i - 1], above = FORTUNE_CURVE[i];
+		if (!below || !above) continue;
+		const [a, fa] = below, [b, fb] = above;
 		if (u <= fb) {
 			const S = a + (b - a) * ((u - fa) / (fb - fa));
 			return {
@@ -21979,7 +23441,9 @@ function fortuneCdf(x) {
 	const C = FORTUNE_CURVE;
 	if (x <= C[0][0]) return 0;
 	for (let i = 1; i < C.length; i++) {
-		const [a, fa] = C[i - 1], [b, fb] = C[i];
+		const below = C[i - 1], above = C[i];
+		if (!below || !above) continue;
+		const [a, fa] = below, [b, fb] = above;
 		if (x <= b) return fa + (fb - fa) * ((x - a) / (b - a));
 	}
 	return 1;
@@ -22005,13 +23469,13 @@ function fortuneNarrative(atkLabel, defLabel, atkBase, defBase, fort) {
 	const r0 = atkBase / defBase, r1 = atkBase * fort.atk / (defBase * fort.def);
 	const favoured = r0 >= 1 ? atkLabel : defLabel, winner = r1 >= 1 ? atkLabel : defLabel;
 	const pAtk = fortuneWinChance(r0), pFav = r0 >= 1 ? pAtk : 1 - pAtk;
-	const edge = `${favoured} holds ${fortuneEdgeText(r0)} (${dispFloor(pFav * 100)}% to win)`;
+	const edge = `${favoured} holds ${fortuneEdgeText(r0)} (${String(dispFloor(pFav * 100))}% to win)`;
 	const S = fort.S || 0, small = Math.abs(S) < Math.log(1.15);
 	let luck;
 	if (small) luck = `Fortune of battle: an even roll — luck played little part`;
 	else {
 		const side = S > 0 ? atkLabel : defLabel, tail = S > 0 ? 1 - fortuneCdf(S) : fortuneCdf(S);
-		luck = `Fortune of battle: luck ran ${tail <= .05 ? "strongly" : tail <= .2 ? "firmly" : "mildly"} with ${side}${tail < .25 ? ` (a 1-in-${Math.min(1e3, Math.max(4, Math.round(1 / Math.max(tail, 1e-4))))} roll)` : ""}`;
+		luck = `Fortune of battle: luck ran ${tail <= .05 ? "strongly" : tail <= .2 ? "firmly" : "mildly"} with ${side}${tail < .25 ? ` (a 1-in-${String(Math.min(1e3, Math.max(4, Math.round(1 / Math.max(tail, 1e-4)))))} roll)` : ""}`;
 	}
 	let outcome;
 	if (winner === favoured) outcome = small ? ` — **${winner} wins**.` : S > 0 === (winner === atkLabel) ? ` and widened the edge to ${fortuneEdgeNum(r1)} — **${winner} wins**.` : ` and trimmed the edge to ${fortuneEdgeNum(r1)} — not enough: **${winner} wins**.`;
@@ -22022,9 +23486,14 @@ function shuffleP(arr, rnd = kcRng) {
 	const a = [...arr];
 	for (let i = a.length - 1; i > 0; i--) {
 		const j = Math.floor(rnd() * (i + 1));
-		[a[i], a[j]] = [a[j], a[i]];
+		const ai = a[i], aj = a[j];
+		if (!isAPlaceIn(a, i, ai) || !isAPlaceIn(a, j, aj)) continue;
+		[a[i], a[j]] = [aj, ai];
 	}
 	return a;
+}
+function isAPlaceIn(list, k, read) {
+	return k in list && Object.is(list[k], read);
 }
 var ABILITIES_P = KC_SKILLS.slice();
 //#endregion
@@ -22113,20 +23582,24 @@ var HERO_FIRST_OVERFLOW = [
 ];
 var ALL_HERO_FIRSTS = (() => {
 	const set = /* @__PURE__ */ new Set();
-	Object.values(HERO_NAME_PARTS).forEach((v) => (v.firsts || []).forEach((x) => set.add(x)));
+	Object.values(HERO_NAME_PARTS).forEach((v) => {
+		(v?.firsts ?? []).forEach((x) => set.add(x));
+	});
 	HERO_FIRST_OVERFLOW.forEach((x) => set.add(x));
 	return [...set];
 })();
 var ALL_HERO_EPITHETS = (() => {
 	const set = /* @__PURE__ */ new Set();
-	Object.values(HERO_NAME_PARTS).forEach((v) => (v.epithets || []).forEach((x) => set.add(x)));
+	Object.values(HERO_NAME_PARTS).forEach((v) => {
+		(v?.epithets ?? []).forEach((x) => set.add(x));
+	});
 	HERO_EPITHET_OVERFLOW.forEach((x) => set.add(x));
 	return [...set];
 })();
 var _usedHeroFirsts = /* @__PURE__ */ new Set();
 var _usedHeroEpithets = /* @__PURE__ */ new Set();
 function _pickUnusedNamePart(prefPool, masterPool, usedSet) {
-	for (const pool of [prefPool || [], masterPool]) {
+	for (const pool of [prefPool ?? [], masterPool]) {
 		const shuffled = shuffleP(pool);
 		for (const x of shuffled) if (!usedSet.has(x)) {
 			usedSet.add(x);
@@ -22136,7 +23609,7 @@ function _pickUnusedNamePart(prefPool, masterPool, usedSet) {
 	return null;
 }
 function _escapesTheEnd(ch) {
-	return !!(ch && ch._unkillable);
+	return !!ch?._unkillable;
 }
 var _GARRETH_ESCAPES = [
 	" somehow slips the final blow and is gone before the dust settles.",
@@ -22146,16 +23619,16 @@ var _GARRETH_ESCAPES = [
 	" is run through — or seems to be — but slips free, whole and unbothered."
 ];
 function _garrethEscapeLine(ch) {
-	return `\u{1F340} ${ch && ch.name ? ch.name : "The wanderer"}${_GARRETH_ESCAPES[Math.floor(kcRng() * _GARRETH_ESCAPES.length)]}`;
+	return `\u{1F340} ${(ch?.name ?? "") || "The wanderer"}${String(_GARRETH_ESCAPES[Math.floor(kcRng() * _GARRETH_ESCAPES.length)])}`;
 }
 var _usedHeroNames = /* @__PURE__ */ new Set();
 function _toRoman(n) {
-	return [
+	return String([
 		"",
 		"X",
 		"XX",
 		"XXX"
-	][Math.floor(n / 1e3)] + [
+	][Math.floor(n / 1e3)]) + String([
 		"",
 		"C",
 		"CC",
@@ -22166,7 +23639,7 @@ function _toRoman(n) {
 		"DCC",
 		"DCCC",
 		"CM"
-	][Math.floor(n % 1e3 / 100)] + [
+	][Math.floor(n % 1e3 / 100)]) + String([
 		"",
 		"X",
 		"XX",
@@ -22177,7 +23650,7 @@ function _toRoman(n) {
 		"LXX",
 		"LXXX",
 		"XC"
-	][Math.floor(n % 100 / 10)] + [
+	][Math.floor(n % 100 / 10)]) + String([
 		"",
 		"I",
 		"II",
@@ -22188,14 +23661,14 @@ function _toRoman(n) {
 		"VII",
 		"VIII",
 		"IX"
-	][n % 10];
+	][n % 10]);
 }
 function nextHeroName(alignment) {
-	const parts = HERO_NAME_PARTS[alignment] || HERO_NAME_PARTS.Neutral;
+	const parts = HERO_NAME_PARTS[alignment] ?? HERO_NAME_PARTS.Neutral;
 	let first = _pickUnusedNamePart(parts.firsts, ALL_HERO_FIRSTS, _usedHeroFirsts);
 	let ep = _pickUnusedNamePart(parts.epithets, ALL_HERO_EPITHETS, _usedHeroEpithets);
 	if (!first) {
-		let n = 2, cand, base = ALL_HERO_FIRSTS[0] || "Wanderer";
+		let n = 2, cand, base = ALL_HERO_FIRSTS[0] ?? "Wanderer";
 		do {
 			cand = `${base} ${_toRoman(n)}`;
 			n++;
@@ -22204,7 +23677,7 @@ function nextHeroName(alignment) {
 		_usedHeroFirsts.add(first);
 	}
 	if (!ep) {
-		let n = 2, cand, base = ALL_HERO_EPITHETS[0] || "the Unknown";
+		let n = 2, cand, base = ALL_HERO_EPITHETS[0] ?? "the Unknown";
 		do {
 			cand = `${base} ${_toRoman(n)}`;
 			n++;
@@ -22228,8 +23701,8 @@ function seedUsedHeroNames(gameState) {
 	_usedHeroNames.clear();
 	_usedHeroFirsts.clear();
 	_usedHeroEpithets.clear();
-	(gameState.characters || []).forEach((c) => {
-		if (!c || !c.name) return;
+	(gameState.characters ?? []).forEach((c) => {
+		if (!c?.name) return;
 		_usedHeroNames.add(c.name);
 		const sp = c.name.indexOf(" ");
 		if (sp > 0) {
@@ -22259,7 +23732,7 @@ var LAIR_NAME_CONNECTIVES_P = [
 	"hard by"
 ];
 function lairBaseNameP(name, provName) {
-	let b = String(name || "").replace(/ \(\d+\)$/, "");
+	let b = (name ?? "").replace(/ \(\d+\)$/, "");
 	if (provName) for (const conn of LAIR_NAME_CONNECTIVES_P) {
 		const suf = ` ${conn} ${provName}`;
 		if (b.endsWith(suf)) {
@@ -22270,30 +23743,34 @@ function lairBaseNameP(name, provName) {
 	return b;
 }
 function pickLairNameP(monster, terrain, used, provName, rnd, provBases) {
-	const R = rnd || kcRng;
-	const here = provBases || /* @__PURE__ */ new Set();
+	const lairNamesOfAGuardian = LAIR_POOLS_MONSTER_P;
+	const lairNamesOfACategory = LAIR_POOLS_CAT_P;
+	const R = rnd ?? kcRng;
+	const here = provBases ?? /* @__PURE__ */ new Set();
 	const isSea = terrain === "sea";
-	const cat = monster && monster.cat || "beast";
-	const sig = monster && LAIR_POOLS_MONSTER_P[monster.name] || [];
-	const pools = LAIR_POOLS_CAT_P[cat] || LAIR_POOLS_CAT_P.beast;
-	const generic = isSea ? pools.sea || [] : pools.land || [];
-	const ordered = [...sig.filter(() => true), ...generic];
+	const cat = (monster?.cat ?? "") || "beast";
+	const sig = (monster ? lairNamesOfAGuardian[String(monster.name)] : void 0) ?? [];
+	const pools = lairNamesOfACategory[cat] ?? LAIR_POOLS_CAT_P.beast;
+	const generic = isSea ? pools.sea ?? [] : pools.land ?? [];
+	const ordered = [...sig, ...generic];
 	const free = ordered.filter((n) => !used.has(n) && !here.has(n));
 	if (free.length) {
 		const pick = free[Math.floor(R() * free.length)];
+		if (pick === void 0) throw new RangeError("the dice fell outside the names");
 		used.add(pick);
 		return pick;
 	}
 	const elementAll = [];
-	for (const k in LAIR_POOLS_CAT_P) {
-		const pl = LAIR_POOLS_CAT_P[k] || {};
-		(isSea ? pl.sea || [] : pl.land || []).forEach((n2) => {
-			if (elementAll.indexOf(n2) < 0) elementAll.push(n2);
+	for (const k in lairNamesOfACategory) {
+		const pl = lairNamesOfACategory[k] ?? {};
+		(isSea ? pl.sea ?? [] : pl.land ?? []).forEach((n2) => {
+			if (!elementAll.includes(n2)) elementAll.push(n2);
 		});
 	}
 	const freeAny = elementAll.filter((n2) => !used.has(n2) && !here.has(n2));
 	if (freeAny.length) {
 		const pick = freeAny[Math.floor(R() * freeAny.length)];
+		if (pick === void 0) throw new RangeError("the dice fell outside the names");
 		used.add(pick);
 		return pick;
 	}
@@ -22310,24 +23787,26 @@ function pickLairNameP(monster, terrain, used, provName, rnd, provBases) {
 		}
 	}
 	const base = bases[Math.floor(R() * bases.length)];
+	if (base === void 0) throw new RangeError("the dice fell outside the names");
 	let name = provName ? `${base} of ${provName}` : base;
 	let n = 2;
-	while (used.has(name)) name = `${provName ? `${base} of ${provName}` : base} (${n++})`;
+	while (used.has(name)) name = `${provName ? `${base} of ${provName}` : base} (${String(n++)})`;
 	used.add(name);
 	return name;
 }
 function renameLairsThematicP(gs) {
-	if (!gs || !gs.world || !Array.isArray(gs.world.provinces)) return 0;
+	if (!gs?.world || !Array.isArray(gs.world.provinces)) return 0;
 	const used = /* @__PURE__ */ new Set();
-	(gs.world.provinces || []).forEach((p) => {
-		(p && p.features || []).forEach((f) => {
-			if (f && f.ritualSite && f.name) used.add(f.name);
+	gs.world.provinces.forEach((p) => {
+		(p?.features ?? []).forEach((f) => {
+			if (f?.ritualSite && f.name) used.add(f.name);
 		});
 	});
 	let n = 0;
-	(gs.world.provinces || []).forEach((p) => {
+	gs.world.provinces.forEach((p) => {
 		const bases = /* @__PURE__ */ new Set();
-		(p && p.features || []).forEach((f) => {
+		if (!p) return;
+		(p.features ?? []).forEach((f) => {
 			if (!f || f.ritualSite || !f.monster) return;
 			f.name = pickLairNameP(f.monster, p.terrain, used, p.name, null, bases);
 			n++;
@@ -22394,8 +23873,8 @@ var _TRINKET_SLOTS = /* @__PURE__ */ new Set([
 	"combat"
 ]);
 function monsterCat(m) {
-	if (m && m.cat) return m.cat;
-	const n = (m && m.name || "").toLowerCase();
+	if (m?.cat) return m.cat;
+	const n = (m?.name ?? "").toLowerCase();
 	if (/lich|skelet|zombie|wraith|ghoul|vampir|bone|death knight|undead|ghost|spectr|drowned|wight|mumm|banshee|dracolich/.test(n)) return "undead";
 	if (/demon|devil|fiend|hell|chaos|brimstone|imp\b|archdemon/.test(n)) return "fiend";
 	if (/dragon|wyrm|wyvern|drake|hydra/.test(n)) return "dragon";
@@ -22464,7 +23943,8 @@ function itemSlot(it) {
 	if (it.effect && it.effect.stat === "combatUse") return "combat";
 	if (it.effect && it.effect.stat === "mithrilArmour") return "armour";
 	if (it.slot !== void 0) return it.slot || null;
-	return ITEM_SLOT_OF[it.name] || ITEM_SLOT_OF[_ITEM_ALT_BASE[it.name]] || null;
+	const altBase = _ITEM_ALT_BASE[it.name];
+	return ITEM_SLOT_OF[it.name] || (altBase === void 0 ? void 0 : ITEM_SLOT_OF[altBase]) || null;
 }
 var _ITEM_RACE_ALIAS = { ...KC_ITEM_RACE_ALIAS };
 function itemRaceOf(it) {
@@ -23265,18 +24745,18 @@ var MARCH_NAVAL_BONUS = [
 	3
 ];
 function marchSpeedBonus(marchLevel) {
-	return MARCH_NAVAL_BONUS[Math.max(0, Math.min(5, marchLevel || 0))];
+	return MARCH_NAVAL_BONUS[Math.max(0, Math.min(5, Number(marchLevel) || 0))];
 }
 var GARRISON_SEA_TYPES_R = new Set(KC_UNIT_CLASS.sea);
 var GARRISON_AIR_TYPES_R = new Set(KC_UNIT_CLASS.aerial);
 var GARRISON_FLY_TYPES_R = new Set(KC_UNIT_CLASS.flying);
 function garrisonMoveRate(a, pl) {
 	if (!a) return {};
-	const base = ARMY_SPEED_MASTER[a.type] || 3;
+	const base = ARMY_SPEED_MASTER[a.type] ?? 3;
 	const sea = GARRISON_SEA_TYPES_R.has(a.type);
 	let road = 0;
 	if (!sea && !GARRISON_FLY_TYPES_R.has(a.type) && base <= 2 && pl && typeof discEffectsOf === "function") discEffectsOf(pl, "move").forEach((e) => {
-		if (discUnitMatch(e, a)) road += e.extra || 0;
+		if (discUnitMatch(e, a)) road += e.extra ?? 0;
 	});
 	return {
 		moveRate: base + road,
@@ -23284,10 +24764,7 @@ function garrisonMoveRate(a, pl) {
 	};
 }
 function navalSpeedBonus(baseSpeed, navalLevel) {
-	return MARCH_NAVAL_BONUS[Math.max(0, Math.min(5, navalLevel || 0))];
-}
-function carrierBerths(a) {
-	return a && CARRIER_TYPES.has(a.type) ? KC_CARRIER_BERTHS && KC_CARRIER_BERTHS[a.type] || 1 : 0;
+	return MARCH_NAVAL_BONUS[Math.max(0, Math.min(5, Number(navalLevel) || 0))];
 }
 var OPEN_COUNTRY = /* @__PURE__ */ new Set(["plain", "desert"]);
 var RUN_THEM_DOWN_PCT = .15;
@@ -23298,14 +24775,14 @@ function rideThemDownBonus(force, terrain, cmdr) {
 	return Math.min(.18, .06 * countType(force, "Free Lances"));
 }
 function countType(force, type) {
-	return (force || []).filter((a) => a && a.type === type).length;
+	return (force ?? []).filter((a) => a?.type === type).length;
 }
 function tacMulted(bonus, cmdr) {
-	const m = cmdr && cmdr._tacticalMult != null ? cmdr._tacticalMult : 1;
+	const m = cmdr?._tacticalMult ?? 1;
 	return 1 + (bonus - 1) * m;
 }
 function isHalfOrMore(force, type) {
-	const n = (force || []).length;
+	const n = (force ?? []).length;
 	return n > 0 && countType(force, type) * 2 >= n;
 }
 function shieldFortHolds(force, grid) {
@@ -23319,42 +24796,28 @@ function shieldFortHolds(force, grid) {
 	}
 	return isHalfOrMore(force, "Dwarven Guard");
 }
-var ORC_FOOT_TYPES = /* @__PURE__ */ new Set([
-	"Goblin Horde",
-	"Orc Berserkers",
-	"Orc Garrison"
-]);
 //#endregion
 //#region src/engine/battle/strength.ts
 function unitAbilityMult(army, ctx, terrain) {
 	if (!army || !ctx) return 1;
-	const t = army.type, force = ctx.force || [];
-	const enemyHasMissile = (ctx.enemyForce || []).some((a) => a && MISSILE_ARMIES_MASTER.has(a.type));
-	let m = 1;
-	if (t === "Goblin Horde") {
-		const others = Math.max(0, force.filter((a) => a && ORC_FOOT_TYPES.has(a.type)).length - 1);
-		m *= 1 + Math.min(.3, others * .1);
-	}
-	if (ctx.amphibious) m *= 1.25;
-	if (t === "Shark Shoals") {
-		const others = Math.max(0, force.filter((a) => a && a.type === "Shark Shoals").length - 1);
-		m *= 1 + Math.min(.3, others * .1);
-	}
-	if (t === "Manticore Pride" && ctx.isAttacker) m *= 1.25;
-	if (t === "Basilisk Brood" && !ctx.isAttacker) m *= 1.25;
-	if (t === "Sea Giants" && terrain !== "sea" && ctx.coastal) m *= 1.2;
-	if (t === "Eldritch Kraken" && terrain === "sea") m *= 1.35;
-	if (t === "Elder Dragons") m *= 1.25;
-	if (t === "Crimson Rocs" && enemyHasMissile) m *= 1.3;
-	return m;
+	const enemy = ctx.enemyForce ?? [];
+	return theStrengthOfAUnitInItsWholeForce({
+		unitType: army.type,
+		itsForce: ctx.force ?? [],
+		theEnemyFieldsRangedUnits: enemy.some((a) => a && MISSILE_ARMIES_MASTER.has(a.type)),
+		itsSideAttacks: Boolean(ctx.isAttacker),
+		landedFromLongshipsThisPhase: Boolean(ctx.amphibious),
+		coastal: Boolean(ctx.coastal),
+		ground: terrain
+	});
 }
 function abilityMissileUnits(force, terrain) {
-	const list = (force || []).filter((a) => MISSILE_ARMIES_MASTER.has(a.type));
-	if (terrain === "sea") (force || []).forEach((a) => {
+	const list = (force ?? []).filter((a) => MISSILE_ARMIES_MASTER.has(a.type));
+	if (terrain === "sea") (force ?? []).forEach((a) => {
 		if (a.type === "Galleon Fleet") list.push(a);
 	});
-	if (terrain === "forest" || terrain === "jungle") (force || []).forEach((a) => {
-		if (a && a.type === "Elven Garrison") list.push(a);
+	if (terrain === "forest" || terrain === "jungle") (force ?? []).forEach((a) => {
+		if (a.type === "Elven Garrison") list.push(a);
 	});
 	list.sort((a, b) => (b.type === "Mountain Guns" ? 1 : 0) - (a.type === "Mountain Guns" ? 1 : 0));
 	return list;
@@ -23364,16 +24827,16 @@ function missileCap(target, firer) {
 	const baseStr = unitBaseStrength(target);
 	const isFly = FLYING_TYPES.has(target.type);
 	let capFraction = isFly ? _MISSILE_CAP_FRAC * 2 : _MISSILE_CAP_FRAC;
-	if (firer && firer.type === "Ironwood Crossbows") capFraction = isFly ? .9 : .55;
+	if (firer?.type === "Ironwood Crossbows") capFraction = isFly ? .9 : .55;
 	return Math.max(1, Math.floor(baseStr * capFraction));
 }
 function missileCapReached(target, firer) {
 	if (!target) return true;
 	if (target.type === "Dwarf Ironclads" || target.type === "Great Turtles") return true;
-	return (target._archeryRed || 0) >= missileCap(target, firer);
+	return (target._archeryRed ?? 0) >= missileCap(target, firer);
 }
 function missileTargetPool(enemyArmies, frontWidth, firer, myForce) {
-	const all = (enemyArmies || []).filter(Boolean);
+	const all = (enemyArmies ?? []).filter((a) => Boolean(a));
 	const visible = eyesOfTheForest(myForce) ? all : all.filter((a) => a.type !== "Shadow Archers");
 	const src = visible.length ? visible : all;
 	const live = (u) => !missileCapReached(u, firer);
@@ -23382,33 +24845,36 @@ function missileTargetPool(enemyArmies, frontWidth, firer, myForce) {
 	return src.filter((u) => live(u));
 }
 function eyesOfTheForest(force) {
-	return (force || []).some((a) => a && a.type === "Eagle Riders");
+	return (force ?? []).some((a) => a?.type === "Eagle Riders");
 }
 function archeryBlockedBy(defenderForce, terrain, shooters) {
 	if (terrain !== "forest" && terrain !== "jungle") return false;
 	if (eyesOfTheForest(shooters)) return false;
-	return (defenderForce || []).some((a) => a && a.type === "Forest Wardens");
+	return (defenderForce ?? []).some((a) => a?.type === "Forest Wardens");
 }
 function eyesOfTheForestLine(defenderForce, terrain, shooters, shooterName) {
 	if (terrain !== "forest" && terrain !== "jungle" || !eyesOfTheForest(shooters)) return null;
-	if (!(defenderForce || []).some((a) => a && a.type === "Forest Wardens")) return null;
-	return `🦅 ${shooterName}'s Eagle Riders mark the Forest Wardens in the thickets — the Ambush is spoiled and the volley flies.`;
+	if (!(defenderForce ?? []).some((a) => a?.type === "Forest Wardens")) return null;
+	return {
+		kind: "the eagle riders mark the forest wardens and spoil the ambush",
+		shooterName
+	};
 }
 function missileDamageMult(firer, force, terrain, target, isAtk) {
 	if (!firer) return 1;
 	let m = 1;
 	if (firer.type === "Elven Bowmen" && (terrain === "forest" || terrain === "jungle")) m *= 2;
-	if (firer.type === "Mountain Guns" && target && /Garrison/.test(target.type || "")) m *= 1.5;
+	if (firer.type === "Mountain Guns" && target && (target.type || "").includes("Garrison")) m *= 1.5;
 	if (firer.type === "Black Arrows" && isAtk) m *= 1.5;
 	return m;
 }
 function abilityVolleys(firer, isAtk) {
-	return firer && firer.type === "Yeoman Longbows" && !isAtk ? 2 : 1;
+	return firer?.type === "Yeoman Longbows" && !isAtk ? 2 : 1;
 }
 function applyFlakScreen(myForce, enemyForce, myName, narr) {
-	const gyros = (myForce || []).filter((a) => a && a.type === "Gnomish Gyrocopters");
+	const gyros = (myForce ?? []).filter((a) => a?.type === "Gnomish Gyrocopters");
 	if (!gyros.length) return;
-	const flyers = (enemyForce || []).filter((a) => a && FLYING_TYPES.has(a.type) && !a._flakTargeted);
+	const flyers = (enemyForce ?? []).filter((a) => !!a && FLYING_TYPES.has(a.type) && !a._flakTargeted);
 	if (!flyers.length) return;
 	const pool = flyers.slice();
 	let engaged = 0;
@@ -23417,15 +24883,26 @@ function applyFlakScreen(myForce, enemyForce, myName, narr) {
 		if (!pool.length) return;
 		const idx = Math.floor(kcRng() * pool.length);
 		const t = pool.splice(idx, 1)[0];
+		if (!t) return;
 		t._flakTargeted = true;
 		const red = Math.max(1, Math.round(unitBaseStrength(t) * .3));
-		t._tempStrReduction = (t._tempStrReduction || 0) + red;
-		lines.push(`  💨 Gyrocopters harry the ${t.unitName || t.type} — driven off their line (−${red} strength).`);
+		t._tempStrReduction = (Number(t._tempStrReduction) || 0) + red;
+		lines.push({
+			kind: "the gyrocopters harry a flying unit off its line",
+			targetUnitName: t.unitName || t.type,
+			strengthLost: red
+		});
 		engaged++;
 	});
 	if (engaged) {
-		narrate(narr, `🌀 ${myName}'s Gnomish Gyrocopters climb to meet the enemy's flyers — ${engaged} engaged.`);
-		lines.forEach((l) => narrate(narr, l));
+		narrate(narr, {
+			kind: "a side's gyrocopters climb to meet the enemy's flyers",
+			sideName: myName,
+			engagedCount: engaged
+		});
+		lines.forEach((l) => {
+			narrate(narr, l);
+		});
 	}
 }
 //#endregion
@@ -23871,7 +25348,7 @@ function nearSpiedProvIds(gs, spiedIds) {
 		const p = P[id];
 		if (!p) return;
 		getNeighborsP(p, W.cols, W.rows, P).forEach((n) => {
-			if (n && !spiedIds.has(n.id)) out.add(n.id);
+			if (!spiedIds.has(n.id)) out.add(n.id);
 		});
 	});
 	return out;
@@ -24568,6 +26045,10 @@ function generateBotSetups(humanSetups, count, startIndex) {
 	return bots;
 }
 //#endregion
+//#region src/engine/saves/the-saved-games-version-this-build-writes.ts
+/** The version of the saved state's shape this build writes, and the newest it can read. */
+var THE_SAVED_GAMES_VERSION_THIS_BUILD_WRITES = 1;
+//#endregion
 //#region src/engine/items/lair-items.ts
 function lairRegionOf(gs, prov) {
 	const pls = gs && gs.players || [];
@@ -25157,7 +26638,7 @@ function seedUsedArmyNames(gameState) {
 function rng(a, b) {
 	return Math.floor(kcRng() * (b - a + 1)) + a;
 }
-var pick = (arr) => arr[Math.floor(kcRng() * arr.length)];
+var pick$1 = (arr) => arr[Math.floor(kcRng() * arr.length)];
 function describeArmy(armies) {
 	if (!armies || armies.length === 0) return "no armies";
 	const named = [];
@@ -27032,6 +28513,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 	_newGameState._maxHpV3 = true;
 	_newGameState._guardiansV2 = true;
 	_newGameState._guardiansVer = GUARDIAN_TABLE_VER;
+	_newGameState.schemaVersion = THE_SAVED_GAMES_VERSION_THIS_BUILD_WRITES;
 	return _newGameState;
 }
 //#endregion
@@ -29382,9 +30864,6 @@ var telSpell = (turnContext, ch, spell, school, lvl, chance, roll, ctx) => {
 		});
 	} catch (_te) {}
 };
-function narrText(line) {
-	return line && typeof line === "object" && line.text != null ? line.text : line;
-}
 function noteSilentHeroes(turnContext, ph, startLoc) {
 	const { turnLog, battleCommanders, G } = turnContext;
 	const heard = /* @__PURE__ */ new Set();
@@ -29789,6 +31268,6504 @@ async function writeTurnTelemetry(gs, gameRow, players, tel, turn) {
 	return true;
 }
 //#endregion
+//#region node_modules/zod/v4/core/util.js
+function getEnumValues(entries) {
+	const numericValues = Object.values(entries).filter((v) => typeof v === "number");
+	return Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+}
+function joinValues(array, separator = "|") {
+	return array.map((val) => stringifyPrimitive(val)).join(separator);
+}
+function jsonStringifyReplacer(_, value) {
+	if (typeof value === "bigint") return value.toString();
+	return value;
+}
+var Cached = class {
+	constructor(getter) {
+		this._getter = getter;
+		this._value = void 0;
+	}
+	get value() {
+		const getter = this._getter;
+		if (getter !== void 0) {
+			this._value = getter();
+			this._getter = void 0;
+		}
+		return this._value;
+	}
+};
+function cached(getter) {
+	return new Cached(getter);
+}
+function nullish(input) {
+	return input === null || input === void 0;
+}
+function cleanRegex(source) {
+	const start = source.startsWith("^") ? 1 : 0;
+	const end = source.endsWith("$") ? source.length - 1 : source.length;
+	return source.slice(start, end);
+}
+function floatSafeRemainder(val, step) {
+	const ratio = val / step;
+	const roundedRatio = Math.round(ratio);
+	const tolerance = 4 * Number.EPSILON * Math.max(Math.abs(ratio), 1);
+	if (Math.abs(ratio - roundedRatio) < tolerance) return 0;
+	return ratio - roundedRatio;
+}
+function assignProp(target, prop, value) {
+	Object.defineProperty(target, prop, {
+		value,
+		writable: true,
+		enumerable: true,
+		configurable: true
+	});
+}
+/**
+* Whichever object a def's `shape` currently answers from: the one the caller passed until the first read, the frozen copy after it.
+*
+* Its keys and descriptors read without invoking anything, which is what lets a discriminated union check its discriminator, and the cycle walk read a shape, without resolving a getter that references the schema being constructed. A def that answers `shape` from an accessor of its own has none.
+*/
+function rawShape(def) {
+	const desc = Object.getOwnPropertyDescriptor(def, "shape");
+	return desc?.get ? desc.get.raw : desc?.value;
+}
+function sourceShape(schema) {
+	return rawShape(schema._zod.def) ?? schema._zod.def.shape;
+}
+function deferProp(target, key, getter) {
+	Object.defineProperty(target, key, {
+		get() {
+			const value = getter();
+			assignProp(this, key, value);
+			return value;
+		},
+		enumerable: true,
+		configurable: true
+	});
+}
+function putProp(target, key, value) {
+	if (key in target) assignProp(target, key, value);
+	else target[key] = value;
+}
+/**
+* Copies `keys` of `source`'s shape onto `target`, each value passed through `wrap`.
+*
+* A key the source has resolved is copied through now, so the derived shape states it outright and nothing has to resolve it to learn what it holds. A key the source still defers stays deferred, and reads back through the source's own `shape`, so it resolves once and both shapes get that one schema.
+*/
+function mirrorShape(target, source, keys, wrap) {
+	const raw = sourceShape(source);
+	for (const key of keys) {
+		const desc = Object.getOwnPropertyDescriptor(raw, key);
+		if (!desc.enumerable) continue;
+		if (desc.get) deferProp(target, key, () => {
+			const value = source._zod.def.shape[key];
+			return wrap ? wrap(value, key) : value;
+		});
+		else putProp(target, key, wrap ? wrap(desc.value, key) : desc.value);
+	}
+}
+function mirrorProps(target, source) {
+	for (const key of Reflect.ownKeys(source)) {
+		const desc = Object.getOwnPropertyDescriptor(source, key);
+		if (!desc.enumerable) continue;
+		if (desc.get) deferProp(target, key, () => source[key]);
+		else putProp(target, key, desc.value);
+	}
+}
+function mergeDefs(...defs) {
+	const mergedDescriptors = {};
+	for (const def of defs) {
+		const descriptors = Object.getOwnPropertyDescriptors(def);
+		Object.assign(mergedDescriptors, descriptors);
+	}
+	return Object.defineProperties({}, mergedDescriptors);
+}
+function esc(str) {
+	return JSON.stringify(str);
+}
+function slugify(input) {
+	return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+var captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {};
+function isObject$1(data) {
+	return typeof data === "object" && data !== null && !Array.isArray(data);
+}
+var allowsEval = /* @__PURE__*/ cached(() => {
+	if (globalConfig.jitless) return false;
+	if (typeof navigator !== "undefined" && navigator?.userAgent?.includes("Cloudflare")) return false;
+	try {
+		new Function("");
+		return true;
+	} catch (_) {
+		return false;
+	}
+});
+function isPlainObject(o) {
+	if (isObject$1(o) === false) return false;
+	const ctor = o.constructor;
+	if (ctor === void 0) return true;
+	if (typeof ctor !== "function") return true;
+	const prot = ctor.prototype;
+	if (isObject$1(prot) === false) return false;
+	if (Object.prototype.hasOwnProperty.call(prot, "isPrototypeOf") === false) return false;
+	return true;
+}
+function shallowClone(o) {
+	if (isPlainObject(o)) return { ...o };
+	if (Array.isArray(o)) return [...o];
+	if (o instanceof Map) return new Map(o);
+	if (o instanceof Set) return new Set(o);
+	return o;
+}
+var propertyKeyTypes = /* @__PURE__*/ new Set([
+	"string",
+	"number",
+	"symbol"
+]);
+function escapeRegex(str) {
+	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function clone(inst, def, params) {
+	const cl = new inst._zod.constr(def ?? inst._zod.def);
+	if (!def || params?.parent) cl._zod.parent = inst;
+	return cl;
+}
+function normalizeParams(_params) {
+	const params = _params;
+	if (!params) return {};
+	if (typeof params === "string") return { error: () => params };
+	if (params?.message !== void 0) {
+		if (params?.error !== void 0) throw new Error("Cannot specify both `message` and `error` params");
+		params.error = params.message;
+	}
+	delete params.message;
+	if (typeof params.error === "string") return {
+		...params,
+		error: () => params.error
+	};
+	return params;
+}
+function stringifyPrimitive(value) {
+	if (typeof value === "bigint") return value.toString() + "n";
+	if (typeof value === "string") return `"${value}"`;
+	return `${value}`;
+}
+function optionalKeys(shape) {
+	return Object.keys(shape).filter((k) => {
+		return shape[k]._zod.optin !== void 0 && shape[k]._zod.optout === "optional";
+	});
+}
+var NUMBER_FORMAT_RANGES = /*@__PURE__*/ (() => ({
+	safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+	int32: [-2147483648, 2147483647],
+	uint32: [0, 4294967295],
+	float32: [-34028234663852886e22, 34028234663852886e22],
+	float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+}))();
+var BIGINT_FORMAT_RANGES = {
+	int64: [/* @__PURE__*/ BigInt("-9223372036854775808"), /* @__PURE__*/ BigInt("9223372036854775807")],
+	uint64: [/* @__PURE__*/ BigInt(0), /* @__PURE__*/ BigInt("18446744073709551615")]
+};
+function pick(schema, mask) {
+	const currDef = schema._zod.def;
+	const checks = currDef.checks;
+	if (checks && checks.length > 0) throw new Error(".pick() cannot be used on object schemas containing refinements");
+	const newShape = {};
+	mirrorShape(newShape, schema, maskedKeys(schema, mask));
+	return clone(schema, mergeDefs(currDef, {
+		shape: newShape,
+		checks: []
+	}));
+}
+function maskedKeys(schema, mask) {
+	const raw = sourceShape(schema);
+	const keys = [];
+	for (const key of Reflect.ownKeys(mask)) {
+		if (!Object.getOwnPropertyDescriptor(raw, key)?.enumerable) throw new Error(`Unrecognized key: "${String(key)}"`);
+		if (mask[key]) keys.push(key);
+	}
+	return keys;
+}
+function omit(schema, mask) {
+	const currDef = schema._zod.def;
+	const checks = currDef.checks;
+	if (checks && checks.length > 0) throw new Error(".omit() cannot be used on object schemas containing refinements");
+	const omitted = new Set(maskedKeys(schema, mask));
+	const newShape = {};
+	mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)).filter((key) => !omitted.has(key)));
+	return clone(schema, mergeDefs(currDef, {
+		shape: newShape,
+		checks: []
+	}));
+}
+function extend(schema, shape) {
+	if (!isPlainObject(shape)) throw new Error("Invalid input to extend: expected a plain object");
+	const checks = schema._zod.def.checks;
+	if (checks && checks.length > 0) {
+		const existingShape = sourceShape(schema);
+		for (const key of Reflect.ownKeys(shape)) if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
+	}
+	return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
+}
+function extended(schema, shape) {
+	const newShape = {};
+	mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)));
+	mirrorProps(newShape, shape);
+	return newShape;
+}
+function safeExtend(schema, shape) {
+	if (!isPlainObject(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
+	return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
+}
+function merge(a, b) {
+	if (!b?._zod?.def) throw new Error("Invalid input to merge: expected an object schema. To merge a plain shape, use `.extend()`.");
+	if (a._zod.def.checks?.length) throw new Error(".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.");
+	const newShape = {};
+	mirrorShape(newShape, a, Reflect.ownKeys(sourceShape(a)));
+	mirrorShape(newShape, b, Reflect.ownKeys(sourceShape(b)));
+	return clone(a, mergeDefs(a._zod.def, {
+		shape: newShape,
+		get catchall() {
+			return b._zod.def.catchall;
+		},
+		checks: b._zod.def.checks ?? []
+	}));
+}
+function partial(Class, schema, mask, name = "partial") {
+	const checks = schema._zod.def.checks;
+	if (checks && checks.length > 0) throw new Error(`.${name}() cannot be used on object schemas containing refinements`);
+	const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+	const newShape = {};
+	mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), Class && ((value, key) => selected && !selected.has(key) ? value : new Class({
+		type: "optional",
+		innerType: value
+	})));
+	return clone(schema, mergeDefs(schema._zod.def, {
+		shape: newShape,
+		checks: []
+	}));
+}
+function required(Class, schema, mask) {
+	const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+	const newShape = {};
+	mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), (value, key) => selected && !selected.has(key) ? value : new Class({
+		type: "nonoptional",
+		innerType: value
+	}));
+	return clone(schema, mergeDefs(schema._zod.def, { shape: newShape }));
+}
+function aborted(x, startIndex = 0) {
+	if (x.aborted === true) return true;
+	for (let i = startIndex; i < x.issues.length; i++) if (x.issues[i]?.continue !== true) return true;
+	return false;
+}
+function explicitlyAborted(x, startIndex = 0) {
+	if (x.aborted === true) return true;
+	for (let i = startIndex; i < x.issues.length; i++) if (x.issues[i]?.continue === false) return true;
+	return false;
+}
+function prefixIssues(path, issues) {
+	return issues.map((iss) => {
+		var _a;
+		(_a = iss).path ?? (_a.path = []);
+		iss.path.unshift(path);
+		return iss;
+	});
+}
+function unwrapMessage(message) {
+	return typeof message === "string" ? message : message?.message;
+}
+/** The leading size checks of `defChecks` that set an upper bound, each paired with it. */
+function sizeCaps(defChecks) {
+	const caps = [];
+	for (const ch of defChecks ?? []) {
+		const d = ch._zod.def;
+		if (!/_(length|size)$|_equals$/.test(d.check)) break;
+		const max = d.maximum ?? d.length ?? d.size;
+		if (max >= 0) caps.push([max, ch]);
+	}
+	return caps;
+}
+function attachSchema(issues, start, inst) {
+	var _a;
+	for (let i = start; i < issues.length; i++) (_a = issues[i]).schema ?? (_a.schema = inst);
+}
+function finalizeIssue(iss, ctx, config) {
+	var _a;
+	const traits = iss.inst?._zod?.traits;
+	if (traits?.has("$ZodType")) {
+		if (traits.has("$ZodCheck")) (_a = iss).schema ?? (_a.schema = iss.inst);
+		else iss.schema = iss.inst;
+	}
+	const schemaError = iss.schema !== iss.inst ? iss.schema?._zod.def?.error : void 0;
+	const message = iss.message ? iss.message : unwrapMessage(iss.inst?._zod.def?.error?.(iss)) ?? unwrapMessage(schemaError?.(iss)) ?? unwrapMessage(ctx?.error?.(iss)) ?? unwrapMessage(config.customError?.(iss)) ?? unwrapMessage(config.localeError?.(iss)) ?? "Invalid input";
+	const full = {};
+	for (const k of Object.keys(iss)) {
+		if (k === "inst" || k === "schema" || k === "continue" || k === "input" || k === "__proto__") continue;
+		full[k] = iss[k];
+	}
+	full.path ?? (full.path = []);
+	full.message = message;
+	if (ctx?.reportInput) full.input = iss.input;
+	return full;
+}
+var highSurrogate = /[\uD800-\uDBFF]/;
+function codePointLength(str) {
+	const units = str.length;
+	if (!highSurrogate.test(str)) return units;
+	let count = units;
+	for (let i = 0; i < units - 1; i++) if ((str.charCodeAt(i) & 64512) === 55296 && (str.charCodeAt(i + 1) & 64512) === 56320) {
+		count--;
+		i++;
+	}
+	return count;
+}
+function getLengthableOrigin(input) {
+	if (Array.isArray(input)) return "array";
+	if (typeof input === "string") return "string";
+	return "unknown";
+}
+function parsedType(data) {
+	const t = typeof data;
+	switch (t) {
+		case "number": return Number.isNaN(data) ? "nan" : "number";
+		case "object": {
+			if (data === null) return "null";
+			if (Array.isArray(data)) return "array";
+			const obj = data;
+			if (obj && Object.getPrototypeOf(obj) !== Object.prototype && "constructor" in obj && obj.constructor) return obj.constructor.name;
+		}
+	}
+	return t;
+}
+function issue(...args) {
+	const [iss, input, inst] = args;
+	if (typeof iss === "string") return {
+		message: iss,
+		code: "custom",
+		input,
+		inst
+	};
+	return { ...iss };
+}
+/**
+* Installs a trait's members on its prototype. Each value builds that member for the instance on first read; the built value shadows the accessor as an own property, so a detached `const { parse } = schema` keeps working.
+*
+* Call this from a `proto` initializer, which runs once per prototype — never per instance.
+*/
+function members(proto, table) {
+	for (const key in table) {
+		const desc = Object.getOwnPropertyDescriptor(table, key);
+		if (desc.get) Object.defineProperty(proto, key, {
+			...desc,
+			enumerable: false
+		});
+		else defineBound(proto, key, desc.value);
+	}
+}
+/** Shadows a prototype member with an own value, so a getter that builds from the instance runs once. */
+function own(inst, key, value, enumerable = true) {
+	Object.defineProperty(inst, key, {
+		configurable: true,
+		writable: true,
+		enumerable,
+		value
+	});
+	return value;
+}
+/** Like {@link own}, for a member that was never an own data property and has to stay out of `Object.keys`. */
+function hide(inst, key, value) {
+	return own(inst, key, value, false);
+}
+/** Adds members a table derives from the instance: each builds on first read and shadows as own data, and assignment shadows the same way, as when these were own properties. */
+/* @__NO_SIDE_EFFECTS__ */
+function derived(computes, table) {
+	for (const key in computes) {
+		const compute = computes[key];
+		Object.defineProperty(table, key, {
+			configurable: true,
+			enumerable: true,
+			get() {
+				return own(this, key, compute(this));
+			},
+			set(value) {
+				own(this, key, value);
+			}
+		});
+	}
+	return table;
+}
+function defineBound(proto, key, fn) {
+	Object.defineProperty(proto, key, {
+		configurable: true,
+		get() {
+			return this == null ? fn : own(this, key, fn.bind(this));
+		},
+		set(value) {
+			own(this, key, value);
+		}
+	});
+}
+/** Returns the prototype to install on, or `undefined` if this group is already installed on it. */
+function claim(inst, sentinel) {
+	const proto = Object.getPrototypeOf(inst);
+	return sentinel in proto ? void 0 : proto;
+}
+var installing;
+var broke = false;
+var breaker = {
+	configurable: true,
+	get() {
+		broke = true;
+	}
+};
+/**
+* Installs a lazily-derived internal on the `_zod` prototype of `inst`'s
+* constructor, computed from the internals object itself and cached there on
+* first read. One accessor per constructor rather than one per instance.
+*/
+function defineLazyInternal(inst, key, compute) {
+	const proto = Object.getPrototypeOf(inst._zod);
+	if (key in proto && installing !== inst._zod) {
+		installing = void 0;
+		return;
+	}
+	installing = inst._zod;
+	Object.defineProperty(proto, key, {
+		configurable: true,
+		get() {
+			Object.defineProperty(this, key, breaker);
+			const outer = broke;
+			broke = false;
+			try {
+				const value = compute(this);
+				if (broke) delete this[key];
+				else Object.defineProperty(this, key, {
+					configurable: true,
+					writable: true,
+					value
+				});
+				broke = broke || outer;
+				return value;
+			} catch (err) {
+				delete this[key];
+				broke = broke || outer;
+				throw err;
+			}
+		},
+		set(value) {
+			Object.defineProperty(this, key, {
+				configurable: true,
+				writable: true,
+				value
+			});
+		}
+	});
+}
+/**
+* Installs `key` on `inst`'s prototype, computed by `make` on first read and cached there as an own
+* data property. One accessor per constructor rather than one per instance, because an own accessor
+* puts every instance after the first into v8 dictionary mode. The key doubles as the sentinel.
+*/
+function installLazyProp(inst, key, make, enumerable) {
+	const proto = claim(inst, key);
+	if (!proto) return;
+	Object.defineProperty(proto, key, {
+		configurable: true,
+		get() {
+			const desc = {
+				configurable: true,
+				writable: true,
+				enumerable,
+				value: void 0
+			};
+			Object.defineProperty(this, key, desc);
+			desc.value = make(this);
+			Object.defineProperty(this, key, desc);
+			return desc.value;
+		},
+		set(value) {
+			Object.defineProperty(this, key, {
+				configurable: true,
+				writable: true,
+				enumerable,
+				value
+			});
+		}
+	});
+}
+/** Marks the thunk `_catch` synthesises for a constant catch value. `Function.length` cannot tell that thunk from a user callback — rest and defaulted parameters both report arity 0 — and a user callback reads `ctx.error`, whose issues only finalize correctly against the caller's per-parse error map. Provenance can say what arity cannot. A plain string key rather than `Symbol.for`, whose call at module scope no bundler can prove pure — the same shape that anchored `urlCanParse` into every build. */
+var CONSTANT_CATCH = "~constantCatch";
+/** Wraps a constant catch value in a thunk tagged with {@link CONSTANT_CATCH}. */
+function constantCatch(value) {
+	const fn = () => value;
+	fn[CONSTANT_CATCH] = true;
+	return fn;
+}
+//#endregion
+//#region node_modules/zod/v4/core/core.js
+var _a$1;
+var _zodDesc = {
+	value: void 0,
+	enumerable: false
+};
+var _E = "captureStackTrace" in Error ? Error : null;
+function newError(Definition) {
+	const E = _E;
+	if (E) {
+		const saved = E.stackTraceLimit;
+		if (typeof saved === "number") {
+			try {
+				E.stackTraceLimit = 0;
+			} catch {
+				_E = null;
+				return new Definition();
+			}
+			try {
+				return new Definition();
+			} finally {
+				E.stackTraceLimit = saved;
+			}
+		}
+	}
+	return new Definition();
+}
+/* @__NO_SIDE_EFFECTS__ */
+function $constructor(name, initializer, proto, params) {
+	const zodProto = {};
+	function Internals(def) {
+		this.def = def;
+		this.constr = _;
+		this.traits = /* @__PURE__ */ new Set();
+	}
+	Internals.prototype = zodProto;
+	const protoMembers = proto;
+	const initialized = protoMembers && /* @__PURE__ */ new WeakSet();
+	function init(inst, def) {
+		if (!inst._zod) {
+			_zodDesc.value = new Internals(def);
+			try {
+				Object.defineProperty(inst, "_zod", _zodDesc);
+			} finally {
+				_zodDesc.value = void 0;
+			}
+		} else if (inst._zod.traits.has(name)) return;
+		inst._zod.traits.add(name);
+		initializer(inst, def);
+		if (initialized) {
+			const own = Object.getPrototypeOf(inst);
+			const ctorProto = inst._zod.constr.prototype;
+			let up = own;
+			while (up && up !== ctorProto) up = Object.getPrototypeOf(up);
+			const target = up ?? own;
+			if (!initialized.has(target)) {
+				initialized.add(target);
+				members(target, protoMembers);
+			}
+		}
+		const proto = _.prototype;
+		for (const k in proto) {
+			if (!Object.prototype.hasOwnProperty.call(proto, k)) continue;
+			if (!(k in inst)) inst[k] = proto[k].bind(inst);
+		}
+	}
+	const Parent = params?.Parent ?? Object;
+	class Definition extends Parent {}
+	Object.defineProperty(Definition, "name", { value: name });
+	function _(def) {
+		const inst = params?.Parent ? newError(Definition) : this;
+		init(inst, def);
+		const deferred = inst._zod.deferred;
+		if (deferred) {
+			for (const fn of deferred) fn();
+			inst._zod.deferred = void 0;
+		}
+		const pp = globalThis.__zod_globalConfig?.postProcessor;
+		if (pp) pp(inst);
+		return inst;
+	}
+	Object.defineProperty(_, "init", { value: init });
+	Object.defineProperty(_, Symbol.hasInstance, { value: (inst) => {
+		if (params?.Parent && inst instanceof params.Parent) return true;
+		return inst?._zod?.traits?.has(name);
+	} });
+	Object.defineProperty(_, "name", { value: name });
+	return _;
+}
+var $ZodAsyncError = class extends Error {
+	constructor() {
+		super(`Encountered Promise during synchronous parse. Use .parseAsync() instead.`);
+	}
+};
+var $ZodEncodeError = class extends Error {
+	constructor(name) {
+		super(`Encountered unidirectional transform during encode: ${name}`);
+		this.name = "ZodEncodeError";
+	}
+};
+(_a$1 = globalThis).__zod_globalConfig ?? (_a$1.__zod_globalConfig = {});
+var globalConfig = globalThis.__zod_globalConfig;
+function config(newConfig) {
+	if (newConfig) Object.assign(globalConfig, newConfig);
+	return globalConfig;
+}
+//#endregion
+//#region node_modules/zod/v4/core/errors.js
+function _getMessage() {
+	const internals = this._zod;
+	internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
+	return internals.message;
+}
+function _setMessage(value) {
+	this._zod.message = value;
+}
+var _messageDesc = {
+	get: _getMessage,
+	set: _setMessage,
+	enumerable: true,
+	configurable: true
+};
+var _issuesDesc = {
+	value: void 0,
+	enumerable: false
+};
+var _installedToString = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
+var initializer$1 = (inst, def) => {
+	inst.name = "$ZodError";
+	_issuesDesc.value = def;
+	Object.defineProperty(inst, "issues", _issuesDesc);
+	_issuesDesc.value = void 0;
+	Object.defineProperty(inst, "message", _messageDesc);
+	const proto = Object.getPrototypeOf(inst);
+	if (!_installedToString.has(proto)) {
+		_installedToString.add(proto);
+		Object.defineProperty(proto, "toString", {
+			configurable: true,
+			enumerable: false,
+			get() {
+				const value = () => this.message;
+				Object.defineProperty(this, "toString", {
+					value,
+					configurable: true,
+					writable: true
+				});
+				return value;
+			},
+			set(value) {
+				Object.defineProperty(this, "toString", {
+					value,
+					configurable: true,
+					writable: true
+				});
+			}
+		});
+	}
+};
+var $ZodError = /* @__PURE__ */ $constructor("$ZodError", initializer$1);
+/** Get-or-create `obj[key]` as an own data property. A path segment naming an inherited member
+* ("toString", "constructor") would otherwise read through to the prototype, and assigning
+* "__proto__" would hit the setter instead of creating a key. */
+function node(obj, key, make) {
+	if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+		if (key === "__proto__") Object.defineProperty(obj, key, {
+			value: make(),
+			writable: true,
+			enumerable: true,
+			configurable: true
+		});
+		else obj[key] = make();
+	}
+	return obj[key];
+}
+function flattenError(error, mapper = (issue) => issue.message) {
+	const fieldErrors = {};
+	const formErrors = [];
+	for (const sub of error.issues) if (sub.path.length > 0) node(fieldErrors, sub.path[0], () => []).push(mapper(sub));
+	else formErrors.push(mapper(sub));
+	return {
+		formErrors,
+		fieldErrors
+	};
+}
+function formatError(error, mapper = (issue) => issue.message) {
+	const fieldErrors = { _errors: [] };
+	const processError = (error, path = []) => {
+		for (const issue of error.issues) if (issue.code === "invalid_union" && issue.errors.length) issue.errors.map((issues) => processError({ issues }, [...path, ...issue.path]));
+		else if (issue.code === "invalid_key") processError({ issues: issue.issues }, [...path, ...issue.path]);
+		else if (issue.code === "invalid_element") processError({ issues: issue.issues }, [...path, ...issue.path]);
+		else {
+			const fullpath = [...path, ...issue.path];
+			if (fullpath.length === 0) fieldErrors._errors.push(mapper(issue));
+			else {
+				let curr = fieldErrors;
+				let i = 0;
+				while (i < fullpath.length) {
+					const el = fullpath[i];
+					const terminal = i === fullpath.length - 1;
+					if (el === "_errors") {
+						if (terminal) curr._errors.push(mapper(issue));
+						i++;
+						continue;
+					}
+					if (!Object.prototype.hasOwnProperty.call(curr, el)) Object.defineProperty(curr, el, {
+						value: { _errors: [] },
+						enumerable: true,
+						writable: true,
+						configurable: true
+					});
+					const node = curr[el];
+					if (terminal) node._errors.push(mapper(issue));
+					curr = node;
+					i++;
+				}
+			}
+		}
+	};
+	processError(error);
+	return fieldErrors;
+}
+//#endregion
+//#region node_modules/zod/v4/core/parse.js
+function finalizeParams(callee, params) {
+	return {
+		callee: params?.callee ?? callee,
+		Err: params?.Err
+	};
+}
+var _parse = (_Err) => {
+	const fn = (schema, value, _ctx, _params) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: false
+		} : { async: false };
+		const result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) throw new $ZodAsyncError();
+		if (result.issues.length) {
+			const e = new ((_params?.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+			captureStackTrace(e, _params?.callee ?? fn);
+			throw e;
+		}
+		return result.value;
+	};
+	return fn;
+};
+var _parseAsync = (_Err) => {
+	const fn = async (schema, value, _ctx, params) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: true
+		} : { async: true };
+		let result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) result = await result;
+		if (result.issues.length) {
+			const e = new ((params?.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+			captureStackTrace(e, params?.callee ?? fn);
+			throw e;
+		}
+		return result.value;
+	};
+	return fn;
+};
+var _safeParse = (_Err) => (schema, value, _ctx) => {
+	const ctx = _ctx ? {
+		..._ctx,
+		async: false
+	} : { async: false };
+	const result = schema._zod.run({
+		value,
+		issues: []
+	}, ctx);
+	if (result instanceof Promise) throw new $ZodAsyncError();
+	return result.issues.length ? failure(_Err, result.issues, ctx) : {
+		success: true,
+		data: result.value
+	};
+};
+function failure(Err, issues, ctx) {
+	let error;
+	return {
+		success: false,
+		get error() {
+			if (!error) {
+				error = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
+				issues = void 0;
+				ctx = void 0;
+			}
+			return error;
+		},
+		set error(e) {
+			error = e;
+			issues = void 0;
+			ctx = void 0;
+		}
+	};
+}
+var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
+	const ctx = _ctx ? {
+		..._ctx,
+		async: true
+	} : { async: true };
+	let result = schema._zod.run({
+		value,
+		issues: []
+	}, ctx);
+	if (result instanceof Promise) result = await result;
+	return result.issues.length ? failure(_Err, result.issues, ctx) : {
+		success: true,
+		data: result.value
+	};
+};
+var COMPILE_INVALID = /* @__PURE__ */ Symbol.for("zod.compile.invalid");
+var COMPILE_FALLBACK = /* @__PURE__ */ Symbol.for("zod.compile.fallback");
+var validate = ((schema, value, _ctx) => {
+	const validator = schema._zod.bag.validator;
+	if (validator !== void 0) {
+		if (validator(value) !== COMPILE_INVALID) return true;
+		if (validator.definite === true && _ctx === void 0) return false;
+	}
+	return validateFallback(schema, value, _ctx);
+});
+function validateFallback(schema, value, _ctx) {
+	const ctx = _ctx ? {
+		..._ctx,
+		async: false,
+		abortEarly: true
+	} : {
+		async: false,
+		abortEarly: true
+	};
+	const fallbackRun = schema._zod.bag.fallbackRun;
+	let result;
+	if (fallbackRun) {
+		ctx[COMPILE_FALLBACK] = true;
+		result = fallbackRun({
+			value,
+			issues: []
+		}, ctx);
+	} else result = schema._zod.run({
+		value,
+		issues: []
+	}, ctx);
+	if (result instanceof Promise) throw new $ZodAsyncError();
+	return result.issues.length === 0;
+}
+var validateAsync$1 = async (schema, value, _ctx) => {
+	const ctx = _ctx ? {
+		..._ctx,
+		async: true,
+		abortEarly: true
+	} : {
+		async: true,
+		abortEarly: true
+	};
+	let result = schema._zod.run({
+		value,
+		issues: []
+	}, ctx);
+	if (result instanceof Promise) result = await result;
+	return result.issues.length === 0;
+};
+var _encode = (_Err) => {
+	const parse = _parse(_Err);
+	const fn = (schema, value, _ctx, _params) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			direction: "backward"
+		} : { direction: "backward" };
+		return parse(schema, value, ctx, finalizeParams(fn, _params));
+	};
+	return fn;
+};
+var _decode = (_Err) => {
+	const parse = _parse(_Err);
+	const fn = (schema, value, _ctx, _params) => {
+		return parse(schema, value, _ctx, finalizeParams(fn, _params));
+	};
+	return fn;
+};
+var _encodeAsync = (_Err) => {
+	const parseAsync = _parseAsync(_Err);
+	const fn = async (schema, value, _ctx, _params) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			direction: "backward"
+		} : { direction: "backward" };
+		return await parseAsync(schema, value, ctx, finalizeParams(fn, _params));
+	};
+	return fn;
+};
+var _decodeAsync = (_Err) => {
+	const parseAsync = _parseAsync(_Err);
+	const fn = async (schema, value, _ctx, _params) => {
+		return await parseAsync(schema, value, _ctx, finalizeParams(fn, _params));
+	};
+	return fn;
+};
+var _safeEncode = (_Err) => (schema, value, _ctx) => {
+	const ctx = _ctx ? {
+		..._ctx,
+		direction: "backward"
+	} : { direction: "backward" };
+	return _safeParse(_Err)(schema, value, ctx);
+};
+var _safeDecode = (_Err) => (schema, value, _ctx) => {
+	return _safeParse(_Err)(schema, value, _ctx);
+};
+var _safeEncodeAsync = (_Err) => async (schema, value, _ctx) => {
+	const ctx = _ctx ? {
+		..._ctx,
+		direction: "backward"
+	} : { direction: "backward" };
+	return _safeParseAsync(_Err)(schema, value, ctx);
+};
+var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
+	return _safeParseAsync(_Err)(schema, value, _ctx);
+};
+//#endregion
+//#region node_modules/zod/v4/core/regexes.js
+/**
+* @deprecated CUID v1 is deprecated by its authors due to information leakage
+* (timestamps embedded in the id). Use {@link cuid2} instead.
+* See https://github.com/paralleldrive/cuid.
+*/
+var cuid = /^[cC][0-9a-z]{6,}$/;
+var cuid2 = /^[0-9a-z]+$/;
+var ulid = /^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$/;
+var xid = /^[0-9a-vA-V]{20}$/;
+var ksuid = /^[A-Za-z0-9]{27}$/;
+var nanoid = /^[a-zA-Z0-9_-]{21}$/;
+function nanoidOfLength(length) {
+	return new RegExp(`^[a-zA-Z0-9_-]{${length}}$`);
+}
+/** ISO 8601-1 duration regex. Does not support the 8601-2 extensions like negative durations or fractional/negative components. */
+var duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
+/** A regex for any UUID-like identifier: 8-4-4-4-12 hex pattern */
+var guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+/** Returns a regex for validating an RFC 9562/4122 UUID.
+*
+* @param version Optionally specify a version 1-8. If no version is specified, all versions are supported. */
+var uuid = (version) => {
+	if (!version) return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
+	return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+};
+/** Practical email validation */
+var email = /^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
+var _emoji$1 = `^(?=[\\s\\S]*[\\p{Extended_Pictographic}\\p{Regional_Indicator}\\u20E3])[\\p{Extended_Pictographic}\\p{Emoji_Component}]+$`;
+function emoji() {
+	return new RegExp(_emoji$1, "u");
+}
+var ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
+var ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
+var cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
+var cidrv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
+var base64 = /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/;
+var base64url = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2,3})?$/;
+var httpProtocol = /^https?$/;
+var e164 = /^\+[1-9]\d{6,14}$/;
+var dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
+/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+* esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+* will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */
+function anchor(source) {
+	return new RegExp(`^${source}$`);
+}
+var date = /*@__PURE__*/ anchor(dateSource);
+function timeSource(args) {
+	const hhmm = `(?:[01]\\d|2[0-3]):[0-5]\\d`;
+	return typeof args.precision === "number" ? args.precision === -1 ? `${hhmm}` : args.precision === 0 ? `${hhmm}:[0-5]\\d` : `${hhmm}:[0-5]\\d\\.\\d{${args.precision}}` : args.seconds ? `${hhmm}:[0-5]\\d(?:\\.\\d+)?` : `${hhmm}(?::[0-5]\\d(?:\\.\\d+)?)?`;
+}
+function time(args) {
+	return new RegExp(`^${timeSource(args)}$`);
+}
+function datetime(args) {
+	const opts = ["Z"];
+	if (args.offset) opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
+	const qualified = `${timeSource({
+		precision: args.precision,
+		seconds: true
+	})}(?:${opts.join("|")})`;
+	const timeRegex = args.local ? `${qualified}|${timeSource({ precision: args.precision })}` : qualified;
+	return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
+}
+var anyString = /^[\s\S]{0,}$/;
+var integer = /^-?\d+$/;
+var number$1 = /^-?\d+(?:\.\d+)?$/;
+var boolean$1 = /^(?:true|false)$/i;
+var _null$2 = /^null$/i;
+var lowercase = /^[^A-Z]*$/;
+var uppercase = /^[^a-z]*$/;
+//#endregion
+//#region node_modules/zod/v4/core/checks.js
+var $ZodCheck = /*@__PURE__*/ $constructor("$ZodCheck", (inst, def) => {
+	var _a;
+	inst._zod ?? (inst._zod = {});
+	inst._zod.def = def;
+	(_a = inst._zod).onattach ?? (_a.onattach = []);
+});
+/** Default `when` for length-based checks: run only on non-nullish values with a `length`. */
+var _whenHasLength = (payload) => {
+	const val = payload.value;
+	return !nullish(val) && val.length !== void 0;
+};
+var numericOriginMap = {
+	number: "number",
+	bigint: "bigint",
+	object: "date"
+};
+var $ZodCheckLessThan = /*@__PURE__*/ $constructor("$ZodCheckLessThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value <= def.value : payload.value < def.value) return;
+		payload.issues.push({
+			origin: numericOriginMap[typeof payload.value] ?? origin,
+			code: "too_big",
+			maximum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckGreaterThan = /*@__PURE__*/ $constructor("$ZodCheckGreaterThan", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const origin = numericOriginMap[typeof def.value];
+	inst._zod.check = (payload) => {
+		if (def.inclusive ? payload.value >= def.value : payload.value > def.value) return;
+		payload.issues.push({
+			origin: numericOriginMap[typeof payload.value] ?? origin,
+			code: "too_small",
+			minimum: typeof def.value === "object" ? def.value.getTime() : def.value,
+			input: payload.value,
+			inclusive: def.inclusive,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckMultipleOf = /*@__PURE__*/ $constructor("$ZodCheckMultipleOf", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (typeof payload.value !== typeof def.value) throw new Error("Cannot mix number and bigint in multiple_of check.");
+		if (typeof payload.value === "bigint" ? def.value !== BigInt(0) && payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0) return;
+		payload.issues.push({
+			origin: typeof payload.value,
+			code: "not_multiple_of",
+			divisor: def.value,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckNumberFormat = /*@__PURE__*/ $constructor("$ZodCheckNumberFormat", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	def.format = def.format || "float64";
+	const isInt = def.format?.includes("int");
+	const origin = isInt ? "int" : "number";
+	const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		if (isInt) {
+			if (!Number.isInteger(input)) {
+				payload.issues.push({
+					expected: origin,
+					format: def.format,
+					code: "invalid_type",
+					continue: false,
+					input,
+					inst
+				});
+				return;
+			}
+			if (!Number.isSafeInteger(input)) {
+				if (input > 0) payload.issues.push({
+					input,
+					code: "too_big",
+					maximum: Number.MAX_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				else payload.issues.push({
+					input,
+					code: "too_small",
+					minimum: Number.MIN_SAFE_INTEGER,
+					note: "Integers must be within the safe integer range.",
+					inst,
+					origin,
+					inclusive: true,
+					continue: !def.abort
+				});
+				return;
+			}
+		}
+		if (input < minimum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_small",
+			minimum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+		if (input > maximum) payload.issues.push({
+			origin: "number",
+			input,
+			code: "too_big",
+			maximum,
+			inclusive: true,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckMaxLength = /*@__PURE__*/ $constructor("$ZodCheckMaxLength", (inst, def) => {
+	var _a;
+	$ZodCheck.init(inst, def);
+	(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		const units = input.length;
+		if ((typeof input === "string" && units > def.maximum ? codePointLength(input) : units) <= def.maximum) return;
+		const origin = getLengthableOrigin(input);
+		payload.issues.push({
+			origin,
+			code: "too_big",
+			maximum: def.maximum,
+			inclusive: true,
+			input,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckMinLength = /*@__PURE__*/ $constructor("$ZodCheckMinLength", (inst, def) => {
+	var _a;
+	$ZodCheck.init(inst, def);
+	(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		const units = input.length;
+		if ((typeof input === "string" && units >= def.minimum && units < def.minimum * 2 ? codePointLength(input) : units) >= def.minimum) return;
+		const origin = getLengthableOrigin(input);
+		payload.issues.push({
+			origin,
+			code: "too_small",
+			minimum: def.minimum,
+			inclusive: true,
+			input,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckLengthEquals = /*@__PURE__*/ $constructor("$ZodCheckLengthEquals", (inst, def) => {
+	var _a;
+	$ZodCheck.init(inst, def);
+	(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		const units = input.length;
+		const length = typeof input === "string" && units >= def.length && units <= def.length * 2 ? codePointLength(input) : units;
+		if (length === def.length) return;
+		const origin = getLengthableOrigin(input);
+		const tooBig = length > def.length;
+		payload.issues.push({
+			origin,
+			...tooBig ? {
+				code: "too_big",
+				maximum: def.length
+			} : {
+				code: "too_small",
+				minimum: def.length
+			},
+			inclusive: true,
+			exact: true,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckStringFormat = /*@__PURE__*/ $constructor("$ZodCheckStringFormat", (inst, def) => {
+	var _a, _b;
+	$ZodCheck.init(inst, def);
+	if (def.pattern) (_a = inst._zod).check ?? (_a.check = (payload) => {
+		def.pattern.lastIndex = 0;
+		if (def.pattern.test(payload.value)) return;
+		payload.issues.push({
+			origin: "string",
+			code: "invalid_format",
+			format: def.format,
+			input: payload.value,
+			...def.pattern ? { pattern: def.pattern.toString() } : {},
+			inst,
+			continue: !def.abort
+		});
+	});
+	else (_b = inst._zod).check ?? (_b.check = () => {});
+});
+var $ZodCheckRegex = /*@__PURE__*/ $constructor("$ZodCheckRegex", (inst, def) => {
+	$ZodCheckStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		def.pattern.lastIndex = 0;
+		if (def.pattern.test(payload.value)) return;
+		payload.issues.push({
+			origin: "string",
+			code: "invalid_format",
+			format: "regex",
+			input: payload.value,
+			pattern: def.pattern.toString(),
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckLowerCase = /*@__PURE__*/ $constructor("$ZodCheckLowerCase", (inst, def) => {
+	def.pattern ?? (def.pattern = lowercase);
+	$ZodCheckStringFormat.init(inst, def);
+});
+var $ZodCheckUpperCase = /*@__PURE__*/ $constructor("$ZodCheckUpperCase", (inst, def) => {
+	def.pattern ?? (def.pattern = uppercase);
+	$ZodCheckStringFormat.init(inst, def);
+});
+var $ZodCheckIncludes = /*@__PURE__*/ $constructor("$ZodCheckIncludes", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const escapedRegex = escapeRegex(def.includes);
+	def.pattern = new RegExp(typeof def.position === "number" ? `^.{${def.position},}${escapedRegex}` : escapedRegex);
+	inst._zod.check = (payload) => {
+		if (payload.value.includes(def.includes, def.position)) return;
+		payload.issues.push({
+			origin: "string",
+			code: "invalid_format",
+			format: "includes",
+			includes: def.includes,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckStartsWith = /*@__PURE__*/ $constructor("$ZodCheckStartsWith", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const pattern = new RegExp(`^${escapeRegex(def.prefix)}.*`);
+	def.pattern ?? (def.pattern = pattern);
+	inst._zod.check = (payload) => {
+		if (payload.value.startsWith(def.prefix)) return;
+		payload.issues.push({
+			origin: "string",
+			code: "invalid_format",
+			format: "starts_with",
+			prefix: def.prefix,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckEndsWith = /*@__PURE__*/ $constructor("$ZodCheckEndsWith", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	const pattern = new RegExp(`.*${escapeRegex(def.suffix)}$`);
+	def.pattern ?? (def.pattern = pattern);
+	inst._zod.check = (payload) => {
+		if (payload.value.endsWith(def.suffix)) return;
+		payload.issues.push({
+			origin: "string",
+			code: "invalid_format",
+			format: "ends_with",
+			suffix: def.suffix,
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCheckOverwrite = /*@__PURE__*/ $constructor("$ZodCheckOverwrite", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	inst._zod.check = (payload) => {
+		payload.value = def.tx(payload.value);
+	};
+});
+//#endregion
+//#region node_modules/zod/v4/core/doc.js
+var Doc = class {
+	constructor(args = [], closed = {}) {
+		this.content = [];
+		this.indent = 0;
+		this.args = args;
+		this.closed = closed;
+	}
+	indented(fn) {
+		this.indent += 1;
+		try {
+			fn(this);
+		} finally {
+			this.indent -= 1;
+		}
+	}
+	write(arg) {
+		if (typeof arg === "function") {
+			arg(this, { execution: "sync" });
+			arg(this, { execution: "async" });
+			return;
+		}
+		const lines = arg.split("\n").filter((x) => x);
+		const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
+		const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
+		for (const line of dedented) this.content.push(line);
+	}
+	compile() {
+		const F = Function;
+		const content = this?.content ?? [``];
+		return new F(...Object.keys(this.closed), `return function (${this.args.join(", ")}) {\n${content.join("\n")}\n};`)(...Object.values(this.closed));
+	}
+};
+//#endregion
+//#region node_modules/zod/v4/core/versions.js
+var version = {
+	major: 4,
+	minor: 6,
+	patch: 7
+};
+//#endregion
+//#region node_modules/zod/v4/core/schemas.js
+var $ZodType = /*@__PURE__*/ $constructor("$ZodType", (inst, def) => {
+	var _a;
+	inst ?? (inst = {});
+	inst._zod.def = def;
+	inst._zod.bag = inst._zod.bag || {};
+	inst._zod.version = version;
+	const defChecks = inst._zod.def.checks;
+	const checks = inst._zod.traits.has("$ZodCheck") ? [inst, ...defChecks ?? []] : defChecks?.length ? [...defChecks] : [];
+	for (const ch of checks) for (const fn of ch._zod.onattach) fn(inst);
+	if (checks.length === 0) {
+		(_a = inst._zod).deferred ?? (_a.deferred = []);
+		inst._zod.deferred?.push(() => {
+			inst._zod.run = inst._zod.parse;
+		});
+	} else {
+		const runChecks = (payload, checks, ctx) => {
+			if (payload.memo) return payload;
+			let isAborted = aborted(payload);
+			let asyncResult;
+			for (const ch of checks) {
+				if (ch._zod.def.when) {
+					if (explicitlyAborted(payload)) continue;
+					if (!ch._zod.def.when(payload)) continue;
+				} else if (isAborted) continue;
+				const currLen = payload.issues.length;
+				const _ = ch._zod.check(payload);
+				if (_ instanceof Promise && ctx?.async === false) throw new $ZodAsyncError();
+				if (asyncResult || _ instanceof Promise) asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
+					await _;
+					if (payload.issues.length === currLen) return;
+					attachSchema(payload.issues, currLen, inst);
+					if (!isAborted) isAborted = aborted(payload, currLen);
+				});
+				else {
+					if (payload.issues.length === currLen) continue;
+					attachSchema(payload.issues, currLen, inst);
+					if (!isAborted) isAborted = aborted(payload, currLen);
+				}
+			}
+			if (asyncResult) return asyncResult.then(() => {
+				return payload;
+			});
+			return payload;
+		};
+		const handleCanaryResult = (canary, payload, ctx) => {
+			if (aborted(canary)) {
+				canary.aborted = true;
+				return canary;
+			}
+			const checkResult = runChecks(payload, checks, ctx);
+			if (checkResult instanceof Promise) {
+				if (ctx.async === false) throw new $ZodAsyncError();
+				return checkResult.then((checkResult) => inst._zod.parse(checkResult, ctx));
+			}
+			return inst._zod.parse(checkResult, ctx);
+		};
+		inst._zod.run = (payload, ctx) => {
+			if (ctx.skipChecks) return inst._zod.parse(payload, ctx);
+			if (ctx.direction === "backward") {
+				const canary = inst._zod.parse({
+					value: payload.value,
+					issues: []
+				}, {
+					...ctx,
+					skipChecks: true
+				});
+				if (canary instanceof Promise) return canary.then((canary) => {
+					return handleCanaryResult(canary, payload, ctx);
+				});
+				return handleCanaryResult(canary, payload, ctx);
+			}
+			const result = inst._zod.parse(payload, ctx);
+			if (result instanceof Promise) {
+				if (ctx.async === false) throw new $ZodAsyncError();
+				return result.then((result) => runChecks(result, checks, ctx));
+			}
+			return runChecks(result, checks, ctx);
+		};
+	}
+}, {
+	get "~standard"() {
+		return hide(this, "~standard", standardProps(this));
+	},
+	set "~standard"(value) {
+		own(this, "~standard", value);
+	}
+});
+/** The Standard Schema surface for `inst`. Shared so wrappers can extend it without forcing it. */
+var toStandardResult = (r, ctx) => r.issues.length ? { issues: r.issues.map((iss) => finalizeIssue(iss, ctx, config())) } : { value: r.value };
+async function validateAsync(inst, value) {
+	const ctx = { async: true };
+	return toStandardResult(await inst._zod.run({
+		value,
+		issues: []
+	}, ctx), ctx);
+}
+function standardProps(inst) {
+	return {
+		validate: (value) => {
+			const ctx = { async: false };
+			try {
+				const r = inst._zod.run({
+					value,
+					issues: []
+				}, ctx);
+				if (!(r instanceof Promise)) return toStandardResult(r, ctx);
+			} catch (_) {}
+			return validateAsync(inst, value);
+		},
+		vendor: "zod",
+		version: 1
+	};
+}
+var $ZodString = /*@__PURE__*/ $constructor("$ZodString", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = def.pattern ?? anyString;
+	inst._zod.parse = (payload, _) => {
+		if (def.coerce) try {
+			payload.value = String(payload.value);
+		} catch (_) {}
+		if (typeof payload.value === "string") return payload;
+		payload.issues.push({
+			expected: "string",
+			code: "invalid_type",
+			input: payload.value,
+			inst
+		});
+		return payload;
+	};
+});
+var $ZodStringFormat = /*@__PURE__*/ $constructor("$ZodStringFormat", (inst, def) => {
+	$ZodCheckStringFormat.init(inst, def);
+	$ZodString.init(inst, def);
+});
+var $ZodGUID = /*@__PURE__*/ $constructor("$ZodGUID", (inst, def) => {
+	def.pattern ?? (def.pattern = guid);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodUUID = /*@__PURE__*/ $constructor("$ZodUUID", (inst, def) => {
+	if (def.version) {
+		const v = {
+			v1: 1,
+			v2: 2,
+			v3: 3,
+			v4: 4,
+			v5: 5,
+			v6: 6,
+			v7: 7,
+			v8: 8
+		}[def.version];
+		if (v === void 0) throw new Error(`Invalid UUID version: "${def.version}"`);
+		def.pattern ?? (def.pattern = uuid(v));
+	} else def.pattern ?? (def.pattern = uuid());
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodEmail = /*@__PURE__*/ $constructor("$ZodEmail", (inst, def) => {
+	def.pattern ?? (def.pattern = email);
+	$ZodStringFormat.init(inst, def);
+});
+/** The `://` guard rejected the input before the URL constructor saw it. */
+var URL_BAD_FORMAT = 1;
+/** The URL parser rejected the input. */
+var URL_UNPARSEABLE = 2;
+function canParseURL(input) {
+	try {
+		if (typeof URL !== "undefined" && typeof URL.canParse === "function") return URL.canParse(input);
+		new URL(input);
+		return true;
+	} catch {
+		return false;
+	}
+}
+function validateURL(trimmed, def) {
+	if (!("normalize" in def) && !("hostname" in def) && !("protocol" in def)) return canParseURL(trimmed) || URL_UNPARSEABLE;
+	return parseURLObject(trimmed, def);
+}
+/** Parses a URL while preserving the non-normalizing HTTP guard. */
+function parseURLObject(trimmed, def) {
+	if (!def.normalize && def.protocol?.source === httpProtocol.source && !/^https?:\/\//i.test(trimmed)) return URL_BAD_FORMAT;
+	try {
+		if (typeof URL !== "undefined") {
+			const URLStatic = URL;
+			if (typeof URLStatic.parse === "function") return URLStatic.parse(trimmed) ?? URL_UNPARSEABLE;
+		}
+		return new URL(trimmed);
+	} catch {
+		return URL_UNPARSEABLE;
+	}
+}
+var asciiTabOrNewline = /[\t\n\r]/g;
+/** The URL parser deletes every ASCII tab, LF and CR from its input before it parses, so `new URL("https://exa\nmple.com")` reports on `example.com`. Applying the same deletion to the returned value closes the half of that divergence which can move the host; the parser's other rewrite, stripping C0 controls at the edges, cannot. */
+function stripTabAndNewline(value) {
+	return value.replace(asciiTabOrNewline, "");
+}
+function urlHostnameOk(url, hostname) {
+	hostname.lastIndex = 0;
+	return hostname.test(url.hostname);
+}
+function urlProtocolOk(url, protocol) {
+	protocol.lastIndex = 0;
+	return protocol.test(url.protocol.endsWith(":") ? url.protocol.slice(0, -1) : url.protocol);
+}
+var $ZodURL = /*@__PURE__*/ $constructor("$ZodURL", (inst, def) => {
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		try {
+			const trimmed = payload.value.trim();
+			const url = validateURL(trimmed, def);
+			if (url === URL_BAD_FORMAT) {
+				payload.issues.push({
+					code: "invalid_format",
+					format: "url",
+					note: "Invalid URL format",
+					input: payload.value,
+					inst,
+					continue: !def.abort
+				});
+				return;
+			}
+			if (url === URL_UNPARSEABLE) {
+				payload.issues.push({
+					code: "invalid_format",
+					format: "url",
+					input: payload.value,
+					inst,
+					continue: !def.abort
+				});
+				return;
+			}
+			if (url === true) {
+				payload.value = stripTabAndNewline(trimmed);
+				return;
+			}
+			if (def.hostname && !urlHostnameOk(url, def.hostname)) payload.issues.push({
+				code: "invalid_format",
+				format: "url",
+				note: "Invalid hostname",
+				pattern: def.hostname.source,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+			if (def.protocol && !urlProtocolOk(url, def.protocol)) payload.issues.push({
+				code: "invalid_format",
+				format: "url",
+				note: "Invalid protocol",
+				pattern: def.protocol.source,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+			payload.value = def.normalize ? url.href : stripTabAndNewline(trimmed);
+			return;
+		} catch (_) {
+			payload.issues.push({
+				code: "invalid_format",
+				format: "url",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		}
+	};
+});
+var $ZodEmoji = /*@__PURE__*/ $constructor("$ZodEmoji", (inst, def) => {
+	def.pattern ?? (def.pattern = emoji());
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodNanoID = /*@__PURE__*/ $constructor("$ZodNanoID", (inst, def) => {
+	if (def.length !== void 0 && (!Number.isInteger(def.length) || def.length < 1)) throw new Error(`Invalid nanoid length: ${def.length}`);
+	def.pattern ?? (def.pattern = def.length === void 0 ? nanoid : nanoidOfLength(def.length));
+	$ZodStringFormat.init(inst, def);
+});
+/**
+* @deprecated CUID v1 is deprecated by its authors due to information leakage
+* (timestamps embedded in the id). Use {@link $ZodCUID2} instead.
+* See https://github.com/paralleldrive/cuid.
+*/
+var $ZodCUID = /*@__PURE__*/ $constructor("$ZodCUID", (inst, def) => {
+	def.pattern ?? (def.pattern = cuid);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodCUID2 = /*@__PURE__*/ $constructor("$ZodCUID2", (inst, def) => {
+	def.pattern ?? (def.pattern = cuid2);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodULID = /*@__PURE__*/ $constructor("$ZodULID", (inst, def) => {
+	def.pattern ?? (def.pattern = ulid);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodXID = /*@__PURE__*/ $constructor("$ZodXID", (inst, def) => {
+	def.pattern ?? (def.pattern = xid);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodKSUID = /*@__PURE__*/ $constructor("$ZodKSUID", (inst, def) => {
+	def.pattern ?? (def.pattern = ksuid);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodISODateTime = /*@__PURE__*/ $constructor("$ZodISODateTime", (inst, def) => {
+	def.pattern ?? (def.pattern = datetime(def));
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodISODate = /*@__PURE__*/ $constructor("$ZodISODate", (inst, def) => {
+	def.pattern ?? (def.pattern = date);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodISOTime = /*@__PURE__*/ $constructor("$ZodISOTime", (inst, def) => {
+	def.pattern ?? (def.pattern = time(def));
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodISODuration = /*@__PURE__*/ $constructor("$ZodISODuration", (inst, def) => {
+	def.pattern ?? (def.pattern = duration);
+	$ZodStringFormat.init(inst, def);
+});
+var $ZodIPv4 = /*@__PURE__*/ $constructor("$ZodIPv4", (inst, def) => {
+	def.pattern ?? (def.pattern = ipv4);
+	$ZodStringFormat.init(inst, def);
+});
+/** An IPv6 address is written with hex digits, colons and dots, and nothing else. The guard is what makes the check below an IPv6 check: `new URL("http://[...]")` parses an authority, not an address, so `@` and `\` re-delimit it and `"::@1\\"` validates against the host `0.0.0.1`. The URL parser also deletes ASCII tab, LF and CR rather than failing, which is how `"::1\n"` validated as `::1`. */
+var ipv6Alphabet = /^[0-9a-fA-F:.]+$/;
+function isValidIPv6(value) {
+	if (!ipv6Alphabet.test(value)) return false;
+	return canParseURL(`http://[${value}]`);
+}
+var $ZodIPv6 = /*@__PURE__*/ $constructor("$ZodIPv6", (inst, def) => {
+	def.pattern ?? (def.pattern = ipv6);
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (!isValidIPv6(payload.value)) payload.issues.push({
+			code: "invalid_format",
+			format: "ipv6",
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodCIDRv4 = /*@__PURE__*/ $constructor("$ZodCIDRv4", (inst, def) => {
+	def.pattern ?? (def.pattern = cidrv4);
+	$ZodStringFormat.init(inst, def);
+});
+function isValidCIDRv6(value) {
+	const parts = value.split("/");
+	if (parts.length !== 2) return false;
+	const [address, prefix] = parts;
+	if (!prefix) return false;
+	const prefixNum = Number(prefix);
+	if (`${prefixNum}` !== prefix) return false;
+	if (prefixNum < 0 || prefixNum > 128) return false;
+	return isValidIPv6(address);
+}
+var $ZodCIDRv6 = /*@__PURE__*/ $constructor("$ZodCIDRv6", (inst, def) => {
+	def.pattern ?? (def.pattern = cidrv6);
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (!isValidCIDRv6(payload.value)) payload.issues.push({
+			code: "invalid_format",
+			format: "cidrv6",
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+function isValidBase64(data) {
+	if (data === "") return true;
+	if (/\s/.test(data)) return false;
+	if (data.length % 4 !== 0) return false;
+	try {
+		atob(data);
+		return true;
+	} catch {
+		return false;
+	}
+}
+var base64Charset = /^[0-9a-zA-Z+/]*={0,2}$/;
+var $ZodBase64 = /*@__PURE__*/ $constructor("$ZodBase64", (inst, def) => {
+	def.pattern ?? (def.pattern = base64Charset);
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (isValidBase64(payload.value)) return;
+		payload.issues.push({
+			code: "invalid_format",
+			format: "base64",
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var base64urlCharset = /^[A-Za-z0-9_-]*$/;
+function isValidBase64URL(data) {
+	if (!base64urlCharset.test(data)) return false;
+	const base64 = data.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
+	return isValidBase64(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+}
+var $ZodBase64URL = /*@__PURE__*/ $constructor("$ZodBase64URL", (inst, def) => {
+	def.pattern ?? (def.pattern = base64urlCharset);
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (isValidBase64URL(payload.value)) return;
+		payload.issues.push({
+			code: "invalid_format",
+			format: "base64url",
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodE164 = /*@__PURE__*/ $constructor("$ZodE164", (inst, def) => {
+	def.pattern ?? (def.pattern = e164);
+	$ZodStringFormat.init(inst, def);
+});
+function isValidJWT(token, algorithm = null) {
+	try {
+		const tokensParts = token.split(".");
+		if (tokensParts.length !== 3) return false;
+		const [header] = tokensParts;
+		if (!header) return false;
+		const parsedHeader = JSON.parse(atob(header));
+		if ("typ" in parsedHeader && parsedHeader?.typ !== "JWT") return false;
+		if (!parsedHeader.alg) return false;
+		if (algorithm && (!("alg" in parsedHeader) || parsedHeader.alg !== algorithm)) return false;
+		return true;
+	} catch {
+		return false;
+	}
+}
+var $ZodJWT = /*@__PURE__*/ $constructor("$ZodJWT", (inst, def) => {
+	$ZodStringFormat.init(inst, def);
+	inst._zod.check = (payload) => {
+		if (isValidJWT(payload.value, def.alg)) return;
+		payload.issues.push({
+			code: "invalid_format",
+			format: "jwt",
+			input: payload.value,
+			inst,
+			continue: !def.abort
+		});
+	};
+});
+var $ZodNumber = /*@__PURE__*/ $constructor("$ZodNumber", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = number$1;
+	inst._zod.parse = (payload, _ctx) => {
+		if (def.coerce) try {
+			payload.value = Number(payload.value);
+		} catch (_) {}
+		const input = payload.value;
+		if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) return payload;
+		const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? String(input) : void 0 : void 0;
+		payload.issues.push({
+			expected: "number",
+			code: "invalid_type",
+			input,
+			inst,
+			...received ? { received } : {}
+		});
+		return payload;
+	};
+});
+var $ZodNumberFormat = /*@__PURE__*/ $constructor("$ZodNumberFormat", (inst, def) => {
+	$ZodCheckNumberFormat.init(inst, def);
+	$ZodNumber.init(inst, def);
+});
+var $ZodBoolean = /*@__PURE__*/ $constructor("$ZodBoolean", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = boolean$1;
+	inst._zod.parse = (payload, _ctx) => {
+		if (def.coerce) try {
+			payload.value = Boolean(payload.value);
+		} catch (_) {}
+		const input = payload.value;
+		if (typeof input === "boolean") return payload;
+		payload.issues.push({
+			expected: "boolean",
+			code: "invalid_type",
+			input,
+			inst
+		});
+		return payload;
+	};
+});
+var $ZodNull = /*@__PURE__*/ $constructor("$ZodNull", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.pattern = _null$2;
+	inst._zod.values = /* @__PURE__ */ new Set([null]);
+	inst._zod.parse = (payload, _ctx) => {
+		const input = payload.value;
+		if (input === null) return payload;
+		payload.issues.push({
+			expected: "null",
+			code: "invalid_type",
+			input,
+			inst
+		});
+		return payload;
+	};
+});
+var $ZodUnknown = /*@__PURE__*/ $constructor("$ZodUnknown", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.parse = (payload) => payload;
+});
+var $ZodNever = /*@__PURE__*/ $constructor("$ZodNever", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.parse = (payload, _ctx) => {
+		payload.issues.push({
+			expected: "never",
+			code: "invalid_type",
+			input: payload.value,
+			inst
+		});
+		return payload;
+	};
+});
+function capSize(inst, size) {
+	const caps = sizeCaps(inst._zod.def.checks);
+	if (!caps.length) return;
+	const cap = Math.min(...caps.map((c) => c[0]));
+	const parse = inst._zod.parse;
+	inst._zod.parse = (payload, ctx) => {
+		const n = size(payload.value);
+		if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
+			for (const [max, ch] of sizeCaps(inst._zod.def.checks)) if (n > max && ch._zod.def.when(payload)) {
+				const start = payload.issues.length;
+				ch._zod.check(payload);
+				payload.issues[start].continue = false;
+				attachSchema(payload.issues, start, inst);
+				return payload;
+			}
+		}
+		return parse(payload, ctx);
+	};
+}
+var arraySize = (input) => Array.isArray(input) ? input.length : -1;
+function handleArrayResult(result, final, index) {
+	if (result.issues.length) final.issues.push(...prefixIssues(index, result.issues));
+	final.value[index] = result.value;
+}
+var $ZodArray = /*@__PURE__*/ $constructor("$ZodArray", (inst, def) => {
+	$ZodType.init(inst, def);
+	const memo = globalConfig.memoizer;
+	memo?.attach(inst);
+	inst._zod.parse = (payload, ctx) => {
+		const input = payload.value;
+		if (!Array.isArray(input)) {
+			payload.issues.push({
+				expected: "array",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		}
+		payload.value = memo ? memo.alloc(inst, payload, Array(input.length), ctx) : Array(input.length);
+		const proms = [];
+		const abortEarly = ctx?.abortEarly;
+		for (let i = 0; i < input.length; i++) {
+			const item = input[i];
+			const result = def.element._zod.run({
+				value: item,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) proms.push(result.then((result) => handleArrayResult(result, payload, i)));
+			else {
+				handleArrayResult(result, payload, i);
+				if (abortEarly && result.issues.length !== 0 && aborted(result)) break;
+			}
+		}
+		if (proms.length) return Promise.all(proms).then(() => payload);
+		return payload;
+	};
+	capSize(inst, arraySize);
+});
+function handlePropertyResult(result, final, key, input, optin, optout) {
+	const isPresent = key in input;
+	const isOptionalOut = optout === "optional";
+	if (!isPresent && isOptionalOut && optin === "optional") return;
+	if (result.issues.length) {
+		if (optin !== void 0 && isOptionalOut && !isPresent) return;
+		final.issues.push(...prefixIssues(key, result.issues));
+	}
+	if (!isPresent && optin === void 0) {
+		if (!result.issues.length) final.issues.push({
+			code: "invalid_type",
+			expected: "nonoptional",
+			input: void 0,
+			path: [key]
+		});
+		return;
+	}
+	if (result.value === void 0) {
+		if (isPresent || optin === "defaulted" && !isOptionalOut) final.value[key] = void 0;
+	} else final.value[key] = result.value;
+}
+var NO_SYMBOL_KEYS = [];
+function normalizeDef(def) {
+	const keys = Object.keys(def.shape);
+	const ownSymbols = Object.getOwnPropertySymbols(def.shape);
+	const symbolKeys = ownSymbols.length ? ownSymbols : NO_SYMBOL_KEYS;
+	const allKeys = symbolKeys.length ? [...keys, ...symbolKeys] : keys;
+	for (const k of allKeys) if (!def.shape?.[k]?._zod?.traits?.has("$ZodType")) throw new Error(`Invalid element at key "${String(k)}": expected a Zod schema`);
+	const okeys = optionalKeys(def.shape);
+	return {
+		...def,
+		allKeys,
+		symbolKeys,
+		keySet: new Set(keys),
+		numKeys: keys.length,
+		optionalKeys: new Set(okeys)
+	};
+}
+function handleCatchall(proms, input, payload, ctx, def, inst, abortEarly) {
+	const unrecognized = [];
+	const keySet = def.keySet;
+	const _catchall = def.catchall._zod;
+	const t = _catchall.def.type;
+	const optin = _catchall.optin;
+	const optout = _catchall.optout;
+	let seen = 0;
+	for (const key in input) {
+		if (abortEarly && payload.issues.length !== seen) {
+			if (aborted(payload, seen)) break;
+			seen = payload.issues.length;
+		}
+		if (keySet.has(key)) continue;
+		if (key === "__proto__") {
+			if (t === "never") unrecognized.push(key);
+			continue;
+		}
+		if (t === "never") {
+			unrecognized.push(key);
+			continue;
+		}
+		const r = _catchall.run({
+			value: input[key],
+			issues: []
+		}, ctx);
+		if (r instanceof Promise) proms.push(r.then((r) => handlePropertyResult(r, payload, key, input, optin, optout)));
+		else handlePropertyResult(r, payload, key, input, optin, optout);
+	}
+	if (unrecognized.length) payload.issues.push({
+		code: "unrecognized_keys",
+		keys: unrecognized,
+		input,
+		inst,
+		continue: true
+	});
+	if (!proms.length) return payload;
+	return Promise.all(proms).then(() => {
+		return payload;
+	});
+}
+var $ZodObject = /*@__PURE__*/ $constructor("$ZodObject", (inst, def) => {
+	$ZodType.init(inst, def);
+	const desc = Object.getOwnPropertyDescriptor(def, "shape");
+	const sh = desc?.get ? desc.get.raw : def.shape ?? {};
+	if (sh) {
+		const get = () => {
+			const newSh = { ...sh };
+			Object.defineProperty(def, "shape", { value: newSh });
+			get.raw = newSh;
+			return newSh;
+		};
+		get.raw = sh;
+		Object.defineProperty(def, "shape", { get });
+	}
+	const _normalized = cached(() => normalizeDef(def));
+	defineLazyInternal(inst, "propValues", (zod) => {
+		const shape = zod.def.shape;
+		const propValues = {};
+		for (const key in shape) {
+			const field = shape[key]._zod;
+			if (field.values) {
+				if (!Object.prototype.hasOwnProperty.call(propValues, key)) assignProp(propValues, key, /* @__PURE__ */ new Set());
+				for (const v of field.values) propValues[key].add(v);
+				if (field.optin !== void 0) propValues[key].add(void 0);
+			}
+		}
+		return propValues;
+	});
+	const isObject = isObject$1;
+	const catchall = def.catchall;
+	let value;
+	const memo = globalConfig.memoizer;
+	memo?.attach(inst);
+	inst._zod.parse = (payload, ctx) => {
+		value ?? (value = _normalized.value);
+		const input = payload.value;
+		if (!isObject(input)) {
+			payload.issues.push({
+				expected: "object",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		}
+		payload.value = memo ? memo.alloc(inst, payload, {}, ctx) : {};
+		const proms = [];
+		const shape = value.shape;
+		const abortEarly = ctx?.abortEarly;
+		let seen = payload.issues.length;
+		for (const key of value.allKeys) {
+			if (abortEarly && payload.issues.length !== seen) {
+				if (aborted(payload, seen)) break;
+				seen = payload.issues.length;
+			}
+			if (key === "__proto__") continue;
+			const el = shape[key];
+			const optin = el._zod.optin;
+			const optout = el._zod.optout;
+			const r = el._zod.run({
+				value: input[key],
+				issues: []
+			}, ctx);
+			if (r instanceof Promise) proms.push(r.then((r) => handlePropertyResult(r, payload, key, input, optin, optout)));
+			else handlePropertyResult(r, payload, key, input, optin, optout);
+		}
+		if (!catchall) return proms.length ? Promise.all(proms).then(() => payload) : payload;
+		return handleCatchall(proms, input, payload, ctx, _normalized.value, inst, abortEarly === true);
+	};
+});
+var $ZodObjectJIT = /*@__PURE__*/ $constructor("$ZodObjectJIT", (inst, def) => {
+	$ZodObject.init(inst, def);
+	const superParse = inst._zod.parse;
+	const _normalized = cached(() => normalizeDef(def));
+	const memo = globalConfig.memoizer;
+	const generateFastpass = (shape) => {
+		const normalized = _normalized.value;
+		const syms = normalized.symbolKeys;
+		const doc = new Doc(["payload", "ctx"], {
+			shape,
+			inst,
+			memo,
+			syms
+		});
+		const parseStr = (k) => `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
+		const prefixStr = (id, k) => `
+          let ${id}_ab = false;
+          for (let i = 0; i < ${id}.issues.length; i++) {
+            const iss = ${id}.issues[i];
+            iss.path = iss.path ? [${k}, ...iss.path] : [${k}];
+            payload.issues.push(iss);
+            if (iss.continue !== true) ${id}_ab = true;
+          }
+          if (${id}_ab && ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
+          }`;
+		doc.write(`const input = payload.value;`);
+		const ids = Object.create(null);
+		let counter = 0;
+		for (const key of normalized.allKeys) ids[key] = `key_${counter++}`;
+		doc.write(memo ? `const newResult = memo.alloc(inst, payload, {}, ctx);` : `const newResult = {};`);
+		for (const key of normalized.allKeys) {
+			if (key === "__proto__") continue;
+			const id = ids[key];
+			const k = typeof key === "symbol" ? `syms[${syms.indexOf(key)}]` : esc(key);
+			const isPresent = `${k} in input`;
+			const schema = shape[key];
+			const optin = schema?._zod?.optin;
+			const isOptionalIn = optin !== void 0;
+			const isOptionalOut = schema?._zod?.optout === "optional";
+			doc.write(`const ${id} = ${parseStr(k)};`);
+			if (isOptionalIn && isOptionalOut) {
+				const assign = optin === "optional" ? `${id}_present` : `${id}.value !== undefined || ${id}_present`;
+				doc.write(`
+        const ${id}_present = ${isPresent};
+        if (!${id}.issues.length || ${id}_present) {
+          if (${id}.issues.length) {${prefixStr(id, k)}
+          }
+
+          if (${assign}) {
+            newResult[${k}] = ${id}.value;
+          }
+        }
+
+      `);
+			} else if (!isOptionalIn) doc.write(`
+        const ${id}_present = ${isPresent};
+        if (${id}.issues.length) {${prefixStr(id, k)}
+        }
+        if (!${id}_present && !${id}.issues.length) {
+          payload.issues.push({
+            code: "invalid_type",
+            expected: "nonoptional",
+            input: undefined,
+            path: [${k}]
+          });
+          if (ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
+          }
+        }
+
+        if (${id}_present) {
+          newResult[${k}] = ${id}.value;
+        }
+
+      `);
+			else {
+				doc.write(`
+        if (${id}.issues.length) {${prefixStr(id, k)}
+        }
+      `);
+				if (optin === "defaulted") doc.write(`newResult[${k}] = ${id}.value;`);
+				else doc.write(`
+        if (${id}.value !== undefined || ${isPresent}) {
+          newResult[${k}] = ${id}.value;
+        }
+      `);
+			}
+		}
+		doc.write(`payload.value = newResult;`);
+		doc.write(`return payload;`);
+		return doc.compile();
+	};
+	let fastpass;
+	const isObject = isObject$1;
+	const jit = !globalConfig.jitless;
+	const fastEnabled = jit && allowsEval.value;
+	const catchall = def.catchall;
+	let value;
+	inst._zod.parse = (payload, ctx) => {
+		value ?? (value = _normalized.value);
+		const input = payload.value;
+		if (!isObject(input)) {
+			payload.issues.push({
+				expected: "object",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		}
+		if (jit && fastEnabled && ctx?.async === false && ctx.jitless !== true) {
+			if (!fastpass) fastpass = generateFastpass(def.shape);
+			payload = fastpass(payload, ctx);
+			if (!catchall) return payload;
+			return handleCatchall([], input, payload, ctx, value, inst, ctx?.abortEarly === true);
+		}
+		return superParse(payload, ctx);
+	};
+});
+function handleUnionResults(results, final, inst, ctx) {
+	for (const result of results) if (result.issues.length === 0) {
+		final.value = result.value;
+		return final;
+	}
+	const nonaborted = results.filter((r) => !aborted(r));
+	if (nonaborted.length === 1) {
+		final.value = nonaborted[0].value;
+		return nonaborted[0];
+	}
+	final.issues.push({
+		code: "invalid_union",
+		input: final.value,
+		inst,
+		errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+	});
+	return final;
+}
+var $ZodUnion = /*@__PURE__*/ $constructor("$ZodUnion", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.options.some((o) => o._zod.optin === "defaulted") ? "defaulted" : zod.def.options.some((o) => o._zod.optin !== void 0) ? "optional" : void 0);
+	defineLazyInternal(inst, "optout", (zod) => zod.def.options.some((o) => o._zod.optout === "optional") ? "optional" : void 0);
+	defineLazyInternal(inst, "values", (zod) => {
+		if (zod.def.options.every((o) => o._zod.values)) return new Set(zod.def.options.flatMap((option) => Array.from(option._zod.values)));
+	});
+	defineLazyInternal(inst, "pattern", (zod) => {
+		if (zod.def.options.every((o) => o._zod.pattern)) {
+			const patterns = zod.def.options.map((o) => o._zod.pattern);
+			return new RegExp(`^(${patterns.map((p) => cleanRegex(p.source)).join("|")})$`);
+		}
+	});
+	const first = def.options.length === 1 ? def.options[0]._zod.run : null;
+	inst._zod.parse = (payload, ctx) => {
+		if (first) return first(payload, ctx);
+		let async = false;
+		const results = [];
+		for (const option of def.options) {
+			const result = option._zod.run({
+				value: payload.value,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) {
+				results.push(result);
+				async = true;
+			} else {
+				if (result.issues.length === 0) return result;
+				results.push(result);
+			}
+		}
+		if (!async) return handleUnionResults(results, payload, inst, ctx);
+		return Promise.all(results).then((results) => {
+			return handleUnionResults(results, payload, inst, ctx);
+		});
+	};
+});
+var $ZodIntersection = /*@__PURE__*/ $constructor("$ZodIntersection", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.parse = (payload, ctx) => {
+		const input = payload.value;
+		const left = def.left._zod.run({
+			value: input,
+			issues: []
+		}, ctx);
+		const right = def.right._zod.run({
+			value: input,
+			issues: []
+		}, ctx);
+		if (left instanceof Promise || right instanceof Promise) return Promise.all([left, right]).then(([left, right]) => {
+			return handleIntersectionResults(payload, left, right);
+		});
+		return handleIntersectionResults(payload, left, right);
+	};
+});
+function mergeValues(a, b) {
+	if (a === b) return {
+		valid: true,
+		data: a
+	};
+	if (a instanceof Date && b instanceof Date && +a === +b) return {
+		valid: true,
+		data: a
+	};
+	if (isPlainObject(a) && isPlainObject(b)) {
+		const bKeys = Object.keys(b);
+		const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
+		const newObj = {
+			...a,
+			...b
+		};
+		if (Object.prototype.hasOwnProperty.call(newObj, "__proto__")) delete newObj.__proto__;
+		for (const key of sharedKeys) {
+			if (key === "__proto__") continue;
+			const sharedValue = mergeValues(a[key], b[key]);
+			if (!sharedValue.valid) return {
+				valid: false,
+				mergeErrorPath: [key, ...sharedValue.mergeErrorPath]
+			};
+			newObj[key] = sharedValue.data;
+		}
+		return {
+			valid: true,
+			data: newObj
+		};
+	}
+	if (Array.isArray(a) && Array.isArray(b)) {
+		if (a.length !== b.length) return {
+			valid: false,
+			mergeErrorPath: []
+		};
+		const newArray = [];
+		for (let index = 0; index < a.length; index++) {
+			const itemA = a[index];
+			const itemB = b[index];
+			const sharedValue = mergeValues(itemA, itemB);
+			if (!sharedValue.valid) return {
+				valid: false,
+				mergeErrorPath: [index, ...sharedValue.mergeErrorPath]
+			};
+			newArray.push(sharedValue.data);
+		}
+		return {
+			valid: true,
+			data: newArray
+		};
+	}
+	return {
+		valid: false,
+		mergeErrorPath: []
+	};
+}
+function handleIntersectionResults(result, left, right) {
+	const unrecKeys = /* @__PURE__ */ new Map();
+	let unrecIssue;
+	const keyIssues = /* @__PURE__ */ new Map();
+	const collect = (iss, side) => {
+		let keys;
+		if (iss.code === "unrecognized_keys" && !iss.path?.length) {
+			unrecIssue ?? (unrecIssue = iss);
+			keys = iss.keys;
+		} else if (iss.code === "invalid_key" && iss.origin === "record" && iss.path?.length === 1) {
+			const k = String(iss.path[0]);
+			if (!keyIssues.has(k)) keyIssues.set(k, iss);
+			keys = [k];
+		} else return false;
+		for (const k of keys) {
+			if (!unrecKeys.has(k)) unrecKeys.set(k, {});
+			unrecKeys.get(k)[side] = true;
+		}
+		return true;
+	};
+	for (const iss of left.issues) if (!collect(iss, "l")) result.issues.push(iss);
+	for (const iss of right.issues) if (!collect(iss, "r")) result.issues.push(iss);
+	const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
+	if (bothKeys.length) {
+		const aggregated = unrecIssue ? bothKeys.filter((k) => unrecIssue.keys.includes(k)) : [];
+		if (aggregated.length) result.issues.push({
+			...unrecIssue,
+			keys: aggregated
+		});
+		for (const k of bothKeys) if (!aggregated.includes(k) && keyIssues.has(k)) result.issues.push(keyIssues.get(k));
+	}
+	const merged = mergeValues(left.value, right.value);
+	if (!merged.valid) {
+		if (aborted(result)) return result;
+		throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
+	}
+	result.value = merged.data;
+	return result;
+}
+var $ZodRecord = /*@__PURE__*/ $constructor("$ZodRecord", (inst, def) => {
+	$ZodType.init(inst, def);
+	const memo = globalConfig.memoizer;
+	memo?.attach(inst);
+	inst._zod.parse = (payload, ctx) => {
+		const input = payload.value;
+		if (!isPlainObject(input)) {
+			payload.issues.push({
+				expected: "record",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		}
+		const proms = [];
+		const values = def.keyType._zod.values;
+		if (values && !def.partial) {
+			payload.value = memo ? memo.alloc(inst, payload, {}, ctx) : {};
+			const recordKeys = /* @__PURE__ */ new Set();
+			for (const key of values) if (typeof key === "string" || typeof key === "number" || typeof key === "symbol") {
+				recordKeys.add(typeof key === "number" ? key.toString() : key);
+				if (key === "__proto__") continue;
+				const keyResult = def.keyType._zod.run({
+					value: key,
+					issues: []
+				}, ctx);
+				if (keyResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+				if (keyResult.issues.length) {
+					payload.issues.push({
+						code: "invalid_key",
+						origin: "record",
+						issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+						input: key,
+						path: [key],
+						inst
+					});
+					continue;
+				}
+				const outKey = keyResult.value;
+				if (outKey === "__proto__") continue;
+				const result = def.valueType._zod.run({
+					value: input[key],
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) proms.push(result.then((result) => {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}));
+				else {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}
+			}
+			let unrecognized;
+			for (const key in input) if (!recordKeys.has(key)) {
+				if (def.mode === "loose") {
+					if (key === "__proto__") continue;
+					payload.value[key] = input[key];
+				} else {
+					unrecognized = unrecognized ?? [];
+					unrecognized.push(key);
+				}
+			}
+			if (unrecognized && unrecognized.length > 0) payload.issues.push({
+				code: "unrecognized_keys",
+				input,
+				inst,
+				keys: unrecognized,
+				continue: true
+			});
+		} else {
+			payload.value = memo ? memo.alloc(inst, payload, {}, ctx) : {};
+			let unrecognized;
+			for (const key of Reflect.ownKeys(input)) {
+				if (key === "__proto__") continue;
+				if (!Object.prototype.propertyIsEnumerable.call(input, key)) continue;
+				let keyResult = def.keyType._zod.run({
+					value: key,
+					issues: []
+				}, ctx);
+				if (keyResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+				if (typeof key === "string" && number$1.test(key) && keyResult.issues.length) {
+					const retryResult = def.keyType._zod.run({
+						value: Number(key),
+						issues: []
+					}, ctx);
+					if (retryResult instanceof Promise) throw new Error("Async schemas not supported in object keys currently");
+					if (retryResult.issues.length === 0) keyResult = retryResult;
+				}
+				if (keyResult.issues.length) {
+					if (def.mode === "loose") payload.value[key] = input[key];
+					else if (values) {
+						unrecognized = unrecognized ?? [];
+						unrecognized.push(key);
+					} else payload.issues.push({
+						code: "invalid_key",
+						origin: "record",
+						issues: keyResult.issues.map((iss) => finalizeIssue(iss, ctx, config())),
+						input: key,
+						path: [key],
+						inst
+					});
+					continue;
+				}
+				const outKey = keyResult.value;
+				if (outKey === "__proto__") continue;
+				const result = def.valueType._zod.run({
+					value: input[key],
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) proms.push(result.then((result) => {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}));
+				else {
+					if (result.issues.length) payload.issues.push(...prefixIssues(key, result.issues));
+					payload.value[outKey] = result.value;
+				}
+			}
+			if (unrecognized && unrecognized.length > 0) payload.issues.push({
+				code: "unrecognized_keys",
+				input,
+				inst,
+				keys: unrecognized,
+				continue: true
+			});
+		}
+		if (proms.length) return Promise.all(proms).then(() => payload);
+		return payload;
+	};
+});
+var $ZodEnum = /*@__PURE__*/ $constructor("$ZodEnum", (inst, def) => {
+	$ZodType.init(inst, def);
+	const values = getEnumValues(def.entries);
+	const valuesSet = new Set(values);
+	inst._zod.values = valuesSet;
+	defineLazyInternal(inst, "pattern", (zod) => {
+		const patternValues = getEnumValues(zod.def.entries).filter((k) => propertyKeyTypes.has(typeof k));
+		return new RegExp(patternValues.length ? `^(${patternValues.map((o) => escapeRegex(o.toString())).join("|")})$` : "^[^\\s\\S]$");
+	});
+	inst._zod.parse = (payload, _ctx) => {
+		const input = payload.value;
+		if (valuesSet.has(input)) return payload;
+		payload.issues.push({
+			code: "invalid_value",
+			values,
+			input,
+			inst
+		});
+		return payload;
+	};
+});
+var $ZodLiteral = /*@__PURE__*/ $constructor("$ZodLiteral", (inst, def) => {
+	$ZodType.init(inst, def);
+	const values = new Set(def.values);
+	inst._zod.values = values;
+	defineLazyInternal(inst, "pattern", (zod) => {
+		const vals = zod.def.values;
+		return new RegExp(vals.length ? `^(${vals.map((o) => typeof o === "string" ? escapeRegex(o) : o ? escapeRegex(o.toString()) : String(o)).join("|")})$` : "^[^\\s\\S]$");
+	});
+	inst._zod.parse = (payload, _ctx) => {
+		const input = payload.value;
+		if (values.has(input)) return payload;
+		payload.issues.push({
+			code: "invalid_value",
+			values: def.values,
+			input,
+			inst
+		});
+		return payload;
+	};
+});
+var $ZodTransform = /*@__PURE__*/ $constructor("$ZodTransform", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.optin = "optional";
+	globalConfig.memoizer?.guard(inst);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") throw new $ZodEncodeError(inst.constructor.name);
+		const _out = def.transform(payload.value, payload);
+		if (ctx.async) return (_out instanceof Promise ? _out : Promise.resolve(_out)).then((output) => {
+			payload.value = output;
+			return payload;
+		});
+		if (_out instanceof Promise) throw new $ZodAsyncError();
+		payload.value = _out;
+		return payload;
+	};
+});
+function handleOptionalResult(payload, result) {
+	payload.value = result.issues.length ? void 0 : result.value;
+	return payload;
+}
+var $ZodOptional = /*@__PURE__*/ $constructor("$ZodOptional", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin === "defaulted" ? "defaulted" : "optional");
+	inst._zod.optout = "optional";
+	defineLazyInternal(inst, "values", (zod) => {
+		const values = zod.def.innerType._zod.values;
+		return values ? /* @__PURE__ */ new Set([...values, void 0]) : void 0;
+	});
+	defineLazyInternal(inst, "pattern", (zod) => {
+		const pattern = zod.def.innerType._zod.pattern;
+		return pattern ? new RegExp(`^(${cleanRegex(pattern.source)})?$`) : void 0;
+	});
+	inst._zod.parse = (payload, ctx) => {
+		if (payload.value === void 0) {
+			if (def.innerType._zod.optin !== "defaulted") return payload;
+			const result = def.innerType._zod.run({
+				value: payload.value,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) return result.then((result) => handleOptionalResult(payload, result));
+			return handleOptionalResult(payload, result);
+		}
+		return def.innerType._zod.run(payload, ctx);
+	};
+});
+var $ZodExactOptional = /*@__PURE__*/ $constructor("$ZodExactOptional", (inst, def) => {
+	$ZodOptional.init(inst, def);
+	defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+	defineLazyInternal(inst, "pattern", (zod) => zod.def.innerType._zod.pattern);
+	inst._zod.parse = (payload, ctx) => {
+		return def.innerType._zod.run(payload, ctx);
+	};
+});
+var $ZodNullable = /*@__PURE__*/ $constructor("$ZodNullable", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin);
+	defineLazyInternal(inst, "optout", (zod) => zod.def.innerType._zod.optout);
+	defineLazyInternal(inst, "pattern", (zod) => {
+		const pattern = zod.def.innerType._zod.pattern;
+		return pattern ? new RegExp(`^(${cleanRegex(pattern.source)}|null)$`) : void 0;
+	});
+	defineLazyInternal(inst, "values", (zod) => {
+		return zod.def.innerType._zod.values ? /* @__PURE__ */ new Set([...zod.def.innerType._zod.values, null]) : void 0;
+	});
+	inst._zod.parse = (payload, ctx) => {
+		if (payload.value === null) return payload;
+		return def.innerType._zod.run(payload, ctx);
+	};
+});
+var $ZodDefault = /*@__PURE__*/ $constructor("$ZodDefault", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.optin = "defaulted";
+	defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+		if (payload.value === void 0) {
+			payload.value = def.defaultValue;
+			/**
+			* $ZodDefault returns the default value immediately in forward direction.
+			* It doesn't pass the default value into the validator ("prefault"). There's no reason to pass the default value through validation. The validity of the default is enforced by TypeScript statically. Otherwise, it's the responsibility of the user to ensure the default is valid. In the case of pipes with divergent in/out types, you can specify the default on the `in` schema of your ZodPipe to set a "prefault" for the pipe.   */
+			return payload;
+		}
+		const result = def.innerType._zod.run(payload, ctx);
+		if (result instanceof Promise) return result.then((result) => handleDefaultResult(result, def));
+		return handleDefaultResult(result, def);
+	};
+});
+function handleDefaultResult(payload, def) {
+	if (payload.value === void 0) payload.value = def.defaultValue;
+	return payload;
+}
+var $ZodPrefault = /*@__PURE__*/ $constructor("$ZodPrefault", (inst, def) => {
+	$ZodType.init(inst, def);
+	inst._zod.optin = "defaulted";
+	defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+		if (payload.value === void 0) payload.value = def.defaultValue;
+		return def.innerType._zod.run(payload, ctx);
+	};
+});
+var $ZodNonOptional = /*@__PURE__*/ $constructor("$ZodNonOptional", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "values", (zod) => {
+		const v = zod.def.innerType._zod.values;
+		return v ? new Set([...v].filter((x) => x !== void 0)) : void 0;
+	});
+	inst._zod.parse = (payload, ctx) => {
+		const result = def.innerType._zod.run(payload, ctx);
+		if (result instanceof Promise) return result.then((result) => handleNonOptionalResult(result, inst));
+		return handleNonOptionalResult(result, inst);
+	};
+});
+function handleNonOptionalResult(payload, inst) {
+	if (!payload.issues.length && payload.value === void 0) payload.issues.push({
+		code: "invalid_type",
+		expected: "nonoptional",
+		input: payload.value,
+		inst
+	});
+	return payload;
+}
+function handleCatchResult(payload, result, def, ctx) {
+	if (!result.issues.length) {
+		payload.value = result.value;
+		if (result.memo) payload.memo = true;
+		return payload;
+	}
+	payload.value = def.catchValue({
+		...result,
+		value: payload.value,
+		error: { issues: result.issues.map((iss) => finalizeIssue(iss, ctx, config())) },
+		input: payload.value
+	});
+	return payload;
+}
+var $ZodCatch = /*@__PURE__*/ $constructor("$ZodCatch", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin === "defaulted" ? "defaulted" : "optional");
+	defineLazyInternal(inst, "optout", (zod) => zod.def.innerType._zod.optout);
+	defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+		const result = def.innerType._zod.run({
+			value: payload.value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) return result.then((result) => handleCatchResult(payload, result, def, ctx));
+		return handleCatchResult(payload, result, def, ctx);
+	};
+});
+var $ZodPipe = /*@__PURE__*/ $constructor("$ZodPipe", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "values", (zod) => zod.def.in._zod.values);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.in._zod.optin);
+	defineLazyInternal(inst, "optout", (zod) => zod.def.out._zod.optout);
+	defineLazyInternal(inst, "propValues", (zod) => zod.def.in._zod.propValues);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") {
+			const right = def.out._zod.run(payload, ctx);
+			if (right instanceof Promise) return right.then((right) => handlePipeResult(right, def.in, ctx));
+			return handlePipeResult(right, def.in, ctx);
+		}
+		const left = def.in._zod.run(payload, ctx);
+		if (left instanceof Promise) return left.then((left) => handlePipeResult(left, def.out, ctx));
+		return handlePipeResult(left, def.out, ctx);
+	};
+});
+function handlePipeResult(left, next, ctx) {
+	if (left.issues.some((iss) => iss.code !== "unrecognized_keys")) {
+		left.aborted = true;
+		return left;
+	}
+	return next._zod.run({
+		value: left.value,
+		issues: left.issues
+	}, ctx);
+}
+var $ZodReadonly = /*@__PURE__*/ $constructor("$ZodReadonly", (inst, def) => {
+	$ZodType.init(inst, def);
+	defineLazyInternal(inst, "propValues", (zod) => zod.def.innerType._zod.propValues);
+	defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+	defineLazyInternal(inst, "optin", (zod) => zod.def.innerType?._zod?.optin);
+	defineLazyInternal(inst, "optout", (zod) => zod.def.innerType?._zod?.optout);
+	inst._zod.parse = (payload, ctx) => {
+		if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+		const result = def.innerType._zod.run(payload, ctx);
+		if (result instanceof Promise) return result.then(handleReadonlyResult);
+		return handleReadonlyResult(result);
+	};
+});
+function handleReadonlyResult(payload) {
+	if (!payload.memo) payload.value = Object.freeze(payload.value);
+	return payload;
+}
+var $ZodCustom = /*@__PURE__*/ $constructor("$ZodCustom", (inst, def) => {
+	$ZodCheck.init(inst, def);
+	$ZodType.init(inst, def);
+	inst._zod.parse = (payload, _) => {
+		return payload;
+	};
+	inst._zod.check = (payload) => {
+		const input = payload.value;
+		const r = def.fn(input);
+		if (r instanceof Promise) return r.then((r) => handleRefineResult(r, payload, input, inst));
+		handleRefineResult(r, payload, input, inst);
+	};
+});
+function handleRefineResult(result, payload, input, inst) {
+	if (!result) {
+		const _iss = {
+			code: "custom",
+			input,
+			inst,
+			path: [...inst._zod.def.path ?? []],
+			continue: !inst._zod.def.abort
+		};
+		if (inst._zod.def.params) _iss.params = inst._zod.def.params;
+		payload.issues.push(issue(_iss));
+	}
+}
+//#endregion
+//#region node_modules/zod/v4/core/memoizer.js
+var $ZodCyclicError = class extends Error {
+	constructor() {
+		super(`Cannot parse a reference cycle that closes through a transform`);
+		this.name = "ZodCyclicError";
+	}
+};
+/** Keyed off the context object every schema in one parse call already shares. */
+var STATE = "~memo";
+var NO_ISSUES = [];
+function isRef(value) {
+	return value !== null && typeof value === "object";
+}
+function cloneIssues(issues) {
+	return issues.map((iss) => iss.path ? {
+		...iss,
+		path: iss.path.slice()
+	} : { ...iss });
+}
+var recursive = /*@__PURE__*/ new WeakMap();
+/** What the walk established, in order of certainty: ordered so the strongest answer among children wins. */
+var NONE = 0;
+var ASSUMED = 1;
+var PROVEN = 2;
+/** Whether this schema's subtree contains a cycle, so one parse can re-enter it. */
+function isRecursive(inst, stack, resolve) {
+	const cached = recursive.get(inst);
+	if (cached !== void 0) return cached ? PROVEN : NONE;
+	if (stack.has(inst)) return PROVEN;
+	stack.add(inst);
+	let result = NONE;
+	const check = (child) => {
+		if (result !== PROVEN && child?._zod) {
+			const answer = isRecursive(child, stack, resolve);
+			if (answer > result) result = answer;
+		}
+	};
+	const shape = (sh, spread) => {
+		let answer = NONE;
+		for (const key of Reflect.ownKeys(sh)) {
+			const desc = Object.getOwnPropertyDescriptor(sh, key);
+			if (spread && !desc.enumerable) continue;
+			const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+			if (child > answer) answer = child;
+		}
+		return answer;
+	};
+	const merge = (answer) => {
+		if (answer > result) result = answer;
+	};
+	const def = inst._zod.def;
+	switch (def.type) {
+		case "object": {
+			const raw = rawShape(def);
+			merge(raw ? shape(raw, true) : ASSUMED);
+			check(def.catchall);
+			break;
+		}
+		case "array":
+			check(def.element);
+			break;
+		case "tuple":
+			for (const el of def.items) check(el);
+			check(def.rest);
+			break;
+		case "record":
+		case "map":
+			check(def.keyType);
+			check(def.valueType);
+			break;
+		case "set":
+			check(def.valueType);
+			break;
+		case "union":
+			for (const el of def.options) check(el);
+			break;
+		case "intersection":
+			check(def.left);
+			check(def.right);
+			break;
+		case "optional":
+		case "nullable":
+		case "default":
+		case "prefault":
+		case "catch":
+		case "readonly":
+		case "nonoptional":
+		case "promise":
+		case "success":
+			check(def.innerType);
+			break;
+		case "pipe":
+			check(def.in);
+			check(def.out);
+			break;
+		case "function":
+			check(def.input);
+			check(def.output);
+			break;
+		case "lazy": {
+			const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+			merge(inner ? isRecursive(inner, stack, false) : ASSUMED);
+			break;
+		}
+		case "template_literal":
+		case "string":
+		case "number":
+		case "int":
+		case "boolean":
+		case "bigint":
+		case "symbol":
+		case "undefined":
+		case "null":
+		case "void":
+		case "never":
+		case "any":
+		case "unknown":
+		case "date":
+		case "nan":
+		case "enum":
+		case "literal":
+		case "file":
+		case "transform":
+		case "custom": break;
+		default: for (const key in def) {
+			const desc = Object.getOwnPropertyDescriptor(def, key);
+			if (!desc || desc.get) continue;
+			const value = desc.value;
+			if (!value || typeof value !== "object") continue;
+			if (value._zod) check(value);
+			else if (Array.isArray(value)) for (const el of value) check(el);
+		}
+	}
+	stack.delete(inst);
+	return settle(inst, result);
+}
+/** An assumed answer must not outlive the resolution that settles it, so only a certain one is cached. */
+function settle(inst, answer) {
+	if (answer !== ASSUMED) recursive.set(inst, answer === PROVEN);
+	return answer;
+}
+function bucketFor(state, inst) {
+	let bucket = state.buckets.get(inst);
+	if (!bucket) {
+		bucket = /* @__PURE__ */ new WeakMap();
+		state.buckets.set(inst, bucket);
+	}
+	return bucket;
+}
+var handoff;
+var open = [];
+var memo = {
+	alloc(_inst, payload, empty) {
+		const bucket = handoff;
+		if (!bucket) return empty;
+		handoff = void 0;
+		const entry = {
+			value: empty,
+			issues: null
+		};
+		bucket.set(payload.value, entry);
+		open.push(entry);
+		return empty;
+	},
+	guard(inst) {
+		var _a;
+		(_a = inst._zod).deferred ?? (_a.deferred = []);
+		inst._zod.deferred.push(() => {
+			const base = inst._zod.parse;
+			const wrapped = (payload, ctx) => {
+				if (ctx.direction !== "backward" && isBackEdge(ctx, payload.value)) throw new $ZodCyclicError();
+				return base(payload, ctx);
+			};
+			inst._zod.parse = wrapped;
+			if (inst._zod.run === base) inst._zod.run = wrapped;
+		});
+	},
+	attach(inst) {
+		var _a;
+		let isRecursiveInst;
+		let rechecked = false;
+		let lastCtx;
+		let lastBucket;
+		(_a = inst._zod).deferred ?? (_a.deferred = []);
+		inst._zod.deferred.push(() => {
+			const base = inst._zod.parse;
+			const wrapped = (payload, ctx) => {
+				if (isRecursiveInst === void 0) {
+					const walked = isRecursive(inst, /* @__PURE__ */ new Set(), false);
+					if (walked === NONE) {
+						inst._zod.parse = base;
+						if (inst._zod.run === wrapped) inst._zod.run = base;
+						return base(payload, ctx);
+					}
+					if (walked === PROVEN || rechecked) isRecursiveInst = true;
+					else rechecked = true;
+				}
+				const input = payload.value;
+				if (!isRef(input)) return base(payload, ctx);
+				let state = ctx[STATE];
+				if (!state) {
+					state = {
+						buckets: /* @__PURE__ */ new WeakMap(),
+						backEdges: void 0
+					};
+					ctx[STATE] = state;
+				}
+				let bucket;
+				if (lastCtx === ctx) bucket = lastBucket;
+				else {
+					bucket = bucketFor(state, inst);
+					lastCtx = ctx;
+					lastBucket = bucket;
+				}
+				const hit = bucket.get(input);
+				if (hit) {
+					payload.value = hit.value;
+					if (hit.issues) {
+						if (hit.issues.length) payload.issues.push(...cloneIssues(hit.issues));
+					} else {
+						payload.memo = true;
+						state.backEdges ?? (state.backEdges = /* @__PURE__ */ new WeakSet());
+						state.backEdges.add(hit.value);
+					}
+					return payload;
+				}
+				handoff = bucket;
+				const depth = open.length;
+				const result = base(payload, ctx);
+				handoff = void 0;
+				const entry = open.length > depth ? open.pop() : void 0;
+				if (result instanceof Promise) return result.then((r) => {
+					if (entry) entry.issues = r.issues.length ? cloneIssues(r.issues) : NO_ISSUES;
+					return r;
+				});
+				if (entry) entry.issues = result.issues.length ? cloneIssues(result.issues) : NO_ISSUES;
+				return result;
+			};
+			inst._zod.parse = wrapped;
+			if (inst._zod.run === base) inst._zod.run = wrapped;
+		});
+	}
+};
+/** The memoizer that gives containers cycle support. `zod` installs it by default; `zod/mini` opts in with `config({ memoizer: memoizer() })`. */
+function memoizer() {
+	return memo;
+}
+/** Whether this value is a node a back-edge resolved to before it finished. */
+function isBackEdge(ctx, value) {
+	const backEdges = ctx[STATE]?.backEdges;
+	return backEdges !== void 0 && isRef(value) && backEdges.has(value);
+}
+//#endregion
+//#region node_modules/zod/v4/locales/en.js
+var error = () => {
+	const Sizable = {
+		string: {
+			unit: "characters",
+			verb: "to have"
+		},
+		file: {
+			unit: "bytes",
+			verb: "to have"
+		},
+		array: {
+			unit: "items",
+			verb: "to have"
+		},
+		set: {
+			unit: "items",
+			verb: "to have"
+		},
+		map: {
+			unit: "entries",
+			verb: "to have"
+		}
+	};
+	function getSizing(origin) {
+		return Sizable[origin] ?? null;
+	}
+	const FormatDictionary = {
+		regex: "input",
+		email: "email address",
+		url: "URL",
+		emoji: "emoji",
+		uuid: "UUID",
+		uuidv4: "UUIDv4",
+		uuidv6: "UUIDv6",
+		nanoid: "nanoid",
+		guid: "GUID",
+		cuid: "cuid",
+		cuid2: "cuid2",
+		ulid: "ULID",
+		xid: "XID",
+		ksuid: "KSUID",
+		datetime: "ISO datetime",
+		date: "ISO date",
+		time: "ISO time",
+		duration: "ISO duration",
+		ipv4: "IPv4 address",
+		ipv6: "IPv6 address",
+		mac: "MAC address",
+		cidrv4: "IPv4 range",
+		cidrv6: "IPv6 range",
+		base64: "base64-encoded string",
+		base64url: "base64url-encoded string",
+		json_string: "JSON string",
+		e164: "E.164 number",
+		currency_code: "currency code",
+		credit_card: "credit card number",
+		iban: "IBAN",
+		jwt: "JWT",
+		template_literal: "input"
+	};
+	const TypeDictionary = { nan: "NaN" };
+	function getTypeName(type, input) {
+		if (type === "number" && typeof input === "number" && !Number.isFinite(input)) return String(input);
+		return TypeDictionary[type] ?? type;
+	}
+	return (issue) => {
+		switch (issue.code) {
+			case "invalid_type": return `Invalid input: expected ${getTypeName(issue.expected)}, received ${getTypeName(parsedType(issue.input), issue.input)}`;
+			case "invalid_value":
+				if (issue.values.length === 1) return `Invalid input: expected ${stringifyPrimitive(issue.values[0])}`;
+				return `Invalid option: expected one of ${joinValues(issue.values, "|")}`;
+			case "too_big": {
+				const adj = issue.exact ? "exactly " : issue.inclusive ? "<=" : "<";
+				const sizing = getSizing(issue.origin);
+				if (sizing) return `Too big: expected ${issue.origin ?? "value"} to have ${adj}${issue.maximum.toString()} ${sizing.unit ?? "elements"}`;
+				return `Too big: expected ${issue.origin ?? "value"} to be ${adj}${issue.maximum.toString()}`;
+			}
+			case "too_small": {
+				const adj = issue.exact ? "exactly " : issue.inclusive ? ">=" : ">";
+				const sizing = getSizing(issue.origin);
+				if (sizing) return `Too small: expected ${issue.origin} to have ${adj}${issue.minimum.toString()} ${sizing.unit}`;
+				return `Too small: expected ${issue.origin} to be ${adj}${issue.minimum.toString()}`;
+			}
+			case "invalid_format": {
+				const _issue = issue;
+				if (_issue.format === "starts_with") return `Invalid string: must start with "${_issue.prefix}"`;
+				if (_issue.format === "ends_with") return `Invalid string: must end with "${_issue.suffix}"`;
+				if (_issue.format === "includes") return `Invalid string: must include "${_issue.includes}"`;
+				if (_issue.format === "regex") return `Invalid string: must match pattern ${_issue.pattern}`;
+				return `Invalid ${FormatDictionary[_issue.format] ?? issue.format}`;
+			}
+			case "not_multiple_of": return `Invalid number: must be a multiple of ${issue.divisor}`;
+			case "unrecognized_keys": return `Unrecognized key${issue.keys.length > 1 ? "s" : ""}: ${joinValues(issue.keys, ", ")}`;
+			case "invalid_key": return `Invalid key in ${issue.origin}`;
+			case "invalid_union":
+				if (issue.options && Array.isArray(issue.options) && issue.options.length > 0) return `Invalid discriminator value. Expected ${issue.options.map((o) => `'${o}'`).join(" | ")}`;
+				if (issue.inclusive === false) return "Invalid input: more than one option matched";
+				return "Invalid input";
+			case "invalid_element": return `Invalid value in ${issue.origin}`;
+			default: return `Invalid input`;
+		}
+	};
+};
+function en_default() {
+	return { localeError: error() };
+}
+//#endregion
+//#region node_modules/zod/v4/core/registries.js
+var _a;
+var $ZodRegistry = class {
+	constructor() {
+		this._map = /* @__PURE__ */ new WeakMap();
+		this._idmap = /* @__PURE__ */ new Map();
+	}
+	add(schema, ..._meta) {
+		const meta = _meta[0];
+		this._map.set(schema, meta);
+		if (meta && typeof meta === "object" && "id" in meta) this._idmap.set(meta.id, schema);
+		return this;
+	}
+	clear() {
+		this._map = /* @__PURE__ */ new WeakMap();
+		this._idmap = /* @__PURE__ */ new Map();
+		return this;
+	}
+	remove(schema) {
+		const meta = this._map.get(schema);
+		if (meta && typeof meta === "object" && "id" in meta) this._idmap.delete(meta.id);
+		this._map.delete(schema);
+		return this;
+	}
+	get(schema) {
+		const p = schema._zod.parent;
+		if (p) {
+			const pm = { ...this.get(p) ?? {} };
+			delete pm.id;
+			const f = {
+				...pm,
+				...this._map.get(schema)
+			};
+			return Object.keys(f).length ? f : void 0;
+		}
+		return this._map.get(schema);
+	}
+	has(schema) {
+		return this._map.has(schema);
+	}
+};
+function registry() {
+	return new $ZodRegistry();
+}
+(_a = globalThis).__zod_globalRegistry ?? (_a.__zod_globalRegistry = registry());
+var globalRegistry = globalThis.__zod_globalRegistry;
+//#endregion
+//#region node_modules/zod/v4/core/api.js
+function snapshotChecks(def) {
+	if (def.checks) def.checks = [...def.checks];
+	return def;
+}
+// @__NO_SIDE_EFFECTS__
+function _string(Class, params) {
+	return new Class(snapshotChecks({
+		type: "string",
+		...normalizeParams(params)
+	}));
+}
+// @__NO_SIDE_EFFECTS__
+function _email(Class, params) {
+	return new Class({
+		type: "string",
+		format: "email",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _guid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "guid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _uuid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "uuid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv4(Class, params) {
+	return new Class({
+		type: "string",
+		format: "uuid",
+		check: "string_format",
+		abort: false,
+		version: "v4",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv6(Class, params) {
+	return new Class({
+		type: "string",
+		format: "uuid",
+		check: "string_format",
+		abort: false,
+		version: "v6",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _uuidv7(Class, params) {
+	return new Class({
+		type: "string",
+		format: "uuid",
+		check: "string_format",
+		abort: false,
+		version: "v7",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _url(Class, params) {
+	return new Class({
+		type: "string",
+		format: "url",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _emoji(Class, params) {
+	return new Class({
+		type: "string",
+		format: "emoji",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _nanoid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "nanoid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+/**
+* @deprecated CUID v1 is deprecated by its authors due to information leakage
+* (timestamps embedded in the id). Use {@link _cuid2} instead.
+* See https://github.com/paralleldrive/cuid.
+*/
+// @__NO_SIDE_EFFECTS__
+function _cuid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "cuid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _cuid2(Class, params) {
+	return new Class({
+		type: "string",
+		format: "cuid2",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _ulid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "ulid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _xid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "xid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _ksuid(Class, params) {
+	return new Class({
+		type: "string",
+		format: "ksuid",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _ipv4(Class, params) {
+	return new Class({
+		type: "string",
+		format: "ipv4",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _ipv6(Class, params) {
+	return new Class({
+		type: "string",
+		format: "ipv6",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _cidrv4(Class, params) {
+	return new Class({
+		type: "string",
+		format: "cidrv4",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _cidrv6(Class, params) {
+	return new Class({
+		type: "string",
+		format: "cidrv6",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _base64(Class, params) {
+	return new Class({
+		type: "string",
+		format: "base64",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _base64url(Class, params) {
+	return new Class({
+		type: "string",
+		format: "base64url",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _e164(Class, params) {
+	return new Class({
+		type: "string",
+		format: "e164",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _jwt(Class, params) {
+	return new Class({
+		type: "string",
+		format: "jwt",
+		check: "string_format",
+		abort: false,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDateTime(Class, params) {
+	return new Class({
+		type: "string",
+		format: "datetime",
+		check: "string_format",
+		offset: false,
+		local: false,
+		precision: null,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDate(Class, params) {
+	return new Class({
+		type: "string",
+		format: "date",
+		check: "string_format",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _isoTime(Class, params) {
+	return new Class({
+		type: "string",
+		format: "time",
+		check: "string_format",
+		precision: null,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _isoDuration(Class, params) {
+	return new Class({
+		type: "string",
+		format: "duration",
+		check: "string_format",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _number(Class, params) {
+	return new Class(snapshotChecks({
+		type: "number",
+		checks: [],
+		...normalizeParams(params)
+	}));
+}
+// @__NO_SIDE_EFFECTS__
+function _int(Class, params) {
+	return new Class({
+		type: "number",
+		check: "number_format",
+		abort: false,
+		format: "safeint",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _boolean(Class, params) {
+	return new Class({
+		type: "boolean",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _null$1(Class, params) {
+	return new Class({
+		type: "null",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _unknown(Class) {
+	return new Class({ type: "unknown" });
+}
+// @__NO_SIDE_EFFECTS__
+function _never(Class, params) {
+	return new Class({
+		type: "never",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _lt(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _lte(value, params) {
+	return new $ZodCheckLessThan({
+		check: "less_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _gt(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: false
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _gte(value, params) {
+	return new $ZodCheckGreaterThan({
+		check: "greater_than",
+		...normalizeParams(params),
+		value,
+		inclusive: true
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _multipleOf(value, params) {
+	return new $ZodCheckMultipleOf({
+		check: "multiple_of",
+		...normalizeParams(params),
+		value
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _maxLength(maximum, params) {
+	return new $ZodCheckMaxLength({
+		check: "max_length",
+		...normalizeParams(params),
+		maximum
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _minLength(minimum, params) {
+	return new $ZodCheckMinLength({
+		check: "min_length",
+		...normalizeParams(params),
+		minimum
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _length(length, params) {
+	return new $ZodCheckLengthEquals({
+		check: "length_equals",
+		...normalizeParams(params),
+		length
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _regex(pattern, params) {
+	return new $ZodCheckRegex({
+		check: "string_format",
+		format: "regex",
+		...normalizeParams(params),
+		pattern
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _lowercase(params) {
+	return new $ZodCheckLowerCase({
+		check: "string_format",
+		format: "lowercase",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _uppercase(params) {
+	return new $ZodCheckUpperCase({
+		check: "string_format",
+		format: "uppercase",
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _includes(includes, params) {
+	return new $ZodCheckIncludes({
+		check: "string_format",
+		format: "includes",
+		...normalizeParams(params),
+		includes
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _startsWith(prefix, params) {
+	return new $ZodCheckStartsWith({
+		check: "string_format",
+		format: "starts_with",
+		...normalizeParams(params),
+		prefix
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _endsWith(suffix, params) {
+	return new $ZodCheckEndsWith({
+		check: "string_format",
+		format: "ends_with",
+		...normalizeParams(params),
+		suffix
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _overwrite(tx) {
+	return new $ZodCheckOverwrite({
+		check: "overwrite",
+		tx
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _normalize(form) {
+	return /* @__PURE__ */ _overwrite((input) => input.normalize(form));
+}
+// @__NO_SIDE_EFFECTS__
+function _trim() {
+	return /* @__PURE__ */ _overwrite((input) => input.trim());
+}
+// @__NO_SIDE_EFFECTS__
+function _toLowerCase() {
+	return /* @__PURE__ */ _overwrite((input) => input.toLowerCase());
+}
+// @__NO_SIDE_EFFECTS__
+function _toUpperCase() {
+	return /* @__PURE__ */ _overwrite((input) => input.toUpperCase());
+}
+// @__NO_SIDE_EFFECTS__
+function _slugify() {
+	return /* @__PURE__ */ _overwrite((input) => slugify(input));
+}
+// @__NO_SIDE_EFFECTS__
+function _array(Class, element, params) {
+	return new Class({
+		type: "array",
+		element,
+		...normalizeParams(params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _refine(Class, fn, _params) {
+	return new Class({
+		type: "custom",
+		check: "custom",
+		fn,
+		...normalizeParams(_params)
+	});
+}
+// @__NO_SIDE_EFFECTS__
+function _superRefine(fn, params) {
+	const ch = /* @__PURE__ */ _check((payload) => {
+		payload.addIssue = (issue$2) => {
+			if (typeof issue$2 === "string") payload.issues.push(issue(issue$2, payload.value, ch._zod.def));
+			else {
+				const _issue = issue$2;
+				if (_issue.fatal) _issue.continue = false;
+				_issue.code ?? (_issue.code = "custom");
+				if (!("input" in _issue)) _issue.input = payload.value;
+				_issue.inst ?? (_issue.inst = ch);
+				_issue.continue ?? (_issue.continue = !ch._zod.def.abort);
+				payload.issues.push(issue(_issue));
+			}
+		};
+		return fn(payload.value, payload);
+	}, params);
+	return ch;
+}
+// @__NO_SIDE_EFFECTS__
+function _check(fn, params) {
+	const ch = new $ZodCheck({
+		check: "custom",
+		...normalizeParams(params)
+	});
+	ch._zod.check = fn;
+	return ch;
+}
+//#endregion
+//#region node_modules/zod/v4/core/to-json-schema.js
+function assignProps(target, ...sources) {
+	for (const source of sources) for (const key of Reflect.ownKeys(source)) if (Object.prototype.propertyIsEnumerable.call(source, key)) assignProp(target, key, source[key]);
+	return target;
+}
+function initializeContext(params) {
+	let target = params?.target ?? "draft-2020-12";
+	if (target === "draft-4") target = "draft-04";
+	if (target === "draft-7") target = "draft-07";
+	return {
+		processors: params.processors ?? {},
+		metadataRegistry: params?.metadata ?? globalRegistry,
+		target,
+		unrepresentable: params?.unrepresentable ?? "throw",
+		override: params?.override ?? (() => {}),
+		io: params?.io ?? "output",
+		counter: 0,
+		seen: /* @__PURE__ */ new Map(),
+		sharedDefsExtractedFor: void 0,
+		sharedEmitDoneFor: void 0,
+		cycles: params?.cycles ?? "ref",
+		reused: params?.reused ?? "inline",
+		intersections: [],
+		deferred: [],
+		external: params?.external ?? void 0
+	};
+}
+/**
+* Applies the `unrepresentable` setting at a site that has no JSON Schema equivalent. Throws
+* `message` unless the setting (or the handler's return value) says otherwise. Returns `true` if a
+* custom JSON Schema was written into `json`, in which case the caller must not write its own.
+*/
+function handleUnrepresentable(schema, ctx, json, params, message) {
+	const result = typeof ctx.unrepresentable === "function" ? ctx.unrepresentable({
+		zodSchema: schema,
+		path: params.path,
+		message
+	}) : ctx.unrepresentable;
+	if (result === "any") return false;
+	if (result === void 0 || result === "throw") throw new Error(message);
+	Object.assign(json, result);
+	return true;
+}
+function processSchema(schema, ctx, _params = {
+	path: [],
+	schemaPath: []
+}) {
+	var _a;
+	const def = schema._zod.def;
+	const seen = ctx.seen.get(schema);
+	if (seen) {
+		seen.count++;
+		if (_params.schemaPath.includes(schema)) seen.cycle = _params.path;
+		return seen.schema;
+	}
+	const result = {
+		schema: {},
+		count: 1,
+		cycle: void 0,
+		path: _params.path
+	};
+	ctx.seen.set(schema, result);
+	ctx.sharedDefsExtractedFor = void 0;
+	ctx.sharedEmitDoneFor = void 0;
+	const overrideSchema = schema._zod.toJSONSchema?.();
+	if (overrideSchema) result.schema = overrideSchema;
+	else {
+		const params = {
+			..._params,
+			schemaPath: [..._params.schemaPath, schema],
+			path: _params.path
+		};
+		if (schema._zod.processJSONSchema) schema._zod.processJSONSchema(ctx, result.schema, params);
+		else {
+			const _json = result.schema;
+			const processor = ctx.processors[def.type];
+			if (!processor) throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
+			processor(schema, ctx, _json, params);
+		}
+		const parent = schema._zod.parent;
+		if (parent) {
+			if (!result.ref) result.ref = parent;
+			processSchema(parent, ctx, params);
+			ctx.seen.get(parent).isParent = true;
+		}
+	}
+	const meta = ctx.metadataRegistry.get(schema);
+	if (meta) assignProps(result.schema, meta);
+	if (ctx.io === "input" && isTransforming(schema)) {
+		delete result.schema.examples;
+		delete result.schema.default;
+	}
+	if (ctx.io === "input" && "_prefault" in result.schema) (_a = result.schema).default ?? (_a.default = result.schema._prefault);
+	delete result.schema._prefault;
+	return ctx.seen.get(schema).schema;
+}
+function encodeJSONPointerSegment(segment) {
+	return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+function extractDefs(ctx, schema) {
+	const root = ctx.seen.get(schema);
+	if (!root) throw new Error("Unprocessed schema. This is a bug in Zod.");
+	if (ctx.external && ctx.sharedDefsExtractedFor === ctx.external) return;
+	const idToSchema = /* @__PURE__ */ new Map();
+	for (const entry of ctx.seen.entries()) {
+		const id = ctx.metadataRegistry.get(entry[0])?.id;
+		if (id) {
+			const existing = idToSchema.get(id);
+			if (existing && existing !== entry[0]) throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+			idToSchema.set(id, entry[0]);
+		}
+	}
+	const makeURI = (entry) => {
+		const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
+		if (ctx.external) {
+			const externalId = ctx.external.registry.get(entry[0])?.id;
+			const uriGenerator = ctx.external.uri ?? ((id) => id);
+			if (externalId) return { ref: uriGenerator(externalId) };
+			const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+			entry[1].defId = id;
+			return {
+				defId: id,
+				ref: `${uriGenerator("__shared")}#/${defsSegment}/${encodeJSONPointerSegment(id)}`
+			};
+		}
+		const uriPrefix = `#`;
+		const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
+		if (entry[1] === root && !entry[1].schema.id) return { ref: uriPrefix };
+		const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
+		return {
+			defId,
+			ref: defUriPrefix + encodeJSONPointerSegment(defId)
+		};
+	};
+	const extractToDef = (entry) => {
+		if (entry[1].schema.$ref) return;
+		const seen = entry[1];
+		const { ref, defId } = makeURI(entry);
+		seen.def = { ...seen.schema };
+		if (defId) seen.defId = defId;
+		const schema = seen.schema;
+		for (const key in schema) delete schema[key];
+		schema.$ref = ref;
+	};
+	if (ctx.cycles === "throw") for (const entry of ctx.seen.entries()) {
+		const seen = entry[1];
+		if (seen.cycle) throw new Error(`Cycle detected: #/${seen.cycle?.join("/")}/<root>
+
+Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
+	}
+	for (const entry of ctx.seen.entries()) {
+		const seen = entry[1];
+		if (schema === entry[0]) {
+			extractToDef(entry);
+			continue;
+		}
+		if (ctx.external) {
+			const ext = ctx.external.registry.get(entry[0])?.id;
+			if (schema !== entry[0] && ext) {
+				extractToDef(entry);
+				continue;
+			}
+		}
+		if (ctx.metadataRegistry.get(entry[0])?.id) {
+			extractToDef(entry);
+			continue;
+		}
+		if (seen.cycle) {
+			extractToDef(entry);
+			continue;
+		}
+		if (seen.count > 1) {
+			if (ctx.reused === "ref") extractToDef(entry);
+		}
+	}
+	if (ctx.external) ctx.sharedDefsExtractedFor = ctx.external;
+}
+/** Rewrites `anyOf: [{type: "a"}, {type: "b"}]` to `type: ["a", "b"]`, which every JSON Schema draft treats as equivalent and most consumers render far better for the nullable case. Only branches that are a bare type assertion qualify — anything carrying a constraint, `$ref`, `const` or metadata is left alone. Runs after `flattenRef`, so a branch an override decorated or `$defs` extraction turned into a `$ref` is no longer bare and correctly stays in `anyOf`. `oneOf` is excluded: `integer` and `number` overlap, so "exactly one" and "at least one" are not the same there. OpenAPI 3.0 is excluded: its `type` must be a single string. */
+function compactTypeUnion(schema) {
+	const options = schema.anyOf;
+	if (!Array.isArray(options) || options.length === 0 || schema.type !== void 0) return;
+	const types = [];
+	for (const option of options) {
+		if (!option || typeof option !== "object") return;
+		compactTypeUnion(option);
+		const keys = Object.keys(option);
+		if (keys.length !== 1 || keys[0] !== "type") return;
+		const type = option.type;
+		for (const member of Array.isArray(type) ? type : [type]) {
+			if (typeof member !== "string") return;
+			if (!types.includes(member)) types.push(member);
+		}
+	}
+	delete schema.anyOf;
+	schema.type = types.length === 1 ? types[0] : types;
+}
+/** Keywords `foldIntersection` knows how to combine. Anything else — `$ref`, `patternProperties`,
+* an annotation like `description` — makes a member unfoldable, so a constraint this does not
+* understand leaves the `allOf` alone instead of being silently dropped or misattributed. */
+var FOLDABLE_KEYS = /* @__PURE__ */ new Set([
+	"type",
+	"properties",
+	"required",
+	"additionalProperties"
+]);
+var UNION_KEYS = ["oneOf", "anyOf"];
+/** A member's constraint on a key it does not declare itself. A `catchall` states one; `false`, an absent `additionalProperties`, and the empty schema a loose object emits state nothing. */
+function undeclaredConstraint(member) {
+	const extra = member.additionalProperties;
+	if (extra === void 0 || extra === false || typeof extra !== "object" || extra === null) return null;
+	return Object.keys(extra).length ? extra : null;
+}
+/** Combines object members into the single object they describe together, or returns `null` if any of them carries a keyword outside {@link FOLDABLE_KEYS}. */
+function foldObjects(members) {
+	const objects = [];
+	for (const member of members) {
+		if (typeof member !== "object" || member.type !== "object") return null;
+		for (const key in member) if (!FOLDABLE_KEYS.has(key)) return null;
+		objects.push(member);
+	}
+	const properties = {};
+	const required = /* @__PURE__ */ new Set();
+	for (const object of objects) {
+		for (const key in object.properties) {
+			if (Object.prototype.hasOwnProperty.call(properties, key)) continue;
+			const parts = [];
+			for (const other of objects) {
+				const part = other.properties?.[key] ?? undeclaredConstraint(other);
+				if (part === null || part === void 0) continue;
+				if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part))) parts.push(part);
+			}
+			assignProp(properties, key, parts.length === 1 ? parts[0] : foldObjects(parts) ?? { allOf: parts });
+		}
+		for (const key of object.required ?? []) required.add(key);
+	}
+	const folded = {
+		type: "object",
+		properties
+	};
+	if (required.size) folded.required = [...required];
+	if (objects.every((object) => object.additionalProperties === false)) folded.additionalProperties = false;
+	else {
+		const constraints = [];
+		for (const object of objects) {
+			const constraint = undeclaredConstraint(object);
+			if (constraint && !constraints.some((seen) => JSON.stringify(seen) === JSON.stringify(constraint))) constraints.push(constraint);
+		}
+		if (constraints.length === 1) folded.additionalProperties = constraints[0];
+		else if (constraints.length > 1) folded.additionalProperties = { allOf: constraints };
+	}
+	return folded;
+}
+/** `additionalProperties` in an `allOf` member sees only that member's own `properties`, so two
+* closed object members reject each other's keys and the schema validates nothing. Zod's parser
+* pools the key sets instead — `handleIntersectionResults` reports a key as unrecognized only when
+* *every* side rejects it — so the emitted schema has to pool them too, and folding the members
+* into one object is the encoding that says so on every target.
+*
+* This runs from `finalize`, after `extractDefs`, which is what keeps it clear of the `$ref`
+* machinery: a member extracted into `$defs` is already a `$ref` by now and declines to fold, so it
+* keeps its reference and its own closedness rather than being inlined as a stale copy. */
+function foldIntersection(json) {
+	const allOf = json.allOf;
+	if (!Array.isArray(allOf) || allOf.length < 2) return;
+	for (const key of FOLDABLE_KEYS) if (key in json) return;
+	const unions = allOf.filter((m) => UNION_KEYS.some((k) => Array.isArray(m[k])));
+	let folded = null;
+	if (!unions.length) folded = foldObjects(allOf);
+	else {
+		const union = unions[0];
+		const keyword = UNION_KEYS.find((k) => Array.isArray(union[k]));
+		if (Object.keys(union).length !== 1) return;
+		const rest = allOf.filter((m) => m !== union);
+		const branches = union[keyword].map((branch) => foldObjects([...rest, branch]));
+		if (branches.some((b) => !b)) return;
+		folded = { [keyword]: branches };
+	}
+	if (!folded) return;
+	delete json.allOf;
+	assignProps(json, folded);
+}
+function finalize(ctx, schema) {
+	const root = ctx.seen.get(schema);
+	if (!root) throw new Error("Unprocessed schema. This is a bug in Zod.");
+	const flattenRef = (zodSchema) => {
+		const seen = ctx.seen.get(zodSchema);
+		if (seen.ref === null) return;
+		const schema = seen.def ?? seen.schema;
+		const _cached = { ...schema };
+		const ref = seen.ref;
+		seen.ref = null;
+		if (ref) {
+			flattenRef(ref);
+			const refSeen = ctx.seen.get(ref);
+			const refSchema = refSeen.schema;
+			if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
+				schema.allOf = schema.allOf ?? [];
+				schema.allOf.push(refSchema);
+			} else assignProps(schema, refSchema);
+			assignProps(schema, _cached);
+			if (zodSchema._zod.parent === ref) for (const key in schema) {
+				if (key === "$ref" || key === "allOf") continue;
+				if (!(key in _cached)) delete schema[key];
+			}
+			if (refSchema.$ref && refSeen.def) for (const key in schema) {
+				if (key === "$ref" || key === "allOf") continue;
+				if (key in refSeen.def && JSON.stringify(schema[key]) === JSON.stringify(refSeen.def[key])) delete schema[key];
+			}
+		}
+		const parent = zodSchema._zod.parent;
+		if (parent && parent !== ref) {
+			flattenRef(parent);
+			const parentSeen = ctx.seen.get(parent);
+			if (parentSeen?.schema.$ref) {
+				schema.$ref = parentSeen.schema.$ref;
+				if (parentSeen.def) for (const key in schema) {
+					if (key === "$ref" || key === "allOf") continue;
+					if (key in parentSeen.def && JSON.stringify(schema[key]) === JSON.stringify(parentSeen.def[key])) delete schema[key];
+				}
+			}
+		}
+		ctx.override({
+			zodSchema,
+			jsonSchema: schema,
+			path: seen.path ?? []
+		});
+	};
+	if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) {
+		for (const entry of [...ctx.seen.entries()].reverse()) flattenRef(entry[0]);
+		if (ctx.target !== "openapi-3.0") for (const entry of ctx.seen.entries()) compactTypeUnion(entry[1].def ?? entry[1].schema);
+		for (const rewrite of ctx.deferred) rewrite();
+		if (ctx.intersections.length) {
+			const carriers = /* @__PURE__ */ new Map();
+			for (const seen of ctx.seen.values()) for (const json of [seen.schema, seen.def]) {
+				const allOf = json?.allOf;
+				if (!Array.isArray(allOf)) continue;
+				const existing = carriers.get(allOf);
+				if (existing) existing.push(json);
+				else carriers.set(allOf, [json]);
+			}
+			for (const allOf of ctx.intersections) for (const json of carriers.get(allOf) ?? []) foldIntersection(json);
+		}
+	}
+	const result = {};
+	if (ctx.target === "draft-2020-12") result.$schema = "https://json-schema.org/draft/2020-12/schema";
+	else if (ctx.target === "draft-07") result.$schema = "http://json-schema.org/draft-07/schema#";
+	else if (ctx.target === "draft-04") result.$schema = "http://json-schema.org/draft-04/schema#";
+	else if (ctx.target === "openapi-3.0") {}
+	if (ctx.external?.uri) {
+		const id = ctx.external.registry.get(schema)?.id;
+		if (!id) throw new Error("Schema is missing an `id` property");
+		result.$id = ctx.external.uri(id);
+	}
+	assignProps(result, root.defId ? root.schema : root.def ?? root.schema);
+	const rootMetaId = ctx.metadataRegistry.get(schema)?.id;
+	if (rootMetaId !== void 0 && result.id === rootMetaId) delete result.id;
+	const defs = ctx.external?.defs ?? {};
+	if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) for (const entry of ctx.seen.entries()) {
+		const seen = entry[1];
+		if (seen.def && seen.defId) {
+			if (seen.def.id === seen.defId) delete seen.def.id;
+			assignProp(defs, seen.defId, seen.def);
+		}
+	}
+	if (ctx.external) ctx.sharedEmitDoneFor = ctx.external;
+	if (ctx.external) {} else if (Object.keys(defs).length > 0) {
+		if (ctx.target === "draft-2020-12") result.$defs = defs;
+		else result.definitions = defs;
+	}
+	try {
+		const finalized = JSON.parse(JSON.stringify(result));
+		Object.defineProperty(finalized, "~standard", {
+			value: {
+				...schema["~standard"],
+				jsonSchema: {
+					input: createStandardJSONSchemaMethod(schema, "input", ctx.processors),
+					output: createStandardJSONSchemaMethod(schema, "output", ctx.processors)
+				}
+			},
+			enumerable: false,
+			writable: false
+		});
+		return finalized;
+	} catch (_err) {
+		throw new Error("Error converting schema to JSON.");
+	}
+}
+function isTransforming(_schema, _ctx) {
+	const ctx = _ctx ?? { seen: /* @__PURE__ */ new Set() };
+	if (ctx.seen.has(_schema)) return false;
+	ctx.seen.add(_schema);
+	const def = _schema._zod.def;
+	if (def.type === "transform") return true;
+	if (def.type === "array") return isTransforming(def.element, ctx);
+	if (def.type === "set") return isTransforming(def.valueType, ctx);
+	if (def.type === "lazy") return isTransforming(def.getter(), ctx);
+	if (def.type === "promise" || def.type === "optional" || def.type === "nonoptional" || def.type === "nullable" || def.type === "readonly" || def.type === "default" || def.type === "prefault" || def.type === "catch") return isTransforming(def.innerType, ctx);
+	if (def.type === "intersection") return isTransforming(def.left, ctx) || isTransforming(def.right, ctx);
+	if (def.type === "record" || def.type === "map") return isTransforming(def.keyType, ctx) || isTransforming(def.valueType, ctx);
+	if (def.type === "pipe") {
+		if (_schema._zod.traits.has("$ZodCodec")) return true;
+		return isTransforming(def.in, ctx) || isTransforming(def.out, ctx);
+	}
+	if (def.type === "object") {
+		for (const key in def.shape) if (isTransforming(def.shape[key], ctx)) return true;
+		return false;
+	}
+	if (def.type === "union") {
+		for (const option of def.options) if (isTransforming(option, ctx)) return true;
+		return false;
+	}
+	if (def.type === "tuple") {
+		for (const item of def.items) if (isTransforming(item, ctx)) return true;
+		if (def.rest && isTransforming(def.rest, ctx)) return true;
+		return false;
+	}
+	return false;
+}
+/**
+* Creates a toJSONSchema method for a schema instance.
+* This encapsulates the logic of initializing context, processing, extracting defs, and finalizing.
+*/
+var createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
+	const ctx = initializeContext({
+		...params,
+		processors
+	});
+	processSchema(schema, ctx);
+	extractDefs(ctx, schema);
+	return finalize(ctx, schema);
+};
+var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
+	const { libraryOptions, target } = params ?? {};
+	const ctx = initializeContext({
+		...libraryOptions ?? {},
+		target,
+		io,
+		processors
+	});
+	processSchema(schema, ctx);
+	extractDefs(ctx, schema);
+	return finalize(ctx, schema);
+};
+//#endregion
+//#region node_modules/zod/v4/core/json-schema-processors.js
+var narrowMin = (agg, key, value) => {
+	if (agg[key] === void 0 || value > agg[key]) agg[key] = value;
+};
+var narrowMax = (agg, key, value) => {
+	if (agg[key] === void 0 || value < agg[key]) agg[key] = value;
+};
+var narrowBoth = (agg, value) => {
+	narrowMin(agg, "minimum", value);
+	narrowMax(agg, "maximum", value);
+};
+var addDivisor = (agg, value) => {
+	agg.multipleOf ?? (agg.multipleOf = []);
+	if (!agg.multipleOf.includes(value)) agg.multipleOf.push(value);
+};
+var addPattern = (agg, pattern) => {
+	agg.patterns ?? (agg.patterns = /* @__PURE__ */ new Set());
+	agg.patterns.add(pattern);
+};
+var intersectMime = (agg, mime) => {
+	agg.mime = agg.mime ? agg.mime.filter((m) => mime.includes(m)) : [...mime];
+};
+var setFormat = (agg, format) => {
+	agg.format = format;
+	if (format.includes("int")) agg.isInt = true;
+};
+var minContributor = (agg, def) => narrowMin(agg, "minimum", def.minimum);
+var maxContributor = (agg, def) => narrowMax(agg, "maximum", def.maximum);
+var formatContributor = (ranges) => (agg, def) => {
+	setFormat(agg, def.format);
+	const [minimum, maximum] = ranges[def.format];
+	narrowMin(agg, "minimum", minimum);
+	narrowMax(agg, "maximum", maximum);
+};
+var contributors = {
+	greater_than: (agg, def) => narrowMin(agg, def.inclusive ? "minimum" : "exclusiveMinimum", def.value),
+	less_than: (agg, def) => narrowMax(agg, def.inclusive ? "maximum" : "exclusiveMaximum", def.value),
+	multiple_of: (agg, def) => addDivisor(agg, def.value),
+	number_format: formatContributor(NUMBER_FORMAT_RANGES),
+	bigint_format: formatContributor(BIGINT_FORMAT_RANGES),
+	min_length: minContributor,
+	max_length: maxContributor,
+	length_equals: (agg, def) => narrowBoth(agg, def.length),
+	min_size: minContributor,
+	max_size: maxContributor,
+	size_equals: (agg, def) => narrowBoth(agg, def.size),
+	string_format: (agg, def) => {
+		setFormat(agg, def.format);
+		if (def.pattern) addPattern(agg, def.pattern);
+		if (def.format === "base64" || def.format === "base64url") agg.contentEncoding = def.format;
+		if (def.local || def.precision === -1) agg.laxFormat = true;
+	},
+	mime_type: (agg, def) => intersectMime(agg, def.mime)
+};
+function aggregateChecks(schema) {
+	const agg = {};
+	const def = schema._zod.def;
+	const list = schema._zod.traits.has("$ZodCheck") ? [schema, ...def.checks ?? []] : def.checks ?? [];
+	for (const ch of list) contributors[ch._zod.def.check]?.(agg, ch._zod.def);
+	const bag = schema._zod.bag;
+	if (bag.minimum !== void 0) narrowMin(agg, "minimum", bag.minimum);
+	if (bag.exclusiveMinimum !== void 0) narrowMin(agg, "exclusiveMinimum", bag.exclusiveMinimum);
+	if (bag.maximum !== void 0) narrowMax(agg, "maximum", bag.maximum);
+	if (bag.exclusiveMaximum !== void 0) narrowMax(agg, "exclusiveMaximum", bag.exclusiveMaximum);
+	if (bag.multipleOf !== void 0) addDivisor(agg, bag.multipleOf);
+	if (bag.format !== void 0) {
+		agg.format ?? (agg.format = bag.format);
+		if (bag.format.includes("int")) agg.isInt = true;
+	}
+	if (bag.mime) intersectMime(agg, bag.mime);
+	for (const pattern of bag.patterns ?? []) addPattern(agg, pattern);
+	return agg;
+}
+var formatMap = {
+	guid: "uuid",
+	url: "uri",
+	datetime: "date-time",
+	json_string: "json-string",
+	regex: ""
+};
+var exactPatterns = /* @__PURE__ */ new Map([[base64Charset, base64], [base64urlCharset, base64url]]);
+var exactPattern = (p) => exactPatterns.get(p) ?? p;
+var stringProcessor = (schema, ctx, _json, _params) => {
+	const json = _json;
+	json.type = "string";
+	const { minimum, maximum, format, patterns, contentEncoding, laxFormat } = aggregateChecks(schema);
+	if (typeof minimum === "number") json.minLength = minimum;
+	if (typeof maximum === "number") json.maxLength = maximum;
+	if (format) {
+		json.format = formatMap[format] ?? format;
+		if (json.format === "") delete json.format;
+		if (format === "time" || laxFormat) delete json.format;
+	}
+	if (contentEncoding) json.contentEncoding = contentEncoding;
+	if (patterns && patterns.size > 0) {
+		const patternList = [...patterns].map(exactPattern);
+		if (patternList.length === 1) json.pattern = patternList[0].source;
+		else if (patternList.length > 1) json.allOf = [...patternList.map((regex) => ({
+			...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
+			pattern: regex.source
+		}))];
+	}
+};
+var numberProcessor = (schema, ctx, _json, params) => {
+	const json = _json;
+	const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema);
+	json.type = isInt ? "integer" : "number";
+	const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
+	const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
+	const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
+	if (exMin) {
+		if (legacy) {
+			json.minimum = exclusiveMinimum;
+			json.exclusiveMinimum = true;
+		} else json.exclusiveMinimum = exclusiveMinimum;
+	} else if (typeof minimum === "number") json.minimum = minimum;
+	if (exMax) {
+		if (legacy) {
+			json.maximum = exclusiveMaximum;
+			json.exclusiveMaximum = true;
+		} else json.exclusiveMaximum = exclusiveMaximum;
+	} else if (typeof maximum === "number") json.maximum = maximum;
+	if (multipleOf) {
+		const divisors = /* @__PURE__ */ new Set();
+		for (const divisor of multipleOf) if (Number.isFinite(divisor) && divisor !== 0) divisors.add(Math.abs(divisor));
+		else handleUnrepresentable(schema, ctx, json, params, `A multipleOf divisor of ${divisor} cannot be represented in JSON Schema`);
+		const [first, ...rest] = divisors;
+		if (first !== void 0) json.multipleOf = first;
+		if (rest.length) json.allOf = [...json.allOf ?? [], ...rest.map((m) => ({ multipleOf: m }))];
+	}
+};
+var booleanProcessor = (_schema, _ctx, json, _params) => {
+	json.type = "boolean";
+};
+var nullProcessor = (_schema, ctx, json, _params) => {
+	if (ctx.target === "openapi-3.0") {
+		json.type = "string";
+		json.nullable = true;
+		json.enum = [null];
+	} else json.type = "null";
+};
+var neverProcessor = (_schema, _ctx, json, _params) => {
+	json.not = {};
+};
+var enumProcessor = (schema, _ctx, json, _params) => {
+	const def = schema._zod.def;
+	const values = getEnumValues(def.entries);
+	if (values.length === 0) {
+		json.not = {};
+		return;
+	}
+	if (values.every((v) => typeof v === "number")) json.type = "number";
+	if (values.every((v) => typeof v === "string")) json.type = "string";
+	json.enum = values;
+};
+var literalProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	if (def.values.length === 0) {
+		json.not = {};
+		return;
+	}
+	const vals = [];
+	for (const val of def.values) if (val === void 0) {
+		if (handleUnrepresentable(schema, ctx, json, params, "Literal `undefined` cannot be represented in JSON Schema")) return;
+	} else if (typeof val === "bigint") {
+		if (handleUnrepresentable(schema, ctx, json, params, "BigInt literals cannot be represented in JSON Schema")) return;
+		vals.push(Number(val));
+	} else vals.push(val);
+	if (vals.length === 0) {} else if (vals.length === 1) {
+		const val = vals[0];
+		json.type = val === null ? "null" : typeof val;
+		if (ctx.target === "draft-04" || ctx.target === "openapi-3.0") json.enum = [val];
+		else json.const = val;
+	} else {
+		if (vals.every((v) => typeof v === "number")) json.type = "number";
+		if (vals.every((v) => typeof v === "string")) json.type = "string";
+		if (vals.every((v) => typeof v === "boolean")) json.type = "boolean";
+		if (vals.every((v) => v === null)) json.type = "null";
+		json.enum = vals;
+	}
+};
+var customProcessor = (schema, ctx, json, params) => {
+	handleUnrepresentable(schema, ctx, json, params, "Custom types cannot be represented in JSON Schema");
+};
+var transformProcessor = (schema, ctx, json, params) => {
+	handleUnrepresentable(schema, ctx, json, params, "Transforms cannot be represented in JSON Schema");
+};
+var arrayProcessor = (schema, ctx, _json, params) => {
+	const json = _json;
+	const def = schema._zod.def;
+	const { minimum, maximum } = aggregateChecks(schema);
+	if (typeof minimum === "number") json.minItems = minimum;
+	if (typeof maximum === "number") json.maxItems = maximum;
+	json.type = "array";
+	json.items = processSchema(def.element, ctx, {
+		...params,
+		path: [...params.path, "items"]
+	});
+};
+function inputOptin(schema) {
+	const def = schema._zod.def;
+	if (def.type === "pipe" && def.in._zod.traits.has("$ZodTransform")) return inputOptin(def.out);
+	if (def.type === "catch") return inputOptin(def.innerType);
+	return schema._zod.optin;
+}
+var objectProcessor = (schema, ctx, _json, params) => {
+	const json = _json;
+	const def = schema._zod.def;
+	const shape = def.shape;
+	if (Object.getOwnPropertySymbols(shape).length && handleUnrepresentable(schema, ctx, json, params, "Symbol keys cannot be represented in JSON Schema")) return;
+	json.type = "object";
+	json.properties = {};
+	for (const key in shape) assignProp(json.properties, key, processSchema(shape[key], ctx, {
+		...params,
+		path: [
+			...params.path,
+			"properties",
+			key
+		]
+	}));
+	const requiredKeys = [];
+	for (const key of Object.keys(shape)) {
+		const field = def.shape[key];
+		if (ctx.io === "input" ? inputOptin(field) === void 0 : field._zod.optout === void 0) requiredKeys.push(key);
+	}
+	if (requiredKeys.length > 0) json.required = requiredKeys;
+	if (def.catchall?._zod.def.type === "never") json.additionalProperties = false;
+	else if (!def.catchall) {
+		if (ctx.io === "output") json.additionalProperties = false;
+	} else if (def.catchall) json.additionalProperties = processSchema(def.catchall, ctx, {
+		...params,
+		path: [...params.path, "additionalProperties"]
+	});
+};
+var unionProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	const isExclusive = def.inclusive === false;
+	const options = def.options.map((x, i) => processSchema(x, ctx, {
+		...params,
+		path: [
+			...params.path,
+			isExclusive ? "oneOf" : "anyOf",
+			i
+		]
+	}));
+	if (isExclusive) json.oneOf = options;
+	else json.anyOf = options;
+};
+var intersectionProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	const a = processSchema(def.left, ctx, {
+		...params,
+		path: [
+			...params.path,
+			"allOf",
+			0
+		]
+	});
+	const b = processSchema(def.right, ctx, {
+		...params,
+		path: [
+			...params.path,
+			"allOf",
+			1
+		]
+	});
+	const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
+	const allOf = [...isSimpleIntersection(a) ? a.allOf : [a], ...isSimpleIntersection(b) ? b.allOf : [b]];
+	json.allOf = allOf;
+	ctx.intersections.push(allOf);
+};
+/** JSON object keys are always strings, so a numeric record key schema is re-expressed over the
+* numeric-string form the record parser matches. Deferred to `finalize`, after the flatten: a key
+* behind a wrapper only carries its own `type` before then, and a union key only has its branches.
+*
+* A numeric bound cannot apply to a property name, so `minimum` and its siblings are dropped rather
+* than carried over: keeping them beside `type: "string"` reproduces the match-nothing schema this
+* exists to fix. A key that carries one therefore emits wider than the record parses — `z.record(z.number().min(5), V)`
+* accepts `"3"` — which is the deliberate trade, since throwing on it would reject an ordinary schema
+* outright. */
+function stringifyKeyNames(bySchema, json, visited) {
+	if (json.$ref) {
+		if (visited.has(json)) return json;
+		visited.add(json);
+		const def = bySchema.get(json)?.def;
+		if (!def) return json;
+		const inlined = stringifyKeyNames(bySchema, def, visited);
+		return inlined === def ? json : inlined;
+	}
+	for (const keyword of ["anyOf", "oneOf"]) {
+		const branches = json[keyword];
+		if (!Array.isArray(branches)) continue;
+		const mapped = branches.map((branch) => stringifyKeyNames(bySchema, branch, visited));
+		if (mapped.some((branch, i) => branch !== branches[i])) json = {
+			...json,
+			[keyword]: mapped
+		};
+	}
+	const types = Array.isArray(json.type) ? json.type : [json.type];
+	const numericType = !types.includes("string") && types.some((t) => t === "number" || t === "integer");
+	const values = json.enum ?? (json.const !== void 0 ? [json.const] : void 0);
+	if (!numericType && !values?.some((v) => typeof v === "number")) return json;
+	const { minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, format, id, ...rest } = json;
+	if (rest.enum) rest.enum = rest.enum.map((v) => typeof v === "number" ? String(v) : v);
+	else if (typeof rest.const === "number") rest.const = String(rest.const);
+	if (!numericType) return rest;
+	rest.type = "string";
+	if (!values) rest.pattern = (types.includes("number") ? number$1 : integer).source;
+	return rest;
+}
+/** Every record of one conversion, so the carriers are found in a single pass rather than once per record. */
+var pendingRecords = /* @__PURE__ */ new WeakMap();
+function rewriteKeyNames(ctx) {
+	const bySchema = /* @__PURE__ */ new Map();
+	for (const entry of ctx.seen.values()) if (entry.def && !bySchema.has(entry.schema)) bySchema.set(entry.schema, entry);
+	const rewrites = /* @__PURE__ */ new Map();
+	for (const record of pendingRecords.get(ctx) ?? []) {
+		const seen = ctx.seen.get(record);
+		const names = (seen?.def ?? seen?.schema)?.propertyNames;
+		if (!names || names === true || rewrites.has(names)) continue;
+		const rewritten = stringifyKeyNames(bySchema, names, /* @__PURE__ */ new Set());
+		if (rewritten !== names) rewrites.set(names, rewritten);
+	}
+	if (!rewrites.size) return;
+	for (const entry of ctx.seen.values()) for (const carrier of [entry.schema, entry.def]) {
+		const rewritten = carrier && rewrites.get(carrier.propertyNames);
+		if (rewritten) carrier.propertyNames = rewritten;
+	}
+}
+var recordProcessor = (schema, ctx, _json, params) => {
+	const json = _json;
+	const def = schema._zod.def;
+	json.type = "object";
+	const keyType = def.keyType;
+	const patterns = aggregateChecks(keyType).patterns;
+	if (def.mode === "loose" && patterns && patterns.size > 0) {
+		const valueSchema = processSchema(def.valueType, ctx, {
+			...params,
+			path: [
+				...params.path,
+				"patternProperties",
+				"*"
+			]
+		});
+		json.patternProperties = {};
+		for (const pattern of patterns) assignProp(json.patternProperties, exactPattern(pattern).source, valueSchema);
+	} else {
+		if (ctx.target === "draft-07" || ctx.target === "draft-2020-12") {
+			json.propertyNames = processSchema(def.keyType, ctx, {
+				...params,
+				path: [...params.path, "propertyNames"]
+			});
+			let pending = pendingRecords.get(ctx);
+			if (!pending) {
+				pending = [];
+				pendingRecords.set(ctx, pending);
+				ctx.deferred.push(() => rewriteKeyNames(ctx));
+			}
+			pending.push(schema);
+		}
+		json.additionalProperties = processSchema(def.valueType, ctx, {
+			...params,
+			path: [...params.path, "additionalProperties"]
+		});
+	}
+	const keyValues = keyType._zod.values;
+	const omittableOnInput = ctx.io === "input" && inputOptin(def.valueType) !== void 0;
+	if (keyValues && !def.partial && !omittableOnInput) {
+		const validKeyValues = [...keyValues].filter((v) => typeof v === "string" || typeof v === "number");
+		if (validKeyValues.length > 0) json.required = validKeyValues.map(String);
+	}
+};
+var nullableProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	const inner = processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	if (ctx.target === "openapi-3.0") {
+		seen.ref = def.innerType;
+		json.nullable = true;
+	} else json.anyOf = [inner, { type: "null" }];
+};
+var nonoptionalProcessor = (schema, ctx, _json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+};
+/** Round-trips a default value through JSON so the emitted schema is guaranteed to be valid JSON.
+* A BigInt has no reliable encoding, so it goes through `unrepresentable` like any other
+* unrepresentable value. Returns a sentinel when the caller must not write a default of its own. */
+var UNREPRESENTABLE_DEFAULT = Symbol();
+function serializeDefaultValue(value, schema, ctx, json, params) {
+	let unrepresentable = false;
+	const serialized = JSON.stringify(value, (_, val) => {
+		if (typeof val !== "bigint") return val;
+		unrepresentable = true;
+		return null;
+	});
+	if (!unrepresentable) return JSON.parse(serialized);
+	handleUnrepresentable(schema, ctx, json, params, "BigInt defaults cannot be represented in JSON Schema");
+	return UNREPRESENTABLE_DEFAULT;
+}
+var defaultProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+	const value = serializeDefaultValue(def.defaultValue, schema, ctx, json, params);
+	if (value !== UNREPRESENTABLE_DEFAULT) json.default = value;
+};
+var prefaultProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+	if (ctx.io !== "input") return;
+	const value = serializeDefaultValue(def.defaultValue, schema, ctx, json, params);
+	if (value !== UNREPRESENTABLE_DEFAULT) json._prefault = value;
+};
+var catchProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+	let catchValue;
+	try {
+		catchValue = def.catchValue(void 0);
+	} catch {
+		handleUnrepresentable(schema, ctx, json, params, "Dynamic catch values are not supported in JSON Schema");
+		return;
+	}
+	json.default = catchValue;
+};
+var pipeProcessor = (schema, ctx, _json, params) => {
+	const def = schema._zod.def;
+	const inIsTransform = def.in._zod.traits.has("$ZodTransform");
+	const innerType = ctx.io === "input" ? inIsTransform ? def.out : def.in : def.out;
+	processSchema(innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = innerType;
+};
+var readonlyProcessor = (schema, ctx, json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+	json.readOnly = true;
+};
+var optionalProcessor = (schema, ctx, _json, params) => {
+	const def = schema._zod.def;
+	processSchema(def.innerType, ctx, params);
+	const seen = ctx.seen.get(schema);
+	seen.ref = def.innerType;
+};
+//#endregion
+//#region node_modules/zod/v4/classic/errors.js
+var _installedErrorProtos = /* @__PURE__ */ new WeakSet([Object.prototype, Error.prototype]);
+function _lazyMethod(proto, key, make) {
+	Object.defineProperty(proto, key, {
+		configurable: true,
+		enumerable: false,
+		get() {
+			const value = make(this);
+			Object.defineProperty(this, key, {
+				value,
+				configurable: true,
+				writable: true
+			});
+			return value;
+		},
+		set(value) {
+			Object.defineProperty(this, key, {
+				value,
+				configurable: true,
+				writable: true
+			});
+		}
+	});
+}
+var initializer = (inst, issues) => {
+	$ZodError.init(inst, issues);
+	inst.name = "ZodError";
+	const proto = Object.getPrototypeOf(inst);
+	if (_installedErrorProtos.has(proto)) return;
+	_installedErrorProtos.add(proto);
+	_lazyMethod(proto, "format", (self) => (mapper) => formatError(self, mapper));
+	_lazyMethod(proto, "flatten", (self) => (mapper) => flattenError(self, mapper));
+	_lazyMethod(proto, "addIssue", (self) => (issue) => {
+		self.issues.push(issue);
+		self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
+	});
+	_lazyMethod(proto, "addIssues", (self) => (issues) => {
+		self.issues.push(...issues);
+		self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
+	});
+	Object.defineProperty(proto, "isEmpty", {
+		configurable: true,
+		enumerable: false,
+		get() {
+			return this.issues.length === 0;
+		}
+	});
+};
+var ZodRealError = /*@__PURE__*/ $constructor("ZodError", initializer, void 0, { Parent: Error });
+//#endregion
+//#region node_modules/zod/v4/classic/parse.js
+var parse = /* @__PURE__ */ _parse(ZodRealError);
+var parseAsync = /* @__PURE__ */ _parseAsync(ZodRealError);
+var safeParse = /* @__PURE__ */ _safeParse(ZodRealError);
+var safeParseAsync = /* @__PURE__ */ _safeParseAsync(ZodRealError);
+var encode = /* @__PURE__ */ _encode(ZodRealError);
+var decode = /* @__PURE__ */ _decode(ZodRealError);
+var encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
+var decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
+var safeEncode = /* @__PURE__ */ _safeEncode(ZodRealError);
+var safeDecode = /* @__PURE__ */ _safeDecode(ZodRealError);
+var safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
+var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
+//#endregion
+//#region node_modules/zod/v4/classic/schemas.js
+function _ensureDefaultLocale() {
+	if (!globalConfig.localeError) config(en_default());
+}
+function _ensureDefaultMemoizer() {
+	if (!globalConfig.memoizer) config({ memoizer: memoizer() });
+}
+var ZodType = /*@__PURE__*/ $constructor("ZodType", (inst, def) => {
+	_ensureDefaultLocale();
+	$ZodType.init(inst, def);
+	inst.def = def;
+	inst.type = def.type;
+	return inst;
+}, {
+	check(...chks) {
+		const def = this.def;
+		return this.clone(mergeDefs(def, { checks: [...def.checks ?? [], ...chks.map((ch) => typeof ch === "function" ? { _zod: {
+			check: ch,
+			def: { check: "custom" },
+			onattach: []
+		} } : ch)] }), { parent: true });
+	},
+	with(...chks) {
+		return this.check(...chks);
+	},
+	clone(def, params) {
+		return clone(this, def, params);
+	},
+	brand() {
+		return this;
+	},
+	register(reg, meta) {
+		reg.add(this, meta);
+		return this;
+	},
+	refine(check, params) {
+		return this.check(refine(check, params));
+	},
+	superRefine(refinement, params) {
+		return this.check(superRefine(refinement, params));
+	},
+	overwrite(fn) {
+		return this.check(/* @__PURE__ */ _overwrite(fn));
+	},
+	optional() {
+		return optional(this);
+	},
+	exactOptional() {
+		return exactOptional(this);
+	},
+	nullable() {
+		return nullable(this);
+	},
+	nullish() {
+		return optional(nullable(this));
+	},
+	nonoptional(params) {
+		return nonoptional(this, params);
+	},
+	array() {
+		return array(this);
+	},
+	or(arg) {
+		return union([this, arg]);
+	},
+	and(arg) {
+		return intersection(this, arg);
+	},
+	transform(tx) {
+		return pipe(this, transform(tx));
+	},
+	default(d) {
+		return _default(this, d);
+	},
+	prefault(d) {
+		return prefault(this, d);
+	},
+	catch(params) {
+		return _catch(this, params);
+	},
+	pipe(target) {
+		return pipe(this, target);
+	},
+	readonly() {
+		return readonly(this);
+	},
+	describe(description) {
+		const cl = this.clone();
+		globalRegistry.add(cl, { description });
+		return cl;
+	},
+	meta(...args) {
+		if (args.length === 0) return globalRegistry.get(this);
+		const cl = this.clone();
+		globalRegistry.add(cl, args[0]);
+		return cl;
+	},
+	isOptional() {
+		return this.safeParse(void 0).success;
+	},
+	isNullable() {
+		return this.safeParse(null).success;
+	},
+	apply(fn, ...args) {
+		return args.length === 0 ? fn(this) : fn(this, ...args);
+	},
+	get "~standard"() {
+		return hide(this, "~standard", {
+			...standardProps(this),
+			jsonSchema: {
+				input: createStandardJSONSchemaMethod(this, "input"),
+				output: createStandardJSONSchemaMethod(this, "output")
+			}
+		});
+	},
+	set "~standard"(value) {
+		own(this, "~standard", value);
+	},
+	parse: function _parse(data, params) {
+		return parse(this, data, params, { callee: _parse });
+	},
+	parseAsync: async function _parseAsync(data, params) {
+		return await parseAsync(this, data, params, { callee: _parseAsync });
+	},
+	safeParse(data, params) {
+		return safeParse(this, data, params);
+	},
+	async safeParseAsync(data, params) {
+		return safeParseAsync(this, data, params);
+	},
+	get spa() {
+		return this?.safeParseAsync;
+	},
+	set spa(value) {
+		own(this, "spa", value);
+	},
+	validate(data, params) {
+		return validate(this, data, params);
+	},
+	validateAsync(data, params) {
+		return validateAsync$1(this, data, params);
+	},
+	encode: function _encode(data, params) {
+		return encode(this, data, params, { callee: _encode });
+	},
+	decode: function _decode(data, params) {
+		return decode(this, data, params, { callee: _decode });
+	},
+	encodeAsync: async function _encodeAsync(data, params) {
+		return await encodeAsync(this, data, params, { callee: _encodeAsync });
+	},
+	decodeAsync: async function _decodeAsync(data, params) {
+		return await decodeAsync(this, data, params, { callee: _decodeAsync });
+	},
+	safeEncode(data, params) {
+		return safeEncode(this, data, params);
+	},
+	safeDecode(data, params) {
+		return safeDecode(this, data, params);
+	},
+	async safeEncodeAsync(data, params) {
+		return safeEncodeAsync(this, data, params);
+	},
+	async safeDecodeAsync(data, params) {
+		return safeDecodeAsync(this, data, params);
+	},
+	toJSONSchema(params) {
+		return createToJSONSchemaMethod(this, {})(params);
+	},
+	get description() {
+		return globalRegistry.get(this)?.description;
+	},
+	get _def() {
+		return this._zod.def;
+	}
+});
+/** @internal */
+var _ZodString = /*@__PURE__*/ $constructor("_ZodString", (inst, def) => {
+	$ZodString.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => stringProcessor(inst, ctx, json, params);
+}, /*@__PURE__*/ derived({
+	format: (inst) => aggregateChecks(inst).format ?? null,
+	minLength: (inst) => aggregateChecks(inst).minimum ?? null,
+	maxLength: (inst) => aggregateChecks(inst).maximum ?? null
+}, {
+	regex(...args) {
+		return this.check(/* @__PURE__ */ _regex(...args));
+	},
+	includes(...args) {
+		return this.check(/* @__PURE__ */ _includes(...args));
+	},
+	startsWith(...args) {
+		return this.check(/* @__PURE__ */ _startsWith(...args));
+	},
+	endsWith(...args) {
+		return this.check(/* @__PURE__ */ _endsWith(...args));
+	},
+	min(...args) {
+		return this.check(/* @__PURE__ */ _minLength(...args));
+	},
+	max(...args) {
+		return this.check(/* @__PURE__ */ _maxLength(...args));
+	},
+	length(...args) {
+		return this.check(/* @__PURE__ */ _length(...args));
+	},
+	nonempty(...args) {
+		return this.check(/* @__PURE__ */ _minLength(1, ...args));
+	},
+	lowercase(params) {
+		return this.check(/* @__PURE__ */ _lowercase(params));
+	},
+	uppercase(params) {
+		return this.check(/* @__PURE__ */ _uppercase(params));
+	},
+	trim() {
+		return this.check(/* @__PURE__ */ _trim());
+	},
+	normalize(...args) {
+		return this.check(/* @__PURE__ */ _normalize(...args));
+	},
+	toLowerCase() {
+		return this.check(/* @__PURE__ */ _toLowerCase());
+	},
+	toUpperCase() {
+		return this.check(/* @__PURE__ */ _toUpperCase());
+	},
+	slugify() {
+		return this.check(/* @__PURE__ */ _slugify());
+	}
+}));
+var ZodString = /*@__PURE__*/ $constructor("ZodString", (inst, def) => {
+	$ZodString.init(inst, def);
+	_ZodString.init(inst, def);
+}, {
+	email(params) {
+		return this.check(/* @__PURE__ */ _email(ZodEmail, params));
+	},
+	url(params) {
+		return this.check(/* @__PURE__ */ _url(ZodURL, params));
+	},
+	jwt(params) {
+		return this.check(/* @__PURE__ */ _jwt(ZodJWT, params));
+	},
+	emoji(params) {
+		return this.check(/* @__PURE__ */ _emoji(ZodEmoji, params));
+	},
+	guid(params) {
+		return this.check(/* @__PURE__ */ _guid(ZodGUID, params));
+	},
+	uuid(params) {
+		return this.check(/* @__PURE__ */ _uuid(ZodUUID, params));
+	},
+	uuidv4(params) {
+		return this.check(/* @__PURE__ */ _uuidv4(ZodUUID, params));
+	},
+	uuidv6(params) {
+		return this.check(/* @__PURE__ */ _uuidv6(ZodUUID, params));
+	},
+	uuidv7(params) {
+		return this.check(/* @__PURE__ */ _uuidv7(ZodUUID, params));
+	},
+	nanoid(params) {
+		return this.check(/* @__PURE__ */ _nanoid(ZodNanoID, params));
+	},
+	cuid(params) {
+		return this.check(/* @__PURE__ */ _cuid(ZodCUID, params));
+	},
+	cuid2(params) {
+		return this.check(/* @__PURE__ */ _cuid2(ZodCUID2, params));
+	},
+	ulid(params) {
+		return this.check(/* @__PURE__ */ _ulid(ZodULID, params));
+	},
+	base64(params) {
+		return this.check(/* @__PURE__ */ _base64(ZodBase64, params));
+	},
+	base64url(params) {
+		return this.check(/* @__PURE__ */ _base64url(ZodBase64URL, params));
+	},
+	xid(params) {
+		return this.check(/* @__PURE__ */ _xid(ZodXID, params));
+	},
+	ksuid(params) {
+		return this.check(/* @__PURE__ */ _ksuid(ZodKSUID, params));
+	},
+	ipv4(params) {
+		return this.check(/* @__PURE__ */ _ipv4(ZodIPv4, params));
+	},
+	ipv6(params) {
+		return this.check(/* @__PURE__ */ _ipv6(ZodIPv6, params));
+	},
+	cidrv4(params) {
+		return this.check(/* @__PURE__ */ _cidrv4(ZodCIDRv4, params));
+	},
+	cidrv6(params) {
+		return this.check(/* @__PURE__ */ _cidrv6(ZodCIDRv6, params));
+	},
+	e164(params) {
+		return this.check(/* @__PURE__ */ _e164(ZodE164, params));
+	},
+	datetime(params) {
+		return this.check(/* @__PURE__ */ _isoDateTime(ZodISODateTime, params));
+	},
+	date(params) {
+		return this.check(/* @__PURE__ */ _isoDate(ZodISODate, params));
+	},
+	time(params) {
+		return this.check(/* @__PURE__ */ _isoTime(ZodISOTime, params));
+	},
+	duration(params) {
+		return this.check(/* @__PURE__ */ _isoDuration(ZodISODuration, params));
+	}
+});
+function string(params) {
+	return /* @__PURE__ */ _string(ZodString, params);
+}
+var ZodStringFormat = /*@__PURE__*/ $constructor("ZodStringFormat", (inst, def) => {
+	$ZodStringFormat.init(inst, def);
+	_ZodString.init(inst, def);
+});
+var ZodISODateTime = /*@__PURE__*/ $constructor("ZodISODateTime", (inst, def) => {
+	$ZodISODateTime.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodISODate = /*@__PURE__*/ $constructor("ZodISODate", (inst, def) => {
+	$ZodISODate.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodISOTime = /*@__PURE__*/ $constructor("ZodISOTime", (inst, def) => {
+	$ZodISOTime.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodISODuration = /*@__PURE__*/ $constructor("ZodISODuration", (inst, def) => {
+	$ZodISODuration.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodEmail = /*@__PURE__*/ $constructor("ZodEmail", (inst, def) => {
+	$ZodEmail.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodGUID = /*@__PURE__*/ $constructor("ZodGUID", (inst, def) => {
+	$ZodGUID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodUUID = /*@__PURE__*/ $constructor("ZodUUID", (inst, def) => {
+	$ZodUUID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodURL = /*@__PURE__*/ $constructor("ZodURL", (inst, def) => {
+	$ZodURL.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodEmoji = /*@__PURE__*/ $constructor("ZodEmoji", (inst, def) => {
+	$ZodEmoji.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodNanoID = /*@__PURE__*/ $constructor("ZodNanoID", (inst, def) => {
+	$ZodNanoID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+/**
+* @deprecated CUID v1 is deprecated by its authors due to information leakage
+* (timestamps embedded in the id). Use {@link ZodCUID2} instead.
+* See https://github.com/paralleldrive/cuid.
+*/
+var ZodCUID = /*@__PURE__*/ $constructor("ZodCUID", (inst, def) => {
+	$ZodCUID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodCUID2 = /*@__PURE__*/ $constructor("ZodCUID2", (inst, def) => {
+	$ZodCUID2.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodULID = /*@__PURE__*/ $constructor("ZodULID", (inst, def) => {
+	$ZodULID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodXID = /*@__PURE__*/ $constructor("ZodXID", (inst, def) => {
+	$ZodXID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodKSUID = /*@__PURE__*/ $constructor("ZodKSUID", (inst, def) => {
+	$ZodKSUID.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodIPv4 = /*@__PURE__*/ $constructor("ZodIPv4", (inst, def) => {
+	$ZodIPv4.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodIPv6 = /*@__PURE__*/ $constructor("ZodIPv6", (inst, def) => {
+	$ZodIPv6.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodCIDRv4 = /*@__PURE__*/ $constructor("ZodCIDRv4", (inst, def) => {
+	$ZodCIDRv4.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodCIDRv6 = /*@__PURE__*/ $constructor("ZodCIDRv6", (inst, def) => {
+	$ZodCIDRv6.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodBase64 = /*@__PURE__*/ $constructor("ZodBase64", (inst, def) => {
+	$ZodBase64.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodBase64URL = /*@__PURE__*/ $constructor("ZodBase64URL", (inst, def) => {
+	$ZodBase64URL.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodE164 = /*@__PURE__*/ $constructor("ZodE164", (inst, def) => {
+	$ZodE164.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodJWT = /*@__PURE__*/ $constructor("ZodJWT", (inst, def) => {
+	$ZodJWT.init(inst, def);
+	ZodStringFormat.init(inst, def);
+});
+var ZodNumber = /*@__PURE__*/ $constructor("ZodNumber", (inst, def) => {
+	$ZodNumber.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json, params);
+	inst.isFinite = true;
+}, /*@__PURE__*/ derived({
+	minValue: (inst) => {
+		const { minimum, exclusiveMinimum } = aggregateChecks(inst);
+		return Math.max(minimum ?? Number.NEGATIVE_INFINITY, exclusiveMinimum ?? Number.NEGATIVE_INFINITY);
+	},
+	maxValue: (inst) => {
+		const { maximum, exclusiveMaximum } = aggregateChecks(inst);
+		return Math.min(maximum ?? Number.POSITIVE_INFINITY, exclusiveMaximum ?? Number.POSITIVE_INFINITY);
+	},
+	isInt: (inst) => {
+		const { isInt, multipleOf } = aggregateChecks(inst);
+		return !!isInt || !!multipleOf?.some(Number.isSafeInteger);
+	},
+	format: (inst) => aggregateChecks(inst).format ?? null
+}, {
+	gt(value, params) {
+		return this.check(/* @__PURE__ */ _gt(value, params));
+	},
+	gte(value, params) {
+		return this.check(/* @__PURE__ */ _gte(value, params));
+	},
+	min(value, params) {
+		return this.check(/* @__PURE__ */ _gte(value, params));
+	},
+	lt(value, params) {
+		return this.check(/* @__PURE__ */ _lt(value, params));
+	},
+	lte(value, params) {
+		return this.check(/* @__PURE__ */ _lte(value, params));
+	},
+	max(value, params) {
+		return this.check(/* @__PURE__ */ _lte(value, params));
+	},
+	int(params) {
+		return this.check(int(params));
+	},
+	safe(params) {
+		return this.check(int(params));
+	},
+	positive(params) {
+		return this.check(/* @__PURE__ */ _gt(0, params));
+	},
+	nonnegative(params) {
+		return this.check(/* @__PURE__ */ _gte(0, params));
+	},
+	negative(params) {
+		return this.check(/* @__PURE__ */ _lt(0, params));
+	},
+	nonpositive(params) {
+		return this.check(/* @__PURE__ */ _lte(0, params));
+	},
+	multipleOf(value, params) {
+		return this.check(/* @__PURE__ */ _multipleOf(value, params));
+	},
+	step(value, params) {
+		return this.check(/* @__PURE__ */ _multipleOf(value, params));
+	},
+	finite() {
+		return this;
+	}
+}));
+function number(params) {
+	return /* @__PURE__ */ _number(ZodNumber, params);
+}
+var ZodNumberFormat = /*@__PURE__*/ $constructor("ZodNumberFormat", (inst, def) => {
+	$ZodNumberFormat.init(inst, def);
+	ZodNumber.init(inst, def);
+});
+function int(params) {
+	return /* @__PURE__ */ _int(ZodNumberFormat, params);
+}
+var ZodBoolean = /*@__PURE__*/ $constructor("ZodBoolean", (inst, def) => {
+	$ZodBoolean.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
+});
+function boolean(params) {
+	return /* @__PURE__ */ _boolean(ZodBoolean, params);
+}
+var ZodNull = /*@__PURE__*/ $constructor("ZodNull", (inst, def) => {
+	$ZodNull.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => nullProcessor(inst, ctx, json, params);
+});
+function _null(params) {
+	return /* @__PURE__ */ _null$1(ZodNull, params);
+}
+var ZodUnknown = /*@__PURE__*/ $constructor("ZodUnknown", (inst, def) => {
+	$ZodUnknown.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => void 0;
+});
+function unknown() {
+	return /* @__PURE__ */ _unknown(ZodUnknown);
+}
+var ZodNever = /*@__PURE__*/ $constructor("ZodNever", (inst, def) => {
+	$ZodNever.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => neverProcessor(inst, ctx, json, params);
+});
+function never(params) {
+	return /* @__PURE__ */ _never(ZodNever, params);
+}
+var ZodArray = /*@__PURE__*/ $constructor("ZodArray", (inst, def) => {
+	_ensureDefaultMemoizer();
+	$ZodArray.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => arrayProcessor(inst, ctx, json, params);
+	inst.element = def.element;
+}, {
+	min(n, params) {
+		return this.check(/* @__PURE__ */ _minLength(n, params));
+	},
+	nonempty(params) {
+		return this.check(/* @__PURE__ */ _minLength(1, params));
+	},
+	max(n, params) {
+		return this.check(/* @__PURE__ */ _maxLength(n, params));
+	},
+	length(n, params) {
+		return this.check(/* @__PURE__ */ _length(n, params));
+	},
+	unwrap() {
+		return this.element;
+	}
+});
+function array(element, params) {
+	return /* @__PURE__ */ _array(ZodArray, element, params);
+}
+var ZodObject = /*@__PURE__*/ $constructor("ZodObject", (inst, def) => {
+	_ensureDefaultMemoizer();
+	$ZodObjectJIT.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => objectProcessor(inst, ctx, json, params);
+	installLazyProp(inst, "shape", (self) => self._zod.def.shape, false);
+}, {
+	keyof() {
+		return _enum(Object.keys(this._zod.def.shape));
+	},
+	catchall(catchall) {
+		return this.clone(mergeDefs(this._zod.def, { catchall }));
+	},
+	passthrough() {
+		return this.clone(mergeDefs(this._zod.def, { catchall: unknown() }));
+	},
+	loose() {
+		return this.clone(mergeDefs(this._zod.def, { catchall: unknown() }));
+	},
+	strict() {
+		return this.clone(mergeDefs(this._zod.def, { catchall: never() }));
+	},
+	strip() {
+		return this.clone(mergeDefs(this._zod.def, { catchall: void 0 }));
+	},
+	extend(incoming) {
+		return extend(this, incoming);
+	},
+	safeExtend(incoming) {
+		return safeExtend(this, incoming);
+	},
+	merge(other) {
+		return merge(this, other);
+	},
+	pick(mask) {
+		return pick(this, mask);
+	},
+	omit(mask) {
+		return omit(this, mask);
+	},
+	partial(...args) {
+		return partial(ZodOptional, this, args[0]);
+	},
+	exactPartial(...args) {
+		return partial(ZodExactOptional, this, args[0], "exactPartial");
+	},
+	required(...args) {
+		return required(ZodNonOptional, this, args[0]);
+	}
+});
+function object(shape, params) {
+	return new ZodObject({
+		type: "object",
+		shape: shape ?? {},
+		...normalizeParams(params)
+	});
+}
+function strictObject(shape, params) {
+	return new ZodObject({
+		type: "object",
+		shape,
+		catchall: never(),
+		...normalizeParams(params)
+	});
+}
+var ZodUnion = /*@__PURE__*/ $constructor("ZodUnion", (inst, def) => {
+	$ZodUnion.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => unionProcessor(inst, ctx, json, params);
+	inst.options = def.options;
+});
+function union(options, params) {
+	return new ZodUnion({
+		type: "union",
+		options,
+		...normalizeParams(params)
+	});
+}
+var ZodIntersection = /*@__PURE__*/ $constructor("ZodIntersection", (inst, def) => {
+	$ZodIntersection.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => intersectionProcessor(inst, ctx, json, params);
+});
+function intersection(left, right) {
+	return new ZodIntersection({
+		type: "intersection",
+		left,
+		right
+	});
+}
+var ZodRecord = /*@__PURE__*/ $constructor("ZodRecord", (inst, def) => {
+	_ensureDefaultMemoizer();
+	$ZodRecord.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => recordProcessor(inst, ctx, json, params);
+	inst.keyType = def.keyType;
+	inst.valueType = def.valueType;
+});
+function record(keyType, valueType, params) {
+	if (!valueType || !valueType._zod) return new ZodRecord({
+		type: "record",
+		keyType: string(),
+		valueType: keyType,
+		...normalizeParams(valueType)
+	});
+	return new ZodRecord({
+		type: "record",
+		keyType,
+		valueType,
+		...normalizeParams(params)
+	});
+}
+var ZodEnum = /*@__PURE__*/ $constructor("ZodEnum", (inst, def) => {
+	$ZodEnum.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => enumProcessor(inst, ctx, json, params);
+	inst.enum = def.entries;
+	inst.options = [...inst._zod.values];
+	const keys = new Set(Object.keys(def.entries));
+	inst.extract = (values, params) => {
+		const newEntries = {};
+		for (const value of values) if (keys.has(value)) newEntries[value] = def.entries[value];
+		else throw new Error(`Key ${value} not found in enum`);
+		return new ZodEnum({
+			...def,
+			checks: [],
+			...normalizeParams(params),
+			entries: newEntries
+		});
+	};
+	inst.exclude = (values, params) => {
+		const newEntries = { ...def.entries };
+		for (const value of values) if (keys.has(value)) delete newEntries[value];
+		else throw new Error(`Key ${value} not found in enum`);
+		return new ZodEnum({
+			...def,
+			checks: [],
+			...normalizeParams(params),
+			entries: newEntries
+		});
+	};
+});
+function _enum(values, params) {
+	return new ZodEnum({
+		type: "enum",
+		entries: Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values,
+		...normalizeParams(params)
+	});
+}
+var ZodLiteral = /*@__PURE__*/ $constructor("ZodLiteral", (inst, def) => {
+	$ZodLiteral.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => literalProcessor(inst, ctx, json, params);
+	inst.values = new Set(def.values);
+	Object.defineProperty(inst, "value", { get() {
+		if (def.values.length > 1) throw new Error("This schema contains multiple valid literal values. Use `.values` instead.");
+		return def.values[0];
+	} });
+});
+var ZodTransform = /*@__PURE__*/ $constructor("ZodTransform", (inst, def) => {
+	_ensureDefaultMemoizer();
+	$ZodTransform.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => transformProcessor(inst, ctx, json, params);
+	inst._zod.parse = (payload, _ctx) => {
+		if (_ctx.direction === "backward") throw new $ZodEncodeError(inst.constructor.name);
+		payload.addIssue = (issue$1) => {
+			if (typeof issue$1 === "string") payload.issues.push(issue(issue$1, payload.value, def));
+			else {
+				const _issue = issue$1;
+				if (_issue.fatal) _issue.continue = false;
+				_issue.code ?? (_issue.code = "custom");
+				if (!("input" in _issue)) _issue.input = payload.value;
+				_issue.inst ?? (_issue.inst = inst);
+				payload.issues.push(issue(_issue));
+			}
+		};
+		const output = def.transform(payload.value, payload);
+		if (output instanceof Promise) return output.then((output) => {
+			payload.value = output;
+			return payload;
+		});
+		payload.value = output;
+		return payload;
+	};
+});
+function transform(fn) {
+	return new ZodTransform({
+		type: "transform",
+		transform: fn
+	});
+}
+var ZodOptional = /*@__PURE__*/ $constructor("ZodOptional", (inst, def) => {
+	$ZodOptional.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function optional(innerType) {
+	return new ZodOptional({
+		type: "optional",
+		innerType
+	});
+}
+var ZodExactOptional = /*@__PURE__*/ $constructor("ZodExactOptional", (inst, def) => {
+	$ZodExactOptional.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function exactOptional(innerType) {
+	return new ZodExactOptional({
+		type: "optional",
+		innerType
+	});
+}
+var ZodNullable = /*@__PURE__*/ $constructor("ZodNullable", (inst, def) => {
+	$ZodNullable.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => nullableProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function nullable(innerType) {
+	return new ZodNullable({
+		type: "nullable",
+		innerType
+	});
+}
+var ZodDefault = /*@__PURE__*/ $constructor("ZodDefault", (inst, def) => {
+	$ZodDefault.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => defaultProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+	inst.removeDefault = inst.unwrap;
+});
+function _default(innerType, defaultValue) {
+	return new ZodDefault({
+		type: "default",
+		innerType,
+		get defaultValue() {
+			return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+		}
+	});
+}
+var ZodPrefault = /*@__PURE__*/ $constructor("ZodPrefault", (inst, def) => {
+	$ZodPrefault.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => prefaultProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function prefault(innerType, defaultValue) {
+	return new ZodPrefault({
+		type: "prefault",
+		innerType,
+		get defaultValue() {
+			return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+		}
+	});
+}
+var ZodNonOptional = /*@__PURE__*/ $constructor("ZodNonOptional", (inst, def) => {
+	$ZodNonOptional.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => nonoptionalProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function nonoptional(innerType, params) {
+	return new ZodNonOptional({
+		type: "nonoptional",
+		innerType,
+		...normalizeParams(params)
+	});
+}
+var ZodCatch = /*@__PURE__*/ $constructor("ZodCatch", (inst, def) => {
+	$ZodCatch.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => catchProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+	inst.removeCatch = inst.unwrap;
+});
+function _catch(innerType, catchValue) {
+	return new ZodCatch({
+		type: "catch",
+		innerType,
+		catchValue: typeof catchValue === "function" ? catchValue : constantCatch(catchValue)
+	});
+}
+var ZodPipe = /*@__PURE__*/ $constructor("ZodPipe", (inst, def) => {
+	$ZodPipe.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => pipeProcessor(inst, ctx, json, params);
+	inst.in = def.in;
+	inst.out = def.out;
+});
+function pipe(in_, out) {
+	return new ZodPipe({
+		type: "pipe",
+		in: in_,
+		out
+	});
+}
+var ZodReadonly = /*@__PURE__*/ $constructor("ZodReadonly", (inst, def) => {
+	$ZodReadonly.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => readonlyProcessor(inst, ctx, json, params);
+	inst.unwrap = () => inst._zod.def.innerType;
+});
+function readonly(innerType) {
+	return new ZodReadonly({
+		type: "readonly",
+		innerType
+	});
+}
+var ZodCustom = /*@__PURE__*/ $constructor("ZodCustom", (inst, def) => {
+	$ZodCustom.init(inst, def);
+	ZodType.init(inst, def);
+	inst._zod.processJSONSchema = (ctx, json, params) => customProcessor(inst, ctx, json, params);
+});
+function refine(fn, _params = {}) {
+	return /* @__PURE__ */ _refine(ZodCustom, fn, _params);
+}
+function superRefine(fn, params) {
+	return /* @__PURE__ */ _superRefine(fn, params);
+}
+//#endregion
+//#region src/schemas/ids-of-provinces-heroes-and-realms.ts
+/** A province's id: its index in `world.provinces`. */
+var ProvinceIdSchema = number().brand();
+/** A hero's id (a king's too), in `characters` and in the graveyard. */
+var CharacterIdSchema = number().brand();
+/** A realm's index in `players`: a hero's `player`, a province's `owner`. */
+var RealmIndexSchema = number().brand();
+//#endregion
+//#region src/schemas/saved-game-state.ts
+var SkillLevelsSchema = object({
+	melee: number().optional(),
+	archery: number().optional(),
+	tactical: number().optional(),
+	march: number().optional(),
+	naval: number().optional(),
+	sage: number().optional(),
+	spy: number().optional(),
+	thief: number().optional(),
+	druid: number().optional(),
+	explorer: number().optional(),
+	white: number().optional(),
+	psychic: number().optional(),
+	illusory: number().optional(),
+	elemental: number().optional(),
+	necromancy: number().optional()
+});
+var SkillFlagsSchema = object({
+	melee: boolean().optional(),
+	archery: boolean().optional(),
+	tactical: boolean().optional(),
+	march: boolean().optional(),
+	naval: boolean().optional(),
+	sage: boolean().optional(),
+	spy: boolean().optional(),
+	thief: boolean().optional(),
+	druid: boolean().optional(),
+	explorer: boolean().optional(),
+	white: boolean().optional(),
+	psychic: boolean().optional(),
+	illusory: boolean().optional(),
+	elemental: boolean().optional(),
+	necromancy: boolean().optional()
+});
+var ItemSchema = object({
+	name: string(),
+	slot: string().optional(),
+	desc: string(),
+	lore: string(),
+	effect: object({
+		stat: string(),
+		bonus: number().optional(),
+		spell: string().optional(),
+		ward: string().optional(),
+		pct: number().optional(),
+		use: string().optional(),
+		hitPen: number().optional(),
+		dmg: array(number()).optional(),
+		toHitReduce: number().optional(),
+		below: number().optional(),
+		pc: object({
+			ward: string().optional(),
+			amt: number().optional(),
+			pct: number().optional(),
+			dmgBonus: number().optional(),
+			hitBonus: number().optional(),
+			burn: number().optional(),
+			drain: number().optional(),
+			aura: number().optional(),
+			hits: number().optional()
+		}).optional(),
+		temper: string().optional(),
+		doubleVs: array(string()).optional(),
+		amt: number().optional(),
+		absorb: number().optional(),
+		hits: number().optional(),
+		stun: number().optional(),
+		fleeBonus: number().optional(),
+		vs: array(string()).optional(),
+		archery: number().optional(),
+		rounds: number().optional(),
+		melee: number().optional(),
+		times: number().optional(),
+		images: number().optional(),
+		dot: array(number()).optional(),
+		reflect: number().optional(),
+		hitBonus: number().optional()
+	}),
+	tier: number(),
+	id: number(),
+	equipped: boolean().optional(),
+	_score: number().optional(),
+	_variantOf: string().optional(),
+	alignment: string().optional(),
+	exploreMove: number().optional(),
+	landFullAtSea: boolean().optional(),
+	race: string().optional(),
+	_stolenTurn: number().optional(),
+	emberTwo: boolean().optional(),
+	fleetStr: number().optional(),
+	_unscorable: boolean().optional(),
+	primalStrike: number().optional()
+});
+var ArmySchema = object({
+	type: string(),
+	quality: string(),
+	race: string(),
+	unitName: string(),
+	_notable: boolean().optional(),
+	_isSkeletal: boolean().optional(),
+	_phTag: string().optional(),
+	_orcAtkWinTurn: number().optional(),
+	_wildHuntUntilTurn: number().optional(),
+	_plagueImmune: boolean().optional(),
+	_tacUp: boolean().optional(),
+	_drumUp: boolean().optional(),
+	_died: boolean().optional(),
+	_meritTallied: boolean().optional(),
+	_garrisonOf: number().optional(),
+	_terrorMult: number().optional(),
+	_phantom: boolean().optional(),
+	_isWraith: boolean().optional(),
+	_pacified: boolean().optional()
+});
+var FailStreakSchema = object({
+	turn: number(),
+	n: number()
+});
+var BotIntelHeroSchema = object({
+	turn: number(),
+	provId: number(),
+	units: number(),
+	name: string(),
+	player: number(),
+	isKing: boolean(),
+	strength: number(),
+	skillsKnown: boolean()
+});
+var CharacterSchema = object({
+	id: CharacterIdSchema,
+	name: string(),
+	isKing: boolean(),
+	player: RealmIndexSchema.nullable(),
+	race: string(),
+	alignment: string(),
+	temper: string(),
+	hp: number(),
+	maxHp: number(),
+	skills: SkillLevelsSchema,
+	aptitude: SkillLevelsSchema.required(),
+	armies: array(ArmySchema),
+	items: array(ItemSchema),
+	location: ProvinceIdSchema,
+	alive: boolean(),
+	merits: number(),
+	taxBonus: number(),
+	pay: number(),
+	spellsUsedThisTurn: array(unknown()),
+	locationName: string(),
+	hpEarned: number().optional(),
+	startingHero: boolean().optional(),
+	_unkillable: boolean().optional(),
+	_isNeutralGuard: boolean().optional(),
+	_itemsAtTurnStart: array(string()).optional(),
+	_servedRealms: array(number()).optional(),
+	encounterPlan: object({
+		tactics: array(string()).optional(),
+		notes: string().optional(),
+		_auto: boolean().optional(),
+		duelStance: string().optional(),
+		evilMode: string().optional(),
+		_botStance: boolean().optional(),
+		_botTactics: boolean().optional()
+	}).optional(),
+	_hpAtPhaseStart: number().nullable().optional(),
+	tm: object({
+		marshal: number(),
+		sea: number(),
+		monster: number(),
+		holyCasts: number(),
+		darkCasts: number(),
+		featuresFound: number(),
+		discoveries: number(),
+		spyActions: number(),
+		explored: number(),
+		monsterHost: number(),
+		wildHost: number(),
+		duelKills: number().optional()
+	}).optional(),
+	_attackedFrom: number().optional(),
+	_sgLog: object({
+		turn: number(),
+		phaseNo: number().nullable(),
+		phaseSkills: SkillFlagsSchema,
+		provSkills: record(string(), SkillFlagsSchema),
+		turnGains: SkillLevelsSchema,
+		turnSkills: SkillFlagsSchema,
+		gainedPhases: record(string(), boolean()).optional()
+	}).optional(),
+	_sgPending: _null().optional(),
+	_xpFirstEntry: array(number()).optional(),
+	_phantoms: array(unknown()).optional(),
+	_practiceFailStreak: FailStreakSchema.optional(),
+	_botRole2: string().optional(),
+	_botRole: string().optional(),
+	_defend: object({
+		centre: number(),
+		active: boolean(),
+		setPhase: number(),
+		carried: boolean(),
+		preActivated: boolean().optional()
+	}).optional(),
+	_neutralXpTurn: number().optional(),
+	_enteredProvThisPhase: number().optional(),
+	_amphibiousAssault: boolean().optional(),
+	_hireAlignWage: number().optional(),
+	hiredInPhase: number().optional(),
+	_seaLandingAt: object({
+		turn: number(),
+		prov: number()
+	}).optional(),
+	_foughtStalledBattlePhase: number().optional(),
+	_researchFailStreak: FailStreakSchema.optional(),
+	_botLadder: object({ retryAt: number().optional() }).optional(),
+	_botLairKills: object({
+		Weak: number().optional(),
+		Moderate: number().optional(),
+		Powerful: number().optional(),
+		Legendary: number().optional()
+	}).optional(),
+	_gravesSensedTurn: number().optional(),
+	_gravesSensedIds: array(number()).optional(),
+	_botPost: number().optional(),
+	_defendReactedPhase: number().optional(),
+	_charmedTurn: number().optional(),
+	_charmImmuneTurn: number().optional(),
+	_charmResist: number().optional(),
+	_invisTurn: number().optional(),
+	_unspottedTurn: number().optional(),
+	_spySpotted: object({
+		turn: number(),
+		ids: array(number())
+	}).optional(),
+	_defendSpent: object({
+		turn: number(),
+		ph: number().nullable()
+	}).optional(),
+	killedThisTurn: boolean().optional(),
+	_mercyFledTurn: number().optional(),
+	_justDefeated: boolean().optional(),
+	_spyDisguised: boolean().optional(),
+	_isHeir: boolean().optional(),
+	_crownedTurn: number().optional(),
+	_pendingSkillAllocation: number().optional(),
+	_fallenOrderNoted: boolean().optional(),
+	_encounteredThisPhase: number().optional(),
+	_pursuit: object({
+		targetId: number(),
+		active: boolean(),
+		setPhase: number()
+	}).optional(),
+	_masteryOrderUsed: object({
+		sabotage: number().optional(),
+		forced_march: number().optional(),
+		lightning_advance: number().optional(),
+		chart_unknown: number().optional(),
+		grand_stratagem: number().optional(),
+		grand_heist: number().optional(),
+		blockade: number().optional(),
+		challenge: number().optional(),
+		rampage: number().optional(),
+		rain_of_arrows: number().optional(),
+		snipers_mark: number().optional(),
+		feigned_retreat: number().optional(),
+		raid_coast: number().optional(),
+		research_breakthrough: number().optional(),
+		grand_design: number().optional(),
+		assassinate: number().optional(),
+		vanish: number().optional(),
+		awaken_grove: number().optional(),
+		wild_calling: number().optional(),
+		discover_ruin: number().optional()
+	}).optional(),
+	_lightningAdvanceTurn: number().optional(),
+	_divineReturn: boolean().optional(),
+	_grandStratagemTurn: number().optional(),
+	_grandHeistTurn: number().optional(),
+	_raidCoastTurn: number().optional(),
+	_raidCarriedAt: object({
+		turn: number(),
+		prov: number()
+	}).optional(),
+	_charmTempControl: boolean().optional(),
+	_charmOriginalPlayer: RealmIndexSchema.nullable().optional(),
+	_leaderlessHost: boolean().optional(),
+	_vanishTurn: number().optional(),
+	_feignedRetreatTurn: number().optional(),
+	_massConfusedTurn: number().optional(),
+	_masterySpellUsed: record(string(), number()).optional(),
+	_releasedTurn: number().optional(),
+	_veilTurn: number().optional(),
+	_veilCastPhase: number().optional(),
+	_releasedBy: number().optional()
+});
+var ProvinceSchema = object({
+	id: ProvinceIdSchema,
+	row: number(),
+	col: number(),
+	name: string(),
+	terrain: string(),
+	tax: number(),
+	race: string().nullable(),
+	population: number(),
+	owner: RealmIndexSchema.nullable(),
+	features: array(object({
+		name: string(),
+		tier: string().optional(),
+		monster: object({
+			name: string(),
+			cat: string(),
+			desc: string(),
+			hp: number(),
+			power: string(),
+			melee: number(),
+			archery: number(),
+			speed: string(),
+			minG: number(),
+			maxG: number(),
+			spells: array(object({
+				name: string(),
+				school: string(),
+				dmgW: number(),
+				effect: string(),
+				castChance: number(),
+				flavour: string()
+			})),
+			passives: array(object({
+				name: string(),
+				fx: object({
+					ward: string().optional(),
+					pct: number().optional(),
+					aura: number().optional(),
+					amt: number().optional(),
+					school: string().optional(),
+					drain: number().optional(),
+					burn: number().optional(),
+					dmgBonus: number().optional(),
+					hitBonus: number().optional()
+				}),
+				desc: string()
+			})),
+			weak: object({
+				kind: string(),
+				key: string(),
+				name: string(),
+				desc: string()
+			}),
+			_hpFull: number().optional()
+		}).nullable(),
+		discovered: boolean(),
+		cleared: boolean(),
+		treasure: number(),
+		hoardItems: array(ItemSchema).optional(),
+		_hoardV2: boolean().optional(),
+		_hoardGoldOrig: number().optional(),
+		discoveredBy: array(number()).optional(),
+		_rumourOdds: record(string(), object({
+			turn: number(),
+			charId: number(),
+			band: number(),
+			rating: number()
+		})).optional(),
+		ritualSite: boolean().optional(),
+		_stolenItems: array(string()).optional(),
+		_pickedCleanBy: array(number()).optional(),
+		_legacyAll: boolean().optional(),
+		_hidden: boolean().optional(),
+		_hiddenBy: number().optional()
+	})),
+	npcArmies: number(),
+	neutralDefenders: array(ArmySchema),
+	explored: number(),
+	characters: array(number()),
+	armyTypes: array(string()),
+	garrisonArmies: array(ArmySchema),
+	visitedBy: array(number()),
+	exploredBy: record(string(), number()).optional(),
+	_homePairIds: array(number()).optional(),
+	_carryOnRounds: number().optional(),
+	_hadBattleThisTurn: boolean().optional(),
+	battleGraves: array(ArmySchema).optional(),
+	_battleUnresolved: boolean().optional(),
+	_blessedTurn: number().optional(),
+	_blessWardTurn: number().optional(),
+	_blessWardBy: number().optional(),
+	_blessWardPct: number().optional(),
+	_blessedMult: number().optional(),
+	_combatPlayersThisTurn: array(number()).optional(),
+	_takenByUnitGain: object({
+		turn: number(),
+		ph: number(),
+		from: number()
+	}).optional(),
+	_plaguedTurn: number().optional(),
+	_plagueLevel: number().optional(),
+	_plagueCaster: number().optional(),
+	_illusoryTerrain: object({
+		caster: number(),
+		fake: string(),
+		appliedTurn: number()
+	}).optional(),
+	_riteTurn: number().optional(),
+	_earthquakeNoTax: number().optional(),
+	_terrorStacks: number().optional(),
+	_terrorTurn: number().optional(),
+	_terrorisedBy: number().optional(),
+	_terrorPct: number().optional(),
+	_evilConqTurn: number().optional(),
+	_sabotagedForTurn: number().optional(),
+	_blockadeTurn: number().optional(),
+	_blockadeBy: number().nullable().optional(),
+	_richSurveyed: boolean().optional(),
+	grandDesign: object({
+		owner: RealmIndexSchema,
+		name: string(),
+		alignment: string(),
+		builtTurn: number()
+	}).optional(),
+	_enslavedUntil: number().optional(),
+	_earthquakeTax: number().optional(),
+	_leaderlessDefenders: boolean().optional(),
+	_sanctuaryTurn: number().optional(),
+	_sanctuaryBy: number().optional(),
+	_taxDestroyed: boolean().optional()
+});
+var RealmSchema = object({
+	id: RealmIndexSchema,
+	name: string(),
+	kingName: string(),
+	_isBot: boolean(),
+	color: string(),
+	race: string(),
+	alignment: string(),
+	temper: string(),
+	gold: number(),
+	king: number(),
+	heroes: array(number()),
+	provinces: array(number()),
+	homeProvinceId: number(),
+	merits: number(),
+	_encountered: array(number()),
+	consecratedProvIds: array(number()).optional(),
+	_spiedProvincesLastTurn: array(number()).optional(),
+	_spiedProvincesThisTurn: array(number()).optional(),
+	_clairCharThisTurn: number().nullable().optional(),
+	_spiedHeroSkills: record(string(), object({
+		name: string(),
+		isKing: boolean(),
+		alignment: string(),
+		race: string(),
+		kingdom: string().nullable(),
+		skills: SkillLevelsSchema,
+		items: array(string()).optional(),
+		armies: array(object({
+			type: string(),
+			quality: string(),
+			unitName: string()
+		})).optional(),
+		turn: number()
+	})).optional(),
+	_botLandPrev: number().optional(),
+	_botLandSeenTurn: number().optional(),
+	_botIntel: object({
+		generals: record(string(), BotIntelHeroSchema),
+		heroes: record(string(), BotIntelHeroSchema)
+	}).optional(),
+	_botTitles: array(string()).optional(),
+	_provMemory: record(string(), object({
+		turn: number(),
+		phase: number(),
+		name: string(),
+		terrain: string(),
+		race: string().nullable(),
+		tax: number(),
+		armyTypes: array(string()),
+		features: array(object({
+			name: string(),
+			cleared: boolean(),
+			ritualSite: boolean(),
+			power: string()
+		})),
+		owner: number().nullable(),
+		ownerName: string().nullable(),
+		ownerColor: string().nullable(),
+		isHomeCapitalOfOwner: boolean()
+	})).optional(),
+	seenCharIntel: record(string(), object({
+		id: number(),
+		name: string(),
+		isKing: boolean(),
+		race: string(),
+		alignment: string(),
+		player: number().nullable(),
+		isWandering: boolean(),
+		lastSeenTurn: number(),
+		lastLocId: number(),
+		lastLocName: string()
+	})).optional(),
+	_lastWages: object({
+		turn: number(),
+		armyWages: number(),
+		heroWages: number(),
+		hostLeaderG: number(),
+		heroWageDisc: number(),
+		orcSpoilsG: number(),
+		discUpkeepG: number()
+	}).optional(),
+	_overturesIn: array(object({
+		from: number(),
+		kind: string()
+	})).optional(),
+	heirPending: boolean().optional(),
+	knownDeadHeroIds: array(number()).optional(),
+	seenDeadHeroIds: array(unknown()).optional(),
+	_calledToArmsTurn: number().optional(),
+	_botStall: number().optional(),
+	_botWar: record(string(), object({
+		since: number().optional(),
+		peaceAt: number().optional()
+	})).optional(),
+	discoveries: array(object({
+		id: string(),
+		name: string(),
+		category: string(),
+		desc: string(),
+		turnDiscovered: number(),
+		provinceId: number().optional(),
+		provinceName: string().optional()
+	})).optional(),
+	pendingDiscoveryChoices: array(object({
+		key: string(),
+		turn: number(),
+		charId: number(),
+		charName: string(),
+		category: string(),
+		options: array(string())
+	})).optional(),
+	forgottenDiscoveries: array(string()).optional(),
+	_knownWeak: record(string(), boolean()).optional(),
+	_lairRumours: record(string(), object({
+		turn: number(),
+		gold: number(),
+		items: array(string()),
+		stolen: array(string()),
+		wields: array(string())
+	})).optional(),
+	_itemsFoundByCat: object({
+		trinket: number().optional(),
+		helm: number().optional(),
+		ring: number().optional(),
+		amulet: number().optional(),
+		cloak: number().optional(),
+		weapon: number().optional(),
+		shield: number().optional(),
+		armour: number().optional(),
+		combat: number().optional()
+	}).optional(),
+	_graveIntel: record(string(), object({
+		turn: number(),
+		detail: array(object({
+			k: string(),
+			n: number()
+		})).nullable(),
+		detailTurn: number().nullable(),
+		detailPartial: boolean()
+	})).optional(),
+	_resurrectableMonarchId: number().nullable().optional(),
+	conceded: boolean().optional(),
+	concededTurn: number().optional(),
+	_spiedOnThisTurn: array(object({
+		provId: number(),
+		provName: string(),
+		byPlayer: number(),
+		byName: string(),
+		turn: number()
+	})).optional(),
+	_botSpyMemo: record(string(), number()).optional(),
+	_eliminated: boolean().optional(),
+	_eliminatedTurn: number().optional(),
+	botGrudges: array(number()).optional(),
+	_botGrudgeTruce: record(string(), number()).optional(),
+	heroOrder: array(string()).optional(),
+	_gmRemoved: boolean().optional(),
+	gdProvinceId: number().optional(),
+	gdName: string().optional()
+});
+var GraveSchema = object({
+	id: CharacterIdSchema,
+	name: string(),
+	player: RealmIndexSchema.nullable(),
+	race: string(),
+	alignment: string(),
+	temper: string(),
+	skills: SkillLevelsSchema,
+	maxHp: number(),
+	isKing: boolean(),
+	killedOnTurn: number(),
+	location: ProvinceIdSchema,
+	served: array(number()),
+	_releasedBy: number().nullable(),
+	_monarch: boolean().optional(),
+	_divineLost: boolean().optional()
+});
+var MajorTitleHolderSchema = object({
+	playerIndex: number().nullable(),
+	charId: number().nullable(),
+	merit: number(),
+	prize: number(),
+	name: string()
+});
+var MinorTitleHolderSchema = object({
+	charId: number(),
+	playerIndex: number(),
+	name: string(),
+	perk: string()
+});
+var MajorTitleSnapshotSchema = object({
+	charId: number().nullable(),
+	playerIndex: number().nullable(),
+	kingdomLevel: boolean()
+});
+var MinorTitleSnapshotSchema = object({
+	charId: number().nullable(),
+	playerIndex: number().nullable()
+});
+var MercenarySchema = ArmySchema.extend({
+	location: ProvinceIdSchema,
+	isSea: boolean(),
+	id: string()
+});
+var GameStateSchema = object({
+	schemaVersion: number(),
+	world: object({
+		provinces: array(ProvinceSchema),
+		cols: number(),
+		rows: number(),
+		seaPct: number()
+	}),
+	players: array(RealmSchema),
+	characters: array(CharacterSchema),
+	mercenaries: array(MercenarySchema),
+	relations: record(string(), string()),
+	heroGraveyard: array(GraveSchema),
+	turn: number(),
+	phase: number(),
+	maxTurns: number(),
+	log: array(unknown()),
+	turnOrders: record(string(), array(_null())),
+	nextItemId: number(),
+	_awardedItems: array(string()),
+	_lairNamesV3: boolean(),
+	_lairNamesV2: boolean(),
+	_maxHpV2: boolean(),
+	_maxHpV3: boolean(),
+	_guardiansV2: boolean(),
+	_guardiansVer: number(),
+	turnMode: object({
+		mode: string(),
+		time: string(),
+		everyDays: number(),
+		nextDeadlineAt: string().nullable(),
+		turnRanAt: string().nullable()
+	}),
+	botDifficulty: string(),
+	botDiplomacy: string().optional(),
+	safeStart: boolean().optional(),
+	_nameRepairs: number().optional(),
+	_titleHolders: object({
+		throne: MajorTitleHolderSchema.optional(),
+		vault: MajorTitleHolderSchema.optional(),
+		marshal: MajorTitleHolderSchema.optional(),
+		sea: MajorTitleHolderSchema.optional(),
+		monster: MajorTitleHolderSchema.optional(),
+		lore: MajorTitleHolderSchema.optional(),
+		arch: MajorTitleHolderSchema.optional(),
+		hiero: MajorTitleHolderSchema.optional(),
+		necro: MajorTitleHolderSchema.optional(),
+		spy: MajorTitleHolderSchema.optional(),
+		carto: MajorTitleHolderSchema.optional(),
+		beast: MajorTitleHolderSchema.optional(),
+		wild: MajorTitleHolderSchema.optional()
+	}).optional(),
+	_minorHolders: object({
+		duelist: MinorTitleHolderSchema.optional(),
+		marksman: MinorTitleHolderSchema.optional(),
+		strategist: MinorTitleHolderSchema.optional(),
+		swift: MinorTitleHolderSchema.optional(),
+		seawolf: MinorTitleHolderSchema.optional(),
+		shadow: MinorTitleHolderSchema.optional(),
+		cutpurse: MinorTitleHolderSchema.optional(),
+		naturalist: MinorTitleHolderSchema.optional(),
+		loreseeker: MinorTitleHolderSchema.optional(),
+		trailblazer: MinorTitleHolderSchema.optional(),
+		colossus: MinorTitleHolderSchema.optional(),
+		champion: MinorTitleHolderSchema.optional(),
+		hostleader: MinorTitleHolderSchema.optional(),
+		cavalier: MinorTitleHolderSchema.optional(),
+		relichunter: MinorTitleHolderSchema.optional(),
+		castellan: MinorTitleHolderSchema.optional(),
+		warlock: MinorTitleHolderSchema.optional(),
+		beastmaster: MinorTitleHolderSchema.optional(),
+		ironclad: MinorTitleHolderSchema.optional(),
+		widowmaker: MinorTitleHolderSchema.optional()
+	}).optional(),
+	_espionageLedger: array(object({
+		byPi: number(),
+		charId: number(),
+		charName: string(),
+		isKing: boolean(),
+		provId: number(),
+		kind: string()
+	})).optional(),
+	_guardianHpV2: boolean().optional(),
+	_phaseSkillSnapshot: record(string(), SkillLevelsSchema).optional(),
+	_pendingRises: array(unknown()).optional(),
+	_titleGainsByPlayer: record(string(), array(object({
+		scope: string(),
+		key: string(),
+		name: string(),
+		charName: string().nullable(),
+		kingdomName: string(),
+		kingdomLevel: boolean().optional(),
+		perk: string(),
+		req: string(),
+		initial: boolean()
+	}))).optional(),
+	_titleLossesByPlayer: record(string(), array(object({
+		scope: string(),
+		key: string(),
+		name: string(),
+		kingdomLevel: boolean(),
+		vacant: boolean(),
+		newHolderIndex: number().nullable(),
+		newHolderName: string().nullable(),
+		newCharName: string().nullable()
+	}))).optional(),
+	_titlesSnapshot: object({
+		major: object({
+			throne: MajorTitleSnapshotSchema,
+			vault: MajorTitleSnapshotSchema,
+			marshal: MajorTitleSnapshotSchema,
+			sea: MajorTitleSnapshotSchema,
+			monster: MajorTitleSnapshotSchema,
+			lore: MajorTitleSnapshotSchema,
+			arch: MajorTitleSnapshotSchema,
+			hiero: MajorTitleSnapshotSchema,
+			necro: MajorTitleSnapshotSchema,
+			spy: MajorTitleSnapshotSchema,
+			carto: MajorTitleSnapshotSchema,
+			beast: MajorTitleSnapshotSchema,
+			wild: MajorTitleSnapshotSchema
+		}),
+		minor: object({
+			duelist: MinorTitleSnapshotSchema,
+			marksman: MinorTitleSnapshotSchema,
+			strategist: MinorTitleSnapshotSchema,
+			swift: MinorTitleSnapshotSchema,
+			seawolf: MinorTitleSnapshotSchema,
+			shadow: MinorTitleSnapshotSchema,
+			cutpurse: MinorTitleSnapshotSchema,
+			naturalist: MinorTitleSnapshotSchema,
+			loreseeker: MinorTitleSnapshotSchema,
+			trailblazer: MinorTitleSnapshotSchema,
+			colossus: MinorTitleSnapshotSchema,
+			widowmaker: MinorTitleSnapshotSchema,
+			champion: MinorTitleSnapshotSchema,
+			hostleader: MinorTitleSnapshotSchema,
+			cavalier: MinorTitleSnapshotSchema,
+			beastmaster: MinorTitleSnapshotSchema,
+			ironclad: MinorTitleSnapshotSchema,
+			relichunter: MinorTitleSnapshotSchema,
+			castellan: MinorTitleSnapshotSchema,
+			warlock: MinorTitleSnapshotSchema
+		}),
+		wasPublic: boolean()
+	}).optional(),
+	_phSeq: number().optional(),
+	_itemDeliveries: array(unknown()).optional(),
+	reckoningDecaySteps: number().optional(),
+	reckoning: object({
+		by: number(),
+		bloc: array(number()),
+		calledTurn: number(),
+		resolveAtTurn: number(),
+		thrPct: number()
+	}).optional(),
+	gameOver: object({
+		winner: number().nullable(),
+		byReckoning: boolean().optional(),
+		byElimination: boolean().optional(),
+		turn: number(),
+		standings: array(object({
+			index: number(),
+			name: string(),
+			color: string(),
+			alignment: string(),
+			score: number(),
+			titles: array(string()),
+			relics: number()
+		})),
+		_announced: boolean(),
+		byConcession: boolean().optional()
+	}).optional(),
+	_battleNews: array(object({
+		t: number(),
+		p: number(),
+		a: number(),
+		d: number(),
+		w: number(),
+		al: number(),
+		dl: number()
+	})).optional(),
+	_destroyedItems: array(object({
+		name: string(),
+		turn: number(),
+		by: string(),
+		player: number()
+	})).optional(),
+	_gmRemovedRealms: array(number()).optional(),
+	archived: boolean().optional(),
+	archivedAt: string().optional()
+});
+//#endregion
+//#region src/schemas/the-strict-version-of-a-schema.ts
+var made = /* @__PURE__ */ new Map();
+/** `schema`, with every object in it strict (an unnamed key fails the parse). */
+function strictVersionOf(schema) {
+	const known = made.get(schema);
+	if (known) return known;
+	const strict = strictOf(schema);
+	made.set(schema, strict);
+	return strict;
+}
+var isObject = (s) => s instanceof ZodObject;
+function strictOf(schema) {
+	if (isObject(schema)) {
+		const shape = {};
+		for (const [key, field] of Object.entries(schema.shape)) shape[key] = strictVersionOf(field);
+		return strictObject(shape);
+	}
+	if (schema instanceof ZodOptional) return optional(strictVersionOf(schema.unwrap()));
+	if (schema instanceof ZodNullable) return nullable(strictVersionOf(schema.unwrap()));
+	if (schema instanceof ZodNonOptional) return nonoptional(strictVersionOf(schema.unwrap()));
+	if (schema instanceof ZodArray) return array(strictVersionOf(schema.element));
+	if (schema instanceof ZodRecord) return record(schema.keyType, strictVersionOf(schema.valueType));
+	if (schema instanceof ZodUnion) return union(schema.options.map((option) => strictVersionOf(option)));
+	if (schema instanceof ZodString || schema instanceof ZodNumber || schema instanceof ZodBoolean || schema instanceof ZodNull || schema instanceof ZodLiteral || schema instanceof ZodUnknown) return schema;
+	throw new Error(`strictVersionOf doesn't know a schema of type ${schema._zod.def.type}: add it here`);
+}
+//#endregion
+//#region src/schemas/where-a-saved-game-differs-from-this-builds-schema.ts
+/** A name as code writes one (a field's name, a mark's): a letter, `_` or `$` first, then letters, digits, `_` or `$`. */
+var A_NAME_AS_CODE_WRITES_ONE = /^[A-Za-z_$][\w$]{0,63}$/;
+/** A path's step or a key, as the GM may read it: a number, a name as code writes one, else "(a key)". */
+var asTheGmMayReadIt = (step) => typeof step === "number" ? String(step) : typeof step === "string" && A_NAME_AS_CODE_WRITES_ONE.test(step) ? step : "(a key)";
+/** Whether the save holds something at `path` (to tell a missing field from one of another kind; its value is not read
+*  beyond that). */
+function holdsSomethingAt(save, path) {
+	let here = save;
+	for (const step of path) {
+		if (typeof here !== "object" || here === null || !(step in here)) return false;
+		here = Reflect.get(here, step);
+	}
+	return here !== void 0;
+}
+/** One place the save differs from the schema, as lines: the path, then the kind (one line per key this build doesn't
+*  know). */
+function linesOf(issue, save) {
+	const path = issue.path.length ? issue.path.map(asTheGmMayReadIt).join(".") : "(the save itself)";
+	switch (issue.code) {
+		case "unrecognized_keys": return issue.keys.map((key) => `${path}: a field this build doesn't know, ${asTheGmMayReadIt(key)}`);
+		case "invalid_type": return [holdsSomethingAt(save, issue.path) ? `${path}: not the kind of value this build expects (${issue.expected})` : `${path}: missing, and this build needs it`];
+		case "invalid_union": return [`${path}: none of the shapes this build knows`];
+		case "invalid_value": return [`${path}: a value this build doesn't know`];
+		case "too_big":
+		case "too_small": return [`${path}: out of the range this build expects`];
+		case "invalid_format":
+		case "not_multiple_of":
+		case "invalid_key":
+		case "invalid_element":
+		case "custom": return [`${path}: not what this build expects (${issue.code})`];
+	}
+}
+/** Where `save` differs from the saved state's schema made strict: one line each, the path and the kind, never a value
+*  (none if it matches). It doesn't change the save, and its parse's output is never used. */
+function whereASavedGameDiffersFromThisBuildsSchema(save) {
+	const result = safeParse(strictVersionOf(GameStateSchema), save);
+	return result.success ? [] : result.error.issues.flatMap((issue) => linesOf(issue, save));
+}
+//#endregion
+//#region src/engine/saves/upgrade-a-saved-game-and-check-it.ts
+/** The numbered steps, in order, the last one's version THE_SAVED_GAMES_VERSION_THIS_BUILD_WRITES: a change to the saved state's shape that an older save can't meet as it is (a field
+*  renamed, moved, retyped, or now required) adds one, with a fixture of its version (tests/fixtures/saves/, made by
+*  tools/saves/make-a-save-fixture-from-a-seeded-bot-game.ts) and the schema's change (CLAUDE.md, "Changes"). */
+var THE_NUMBERED_STEPS_OF_THE_UPGRADE = [{
+	version: 1,
+	upgrade: () => void 0
+}];
+/** The version a save says it is at: 0 for a save from before the version came in, which holds none. */
+var theVersionOf = (save) => save.schemaVersion ?? 0;
+/** Whether `save` holds a list at `key` with something in it (or, with `mayBeEmpty`, a list at all). */
+function holdsAList(holder, key, mayBeEmpty = false) {
+	if (typeof holder !== "object" || holder === null) return false;
+	const list = Reflect.get(holder, key);
+	return Array.isArray(list) && (mayBeEmpty || list.length > 0);
+}
+/** Throws, before anything changes, on a save that isn't a game in play: no provinces, no realms, or no list of heroes
+*  (the new game's settings, before Turn 0; a save cut short). Read as it was loaded, whatever its type says. */
+function refuseASaveThatIsNotAGameInPlay(save) {
+	if (!holdsAList(typeof save === "object" && save !== null ? Reflect.get(save, "world") : void 0, "provinces") || !holdsAList(save, "players") || !holdsAList(save, "characters", true)) throw new Error("This game's save holds no game in play (no provinces, realms or list of heroes), so no turn can run on it. Nothing was changed.");
+}
+/** Throws, before anything changes, on a save from a newer build than this one: its shape is one this build doesn't
+*  know (the turn's shell puts the realms' orders back, as for any save it can't read). */
+function refuseASaveFromANewerBuild(save) {
+	const version = theVersionOf(save);
+	if (version > THE_SAVED_GAMES_VERSION_THIS_BUILD_WRITES) throw new Error(`This game was saved by a newer version of Kingdoms Call (save version ${String(version)}; this page knows ${String(THE_SAVED_GAMES_VERSION_THIS_BUILD_WRITES)}). Reload this page.`);
+}
+/** Brings the save, as parsed, up to date, in place, checks it, and returns what it found. Throws on a save that
+*  isn't a game in play or is from a newer build, before anything changes. */
+function upgradeGameState(save) {
+	refuseASaveThatIsNotAGameInPlay(save);
+	refuseASaveFromANewerBuild(save);
+	migrateMaxHpV2(save);
+	backfillHomeRosters(save);
+	retireCorsairPools(save);
+	retireDiscoveries(save);
+	migrateLegacyUnitNames(save);
+	migrateItemTiers(save);
+	const retiredSageDiscoveriesRemoved = save._retiredDiscoveries ?? 0;
+	const heroesCarriedOverToTheEarnedHpPool = save._maxHpMigration ?? [];
+	delete save._retiredDiscoveries;
+	delete save._maxHpMigration;
+	for (const step of THE_NUMBERED_STEPS_OF_THE_UPGRADE) {
+		if (theVersionOf(save) >= step.version) continue;
+		step.upgrade(save);
+		save.schemaVersion = step.version;
+	}
+	return {
+		retiredSageDiscoveriesRemoved,
+		heroesCarriedOverToTheEarnedHpPool,
+		whereTheSaveDiffersFromThisBuildsSchema: whereASavedGameDiffersFromThisBuildsSchema(save)
+	};
+}
+//#endregion
 //#region src/engine/bots/schools.ts
 var BOT_SCHOOLS = [
 	"elemental",
@@ -29822,7 +37799,9 @@ function topSkillOf(char) {
 	const maxLevel = Math.max(...skills.map(([, v]) => v));
 	const tied = skills.filter(([, v]) => v === maxLevel);
 	tied.sort((a, b) => ALL_SKILLS.indexOf(a[0]) - ALL_SKILLS.indexOf(b[0]));
-	const [sk, lv] = tied[0];
+	const top = tied[0];
+	if (!top) return null;
+	const [sk, lv] = top;
 	return {
 		skill: sk,
 		level: lv
@@ -29831,17 +37810,17 @@ function topSkillOf(char) {
 //#endregion
 //#region src/engine/heroes/charms-and-neutrals.ts
 function isPreOrderRef(raw) {
-	return /^(?:hired|resurrect|charm)_\d+_via_/.test(String(raw == null ? "" : raw).trim());
+	return /^(?:hired|resurrect|charm)_\d+_via_/.test(String(raw ?? "").trim());
 }
 function isCharmedNow(G, c) {
-	return !!(c && (c._charmTempControl || c._charmedTurn === (G && G.turn)));
+	return !!(c && (Boolean(c._charmTempControl) || c._charmedTurn === (G ? G.turn : G)));
 }
 function orderCharRef(G, raw) {
-	const t = String(raw == null ? "" : raw).trim();
-	const m = t.match(/^(?:hired|resurrect|charm)_(\d+)_via_/);
-	const id = m ? parseInt(m[1]) : parseInt(t);
+	const t = String(raw ?? "").trim();
+	const m = /^(?:hired|resurrect|charm)_(\d+)_via_/.exec(t);
+	const id = m ? parseInt(m[1] ?? "") : parseInt(t);
 	if (!Number.isInteger(id)) return null;
-	return (G && G.characters || []).find((ch) => ch && ch.id === id) || null;
+	return (G?.characters ?? []).find((ch) => ch?.id === id) ?? null;
 }
 function noteServedRealm(c, pi) {
 	if (!c || pi == null) return;
@@ -29859,7 +37838,7 @@ var NEUTRAL_PROG_PCT = 25;
 var NEUTRAL_PROG_CAP = 5;
 var NEUTRAL_PROG_TOP_PCT = 75;
 function _neutralAdjIds(gs, p) {
-	const w = gs && gs.world;
+	const w = gs?.world;
 	if (!w || !p) return [];
 	const even = [
 		[-1, -1],
@@ -29887,47 +37866,49 @@ function _neutralAdjIds(gs, p) {
 	return out;
 }
 function progressNeutralHeroes(gs, tellANeutralHerosLesson, rng) {
-	rng = rng || kcRng;
-	const turn = gs && gs.turn || 0;
+	const theDice = rng ?? kcRng;
+	const turn = Number(gs?.turn) || 0;
 	if (turn < NEUTRAL_PROG_FROM_TURN) return [];
-	const neutrals = (gs && gs.characters || []).filter((c) => c && c.alive && c.player === null && !c.isKing);
-	const snap = new Map(neutrals.map((c) => [c.id, { ...c.skills || {} }]));
+	const neutrals = (gs?.characters ?? []).filter((c) => !!(c && c.alive && c.player === null && !c.isKing));
+	const snap = new Map(neutrals.map((c) => [c.id, { ...c.skills ?? {} }]));
 	const topSkillsOf = (sk) => {
 		let best = 0;
 		ALL_SKILLS.forEach((k) => {
-			best = Math.max(best, sk[k] || 0);
+			best = Math.max(best, Number(sk[k]) || 0);
 		});
-		return best > 0 ? ALL_SKILLS.filter((k) => (sk[k] || 0) === best) : [];
+		return best > 0 ? ALL_SKILLS.filter((k) => (Number(sk[k]) || 0) === best) : [];
 	};
-	const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+	const pick = (arr) => arr[Math.floor(theDice() * arr.length)];
 	const byProv = /* @__PURE__ */ new Map();
 	neutrals.forEach((o) => {
 		const k = o.location;
-		if (!byProv.has(k)) byProv.set(k, []);
-		byProv.get(k).push(o);
+		const here = byProv.get(k);
+		if (here) here.push(o);
+		else byProv.set(k, [o]);
 	});
-	const provs = gs.world && gs.world.provinces || [];
+	const provs = gs?.world?.provinces ?? [];
 	const gains = [];
 	neutrals.forEach((c) => {
 		if (c._neutralXpTurn === turn) return;
-		if (rng() * 100 >= NEUTRAL_PROG_PCT) return;
-		c.skills = c.skills || {};
+		if (theDice() * 100 >= NEUTRAL_PROG_PCT) return;
+		const skills = c.skills ??= {};
 		const _cap = Math.min(SKILL_MAX, NEUTRAL_PROG_CAP);
-		const own = ALL_SKILLS.filter((k) => (c.skills[k] || 0) > 0 && (c.skills[k] || 0) < _cap);
+		const own = ALL_SKILLS.filter((k) => (Number(skills[k]) || 0) > 0 && (Number(skills[k]) || 0) < _cap);
 		let skill = null, teacher = null, nearby = false;
-		const here = (byProv.get(c.location) || []).filter((o) => o !== c);
+		const here = (byProv.get(c.location) ?? []).filter((o) => o !== c);
 		let ring = [];
 		_neutralAdjIds(gs, provs[c.location]).forEach((nid) => {
-			(byProv.get(nid) || []).forEach((o) => {
+			(byProv.get(nid) ?? []).forEach((o) => {
 				if (o !== c) ring.push(o);
 			});
 		});
 		for (const group of [here, ring]) {
 			if (skill || !group.length) continue;
-			const able = group.filter((t) => topSkillsOf(snap.get(t.id) || {}).some((k) => (c.skills[k] || 0) < _cap));
+			const able = group.filter((t) => topSkillsOf(snap.get(t.id) ?? {}).some((k) => (Number(skills[k]) || 0) < _cap));
 			if (!able.length) continue;
 			const t = pick(able);
-			const cand = topSkillsOf(snap.get(t.id) || {}).filter((k) => (c.skills[k] || 0) < _cap);
+			if (!t) continue;
+			const cand = topSkillsOf(snap.get(t.id) ?? {}).filter((k) => (Number(skills[k]) || 0) < _cap);
 			if (cand.length) {
 				skill = pick(cand);
 				teacher = t;
@@ -29935,14 +37916,14 @@ function progressNeutralHeroes(gs, tellANeutralHerosLesson, rng) {
 			}
 		}
 		if (!skill && own.length) {
-			const best = topSkillsOf(c.skills).filter((k) => (c.skills[k] || 0) < _cap);
-			const rest = own.filter((k) => best.indexOf(k) < 0);
-			if (rng() * 100 < NEUTRAL_PROG_TOP_PCT) skill = best.length ? pick(best) : rest.length ? pick(rest) : null;
+			const best = topSkillsOf(skills).filter((k) => (Number(skills[k]) || 0) < _cap);
+			const rest = own.filter((k) => !best.includes(k));
+			if (theDice() * 100 < NEUTRAL_PROG_TOP_PCT) skill = best.length ? pick(best) : rest.length ? pick(rest) : null;
 			else skill = rest.length ? pick(rest) : best.length ? pick(best) : null;
 		}
 		if (!skill) return;
-		const from = c.skills[skill] || 0, to = from + 1;
-		c.skills[skill] = to;
+		const from = Number(skills[skill]) || 0, to = from + 1;
+		skills[skill] = to;
 		gains.push({
 			id: c.id,
 			skill,
@@ -29952,12 +37933,12 @@ function progressNeutralHeroes(gs, tellANeutralHerosLesson, rng) {
 			nearby
 		});
 		if (tellANeutralHerosLesson) {
-			const pv = gs.world && gs.world.provinces ? gs.world.provinces[c.location] : null;
-			const nm = String(c.name || "").replace(/\s*\(wandering\)/i, "");
-			const lbl = typeof SKILL_LABELS !== "undefined" && SKILL_LABELS[skill] || skill;
-			const tn = teacher ? String(teacher.name || "").replace(/\s*\(wandering\)/i, "") : "";
-			const tpv = teacher && provs[teacher.location] ? provs[teacher.location] : null;
-			tellANeutralHerosLesson(teacher ? nearby ? `📜 ${nm}${pv ? ` in ${pv.name}` : ""} rides out to ${tn}${tpv ? ` in ${tpv.name}` : ""} to learn — ${lbl} rises to ${to}.` : `📜 ${nm}${pv ? ` in ${pv.name}` : ""} learns from ${tn} — ${lbl} rises to ${to}.` : `📜 ${nm}${pv ? ` in ${pv.name}` : ""} hones their craft — ${lbl} rises to ${to}.`, pv);
+			const pv = gs?.world?.provinces ? gs.world.provinces[c.location] : null;
+			const nm = (c.name ?? "").replace(/\s*\(wandering\)/i, "");
+			const lbl = SKILL_LABELS[skill] ?? skill;
+			const tn = teacher ? (teacher.name ?? "").replace(/\s*\(wandering\)/i, "") : "";
+			const tpv = teacher ? provs[teacher.location] ?? null : null;
+			tellANeutralHerosLesson(teacher ? nearby ? `📜 ${nm}${pv ? ` in ${pv.name}` : ""} rides out to ${tn}${tpv ? ` in ${tpv.name}` : ""} to learn — ${lbl} rises to ${String(to)}.` : `📜 ${nm}${pv ? ` in ${pv.name}` : ""} learns from ${tn} — ${lbl} rises to ${String(to)}.` : `📜 ${nm}${pv ? ` in ${pv.name}` : ""} hones their craft — ${lbl} rises to ${String(to)}.`, pv);
 		}
 	});
 	return gains;
@@ -32684,7 +40665,7 @@ function breakConsecrationOnCapture(turnContext, prov, prev, newOwner, byChar, _
 			realms: [prev]
 		},
 		province: prov.id,
-		hero: "none",
+		hero: null,
 		phase: _ph ?? "none",
 		form: "bare"
 	});
@@ -32745,7 +40726,7 @@ function setProvinceOwner(turnContext, prov, newOwner, byChar, ph) {
 			realms: [prev]
 		},
 		province: prov.id,
-		hero: "none",
+		hero: null,
 		phase: _ph ?? "none",
 		form: "bare"
 	});
@@ -32797,6 +40778,7 @@ function applyEvilConquest(turnContext, cc, prov, pl) {
 				realms: [cc.player],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else {
@@ -32807,6 +40789,7 @@ function applyEvilConquest(turnContext, cc, prov, pl) {
 				actor: cc.player,
 				realms: [cc.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		const loot = Math.floor((prov.tax || 0) * (.5 + discSum(turnContext, cc.player, "plunder", "pct", (e) => !e.terrains || e.terrains.includes(prov.terrain))));
@@ -32819,6 +40802,7 @@ function applyEvilConquest(turnContext, cc, prov, pl) {
 					actor: cc.player,
 					realms: [cc.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -34012,6 +41996,7 @@ function runBotConcessions(G, botIdxSet, turnContext) {
 				realms: [],
 				seen: "world"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			system: true
 		});
 	});
@@ -37342,7 +45327,11 @@ function kinNarrative(force, leader, ownerRace, sideName) {
 	if (both) parts.push(`${both} unit${both !== 1 ? "s" : ""} of the king's own race under a commander of that blood (+44% strength)`);
 	if (kingOnly) parts.push(`${kingOnly} unit${kingOnly !== 1 ? "s" : ""} of the king's race (+20%)`);
 	if (leadOnly) parts.push(`${leadOnly} unit${leadOnly !== 1 ? "s" : ""} of their commander's race (+20%)`);
-	return `🤝 Kinship — ${sideName}: ${parts.join("; ")}.`;
+	return {
+		kind: "a side's units fight beside their own kin",
+		sideName,
+		kinshipWords: parts.join("; ")
+	};
 }
 function provIsCoastal(G, prov) {
 	if (!G || !G.world || !prov || prov.terrain === "sea") return false;
@@ -37914,32 +45903,69 @@ function pcMonsterCombatant(m) {
 	return cbt;
 }
 //#endregion
-//#region src/engine/units/movement-pools.ts
-function getSeaCapability(armies, leadChar) {
-	armies = (armies || []).filter((a) => a && !a._phantom);
-	if (armies.length === 0) return "all";
+//#region src/engine/rules-on-plain-values/ships-and-flyers-that-carry-a-column-across-the-sea.ts
+/** The berths each carrier offers where it isn't one (2026-10-13, Creatures and Monsters VI: the Great Turtles). */
+var BERTHS_OF_A_CARRIER = KC_CARRIER_BERTHS;
+function carrierBerths(a) {
+	return a && CARRIER_TYPES.has(a.type) ? BERTHS_OF_A_CARRIER[a.type] ?? 1 : 0;
+}
+var LIGHT_ARMIES = new Set(KC_UNIT_CLASS.lightFoot);
+/** Whether a unit takes half a hull aboard ship (light foot), not a whole one. */
+function takesHalfAHullAboard(a) {
+	return LIGHT_ARMIES.has(a.type);
+}
+/** Whether `column` can put to sea, and why: its hulls (doubled when `hullsCarryDouble`, the leader's Naval 8) and its
+*  humanoid flyers pool their lift. `takesHalfAHull` says which units take half a hull (light foot; the player
+*  portal adds the units it can't type in advance). */
+function seaLiftOfAColumn(column, hullsCarryDouble, takesHalfAHull = takesHalfAHullAboard) {
+	const armies = (column ?? []).filter((a) => !!a && !a._phantom);
 	const landArmies = armies.filter((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type));
 	const seaCount = armies.reduce((s, a) => s + carrierBerths(a), 0);
-	armies.filter((a) => AERIAL_TYPES.has(a.type)).length;
-	if (landArmies.length === 0) return "all";
-	if (getFlyCapability(armies)) return "sea";
-	const LIGHT_ARMIES = new Set(KC_UNIT_CLASS.lightFoot);
-	const _capOf = (a) => LIGHT_ARMIES.has(a.type) ? .5 : 1;
 	let hullCap = seaCount;
-	if (leadChar && perkTier(leadChar, "naval") >= 3) hullCap *= 2;
+	if (hullsCarryDouble) hullCap *= 2;
+	const flyerLift = armies.filter((a) => FLYING_TYPES.has(a.type)).length;
+	const lifted = getFlyCapability(armies);
+	const lift = (answer, room, mustSail, leftAshore) => ({
+		answer,
+		berths: seaCount,
+		berthsUnderItsLeader: hullCap,
+		landUnits: landArmies.length,
+		unitsThatMustSail: mustSail,
+		humanoidFlyers: flyerLift,
+		flyersLiftTheWholeColumn: lifted,
+		roomLeft: room,
+		unitsLeftAshore: leftAshore
+	});
+	if (armies.length === 0) return lift("all", hullCap, 0, []);
+	if (landArmies.length === 0) return lift("all", hullCap, 0, []);
+	if (lifted) return lift("sea", hullCap, 0, []);
+	const _capOf = (a) => takesHalfAHull(a) ? .5 : 1;
 	const _mustSail = landArmies.filter((a) => !isAirCarriable(a));
 	const _liftable = landArmies.filter((a) => isAirCarriable(a));
 	let _room = hullCap - _mustSail.reduce((s, a) => s + _capOf(a), 0);
-	if (_room < 0) return "land";
-	let _byAir = 0;
+	if (_room < 0) {
+		const _ashore = [];
+		let _over = -_room;
+		for (const a of _mustSail.slice().sort((a, b) => _capOf(b) - _capOf(a))) {
+			if (_over <= 0) break;
+			_ashore.push(a);
+			_over -= _capOf(a);
+		}
+		return lift("land", _room, _mustSail.length, _ashore);
+	}
+	const _byAir = [];
 	_liftable.slice().sort((a, b) => _capOf(a) - _capOf(b)).forEach((a) => {
 		const _c = _capOf(a);
 		if (_room >= _c) _room -= _c;
-		else _byAir++;
+		else _byAir.push(a);
 	});
-	const flyerLift = armies.filter((a) => FLYING_TYPES.has(a.type)).length;
-	if (_byAir <= flyerLift) return "sea";
-	return "land";
+	if (_byAir.length <= flyerLift) return lift("sea", _room, _mustSail.length, []);
+	return lift("land", _room, _mustSail.length, _byAir.slice(flyerLift));
+}
+//#endregion
+//#region src/engine/units/movement-pools.ts
+function getSeaCapability(armies, leadChar) {
+	return seaLiftOfAColumn(armies, !!leadChar && perkTier(leadChar, "naval") >= 3).answer;
 }
 function canEnterTerrain(c, terrain, seaCap) {
 	if (terrain === "sea") {
@@ -38228,6 +46254,7 @@ function resolvePendingSkillGain(turnContext, real) {
 		type: "system",
 		text: `📜 ${String(real.name || "").replace(/\s*\(wandering\)/i, "")} learns from the fighting — ${SKILL_LABELS[skill] || skill} rises to ${lvl + 1}.`,
 		audience: { realms: [] },
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: e.prov != null ? e.prov : real.location,
 		system: true
 	});
@@ -38312,7 +46339,12 @@ function awardHpRoll(turnContext, ch, narrative, why, isWin) {
 	}
 	const line = hpGainLine(real, r);
 	if (!line) {} else if (Array.isArray(narrative)) {
-		if (real.player != null) narrateTo(narrative, real.player, real.id, line);
+		if (real.player != null) narrate(narrative, {
+			kind: "a hero's hit points rise in a fight, for his realm alone",
+			realm: real.player,
+			hero: real.id,
+			words: line
+		});
 	} else {
 		const prov = real.location != null ? G.world.provinces[real.location] : null;
 		emit(turnContext, {
@@ -38343,10 +46375,13 @@ function syncAllMaxHp(turnContext) {
 			},
 			hero: ch.id,
 			province: prov ? prov.id : void 0
-		} : { audience: {
-			actor: -1,
-			realms: []
-		} };
+		} : {
+			audience: {
+				actor: -1,
+				realms: []
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
+		};
 		emit(turnContext, {
 			type: "system",
 			text: d > 0 ? `💪 ${ch.name}'s maximum HP rises by ${d} to ${ch.maxHp} (current HP ${dispFloor(ch.hp)}).` : `${ch.name}'s maximum HP falls by ${-d} to ${ch.maxHp}.`,
@@ -38426,7 +46461,14 @@ function pcStunTurned(target, narrative, what) {
 	const w = pcStunWard(target);
 	if (!(w >= 100 || w > 0 && d100() <= w)) return false;
 	const _why = target.kind === "monster" ? pcPerkWord(target, "stunWard", "its nature") : target.arm && target.arm.names && target.arm.names.join(", ") || "their armour";
-	if (narrative) narrate(narrative, `  ${pcWardIcon(target)} ${target.name} cannot be held (${_why}${w < 100 ? `, ${w}%` : ""}) — ${what || "the daze"} finds no hold.`);
+	if (narrative) narrate(narrative, {
+		kind: "the target cannot be held",
+		targetWardIcon: pcWardIcon(target),
+		targetName: target.name,
+		why: _why,
+		wordsIfW: w < 100 ? `, ${w}%` : "",
+		what: what || "the daze"
+	});
 	return true;
 }
 function pcLandStun(target, n, narrative, what) {
@@ -38469,39 +46511,74 @@ function pcTakeHit(turnContext, target, dmg, narrative, srcName, kind) {
 	const _mkHpIn = target ? target.hp : 0, _mkIdx = narrative && narrative.length || 0;
 	if (target.status && target.status.mirrorImages > 0) {
 		target.status.mirrorImages--;
-		narrate(narrative, `  ${srcName}'s ${kind} strikes a Mirror Image of ${target.name}! (${target.status.mirrorImages} image${target.status.mirrorImages !== 1 ? "s" : ""} left)`);
+		narrate(narrative, {
+			kind: "a fighter's harm strikes a mirror image",
+			srcName,
+			harmKind: kind,
+			targetName: target.name,
+			targetStatusMirrorImages: target.status.mirrorImages,
+			targetStatusMirrorImagesPlural: target.status.mirrorImages !== 1 ? "s" : ""
+		});
 		return 0;
 	}
 	let d = dmg;
 	const _arm = target.arm || null, _chan = PC_CHANNEL[kind] || "spell";
 	if (_arm && _arm.firstHit && !target._armFirstHitUsed) {
 		target._armFirstHitUsed = true;
-		narrate(narrative, `  🛡 The first ${_chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow"} to reach ${target.name} is drunk by their armour — no damage. (${_arm.names.join(", ")})`);
+		narrate(narrative, {
+			kind: "the first harm to reach the target is drunk by their armour",
+			harmArrowOrBlow: _chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow",
+			targetName: target.name,
+			armourNames: _arm.names.join(", ")
+		});
 		return 0;
 	}
 	if (_arm && _arm.block > 0 && (_chan === "melee" || _chan === "archery") && d100() <= _arm.block) {
-		narrate(narrative, `  🛡 ${target.name}'s shield takes the ${_chan === "archery" ? "arrow" : "blow"} square on — blocked outright. (${_arm.block}%)`);
+		narrate(narrative, {
+			kind: "the target's shield takes the blow square on",
+			targetName: target.name,
+			arrowOrBlow: _chan === "archery" ? "arrow" : "blow",
+			armBlock: _arm.block
+		});
 		return 0;
 	}
 	if (_arm && _arm.arrowBlock > 0 && _chan === "archery" && d100() <= _arm.arrowBlock) {
-		narrate(narrative, `  🛡 The arrow glances off ${target.name}'s shield. (${_arm.arrowBlock}%)`);
+		narrate(narrative, {
+			kind: "the arrow glances off the target's shield",
+			targetName: target.name,
+			armArrowBlock: _arm.arrowBlock
+		});
 		return 0;
 	}
 	if (_arm && _arm.spellBlock > 0 && _chan === "spell" && d100() <= _arm.spellBlock) {
-		narrate(narrative, `  🛡 ${target.name}'s shield turns the ${kind} away harmlessly. (${_arm.spellBlock}%)`);
+		narrate(narrative, {
+			kind: "the target's shield turns the harm away",
+			targetName: target.name,
+			harmKind: kind,
+			armSpellBlock: _arm.spellBlock
+		});
 		return 0;
 	}
 	if (_arm && _arm.roundWard > 0 && (target._roundWardLeft || 0) > 0 && d > 0) {
 		const _rw = Math.min(target._roundWardLeft, d);
 		target._roundWardLeft -= _rw;
 		d -= _rw;
-		narrate(narrative, `  🛡 The ward on ${target.name}'s shield soaks ${_rw}.`);
+		narrate(narrative, {
+			kind: "the ward on the target's shield soaks some of the harm",
+			targetName: target.name,
+			rw: _rw
+		});
 		if (d <= 0) return 0;
 	}
 	if (target.mithril && (PC_CHANNEL[kind] === "melee" || PC_CHANNEL[kind] === "archery") && d > 1) {
 		const _b = d;
 		d = Math.max(1, d - (target.mithrilDR || 2));
-		if (d < _b) narrate(narrative, `  🛡 ${target.name}'s Mithril Armour turns aside ${_b - d} of the ${PC_CHANNEL[kind] === "archery" ? "arrow" : "blow"}.`);
+		if (d < _b) narrate(narrative, {
+			kind: "the target's mithril armour turns aside some of the harm",
+			targetName: target.name,
+			damageTurnedAside: _b - d,
+			arrowOrBlow: PC_CHANNEL[kind] === "archery" ? "arrow" : "blow"
+		});
 	}
 	if (target.vuln) {
 		const ch = PC_CHANNEL[kind] || "spell";
@@ -38517,46 +46594,88 @@ function pcTakeHit(turnContext, target, dmg, narrative, srcName, kind) {
 		})) {
 			const _wb = d;
 			d = Math.max(1, Math.round(d * PC_WEAK_MULT));
-			narrate(narrative, `  💥 The ${_chan === "spell" ? "spell" : _chan === "archery" ? "arrow" : "blow"} finds ${target.name}'s weakness — ${target.weak.name}: ${_wb} becomes ${d}.`);
-			if (_wsrc && _wsrc.player != null && pcLearnWeakness(G, _wsrc.player, target.name)) narrate(narrative, `  📖 ${_wsrc.name} sees it plainly now: ${target.weak.desc}. Your realm will remember this of every ${target.name}.`);
+			narrate(narrative, {
+				kind: "the hunter finds the target's weakness",
+				wword: _chan === "spell" ? "spell" : _chan === "archery" ? "arrow" : "blow",
+				targetName: target.name,
+				targetWeakName: target.weak.name,
+				wb: _wb,
+				damage: d
+			});
+			if (_wsrc && _wsrc.player != null && pcLearnWeakness(G, _wsrc.player, target.name)) narrate(narrative, {
+				kind: "the hunter sees the target's weakness plainly now",
+				wsrcName: _wsrc.name,
+				targetWeakDesc: target.weak.desc,
+				targetName: target.name
+			});
 		}
 	}
 	if (target.druidBeastWard && d > 1) {
 		const _bw = d;
 		d = Math.max(1, Math.round(d / 2));
-		if (d < _bw) narrate(narrative, `  🍃 ${target.name} reads the beast's every move — ${_bw - d} of the ${PC_CHANNEL[kind] === "archery" ? "strike" : "blow"} turned aside (Druid ${target.druidBeastWard}).`);
+		if (d < _bw) narrate(narrative, {
+			kind: "the target reads the beast's every move",
+			targetName: target.name,
+			damageTurnedAside: _bw - d,
+			strikeOrBlow: PC_CHANNEL[kind] === "archery" ? "strike" : "blow",
+			targetDruidBeastWard: target.druidBeastWard
+		});
 	}
 	if (target.status && target.status.incomingDmgBonus > 0) d += target.status.incomingDmgBonus;
 	const _tSoak = temperOf(target.temper).damageSoak || 0;
 	if (_tSoak > 0 && PC_CHANNEL[kind] === "melee" && d > 1) {
 		const _tb = d;
 		d = Math.max(1, d - _tSoak);
-		if (d < _tb) narrate(narrative, `  ${target.name} rolls with the blow and takes ${_tb - d} less. (${target.temper} guard)`);
+		if (d < _tb) narrate(narrative, {
+			kind: "the target rolls with the blow and takes less",
+			targetName: target.name,
+			damageRolledWith: _tb - d,
+			targetTemper: target.temper
+		});
 	}
 	const _soakPct = temperOf(target.temper).hitSoakPct || 0;
 	if (_soakPct > 0 && (PC_CHANNEL[kind] === "melee" || PC_CHANNEL[kind] === "archery")) {
 		const _before = d;
 		d = Math.max(1, Math.round(d * (1 - _soakPct)));
-		if (d < _before) narrate(narrative, `  ${target.name} takes the ${kind} on raw fury and shrugs off ${_before - d} of it. (Rage −${dispFloor(_soakPct * 100)}%)`);
+		if (d < _before) narrate(narrative, {
+			kind: "the target takes the harm on raw fury",
+			targetName: target.name,
+			harmKind: kind,
+			damageShruggedOff: _before - d,
+			soakPct: dispFloor(_soakPct * 100)
+		});
 	}
 	if (target.status && target.status.absorb > 0) {
 		const soak = Math.min(target.status.absorb, d);
 		target.status.absorb -= soak;
 		d -= soak;
-		narrate(narrative, `  A ward around ${target.name} drinks ${soak} of the blow.`);
+		narrate(narrative, {
+			kind: "a ward around the target drinks some of the blow",
+			targetName: target.name,
+			soak
+		});
 		if (d <= 0) return 0;
 	}
 	if (target.perkParry && PC_CHANNEL[kind] === "melee" && d > 1 && kcRng() < .5) {
 		const _cut = rng(1, Math.max(1, Math.floor((target.meleeRaw || 0) / 2)));
 		const _b = d;
 		d = Math.max(1, d - _cut);
-		if (d < _b) narrate(narrative, `  ⚔ ${target.name} parries, turning aside ${_b - d} of the blow. (Parry)`);
+		if (d < _b) narrate(narrative, {
+			kind: "the target parries turning aside some of the blow",
+			targetName: target.name,
+			damageTurnedAside: _b - d
+		});
 	}
 	if (target.perkElemArmour && d > 1) {
 		const _cut2 = rng(1, 3);
 		const _b2 = d;
 		d = Math.max(1, d - _cut2);
-		if (d < _b2) narrate(narrative, `  🜂 ${target.name}'s Elemental Armour absorbs ${_b2 - d} of the ${kind}. (Elemental Armour)`);
+		if (d < _b2) narrate(narrative, {
+			kind: "the target's elemental armour absorbs some of the harm",
+			targetName: target.name,
+			damageAbsorbed: _b2 - d,
+			harmKind: kind
+		});
 	}
 	if (_arm && d > 0) {
 		const _b3 = d;
@@ -38571,12 +46690,24 @@ function pcTakeHit(turnContext, target, dmg, narrative, srcName, kind) {
 			target._openGuardUsed = (target._openGuardUsed || 0) + 1;
 			d = Math.max(1, Math.round(d * (1 - (_arm.openGuardPct || 50) / 100)));
 		}
-		if (d < _b3) narrate(narrative, `  ${pcWardIcon(target)} ${pcWardWord(target, "armour", _chan === "melee" ? "meleeDR" : _chan === "archery" ? "arrowDR" : "spellPct")} turns aside ${_b3 - d} of the ${_chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow"}.${target.kind === "monster" ? "" : ` (${_arm.names.join(", ")})`}`);
+		if (d < _b3) narrate(narrative, {
+			kind: "the target's armour turns aside some of the harm",
+			targetWardIcon: pcWardIcon(target),
+			targetArmourWord: pcWardWord(target, "armour", _chan === "melee" ? "meleeDR" : _chan === "archery" ? "arrowDR" : "spellPct"),
+			damageTurnedAside: _b3 - d,
+			harmArrowOrBlow: _chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow",
+			wordsIfTargetKindMonster: target.kind === "monster" ? "" : ` (${_arm.names.join(", ")})`
+		});
 	}
 	if (d > 0) {
 		const _floor = Math.max(1, Math.ceil(dmg * PC_DMG_FLOOR_FRACTION));
 		if (d < _floor) {
-			narrate(narrative, `  ${target.name} turns aside all they can, but the ${_chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow"} still lands for ${_floor}. (no ward may take a hit below half)`);
+			narrate(narrative, {
+				kind: "the target turns aside all they can but the harm still lands",
+				targetName: target.name,
+				harmArrowOrBlow: _chan === "spell" ? "harm" : _chan === "archery" ? "arrow" : "blow",
+				floor: _floor
+			});
 			d = _floor;
 		}
 	}
@@ -38584,7 +46715,12 @@ function pcTakeHit(turnContext, target, dmg, narrative, srcName, kind) {
 		const _capAt = Math.max(1, Math.round((target.maxHp || 20) * _arm.cap / 100));
 		if (d > _capAt) {
 			d = _capAt;
-			narrate(narrative, `  ${pcWardIcon(target)} ${pcWardWord(target, "armour", "cap")} will not let any single hit bite deeper than ${_capAt}.`);
+			narrate(narrative, {
+				kind: "the target's armour will not let any single hit bite deeper",
+				targetWardIcon: pcWardIcon(target),
+				targetCapWord: pcWardWord(target, "armour", "cap"),
+				capAt: _capAt
+			});
 		}
 	}
 	if (d > 0) {
@@ -38602,7 +46738,14 @@ function pcTakeHit(turnContext, target, dmg, narrative, srcName, kind) {
 		target._armSecondWindUsed = true;
 		const _back = Math.max(1, Math.round((target.maxHp || 20) * _arm.secondWind / 100));
 		target.hp = Math.min(target.maxHp || 20, target.hp + _back);
-		narrate(narrative, `  ${pcWardIcon(target)} ${target.name} will not go down — ${target.kind === "monster" ? pcPerkWord(target, "secondWind", "its nature") : "their armour's blessing"} restores ${_back} HP. (HP ${dispFloor(target.hp)})`);
+		narrate(narrative, {
+			kind: "the target will not go down and restores hit points",
+			targetWardIcon: pcWardIcon(target),
+			targetName: target.name,
+			wordsIfTargetKindMonster: target.kind === "monster" ? pcPerkWord(target, "secondWind", "its nature") : "their armour's blessing",
+			back: _back,
+			targetHp: dispFloor(target.hp)
+		});
 	}
 	return d;
 }
@@ -38612,28 +46755,49 @@ function pcRoundStart(cbt, narrative) {
 		if (cbt.arm.roundWard > 0) cbt._roundWardLeft = cbt.arm.roundWard;
 		if (pcStunWard(cbt) >= 100 && cbt.status.stun > 0) {
 			cbt.status.stun = 0;
-			narrate(narrative, `  ${pcWardIcon(cbt)} ${cbt.kind === "monster" ? `${cbt.name} cannot be held (${pcPerkWord(cbt, "stunWard", "its nature")})` : `${cbt.name}'s shield arm never wavers`} — the daze is ignored.`);
+			narrate(narrative, {
+				kind: "a fighter ignores the daze",
+				cbtWardIcon: pcWardIcon(cbt),
+				wordsIfCbtKindMonster: cbt.kind === "monster" ? `${cbt.name} cannot be held (${pcPerkWord(cbt, "stunWard", "its nature")})` : `${cbt.name}'s shield arm never wavers`
+			});
 		}
 		if ((cbt.arm.dotImmune || (cbt.arm.dotWard || 0) >= 100) && (cbt.status.dot || []).length) {
 			cbt.status.dot = [];
-			narrate(narrative, `  ${pcWardIcon(cbt)} ${pcWardWord(cbt, "armour", "dotWard")} sloughs off every burn, poison and bleeding.`);
+			narrate(narrative, {
+				kind: "a fighter's armour sloughs off every burn poison and bleeding",
+				cbtWardIcon: pcWardIcon(cbt),
+				cbtDotWardWord: pcWardWord(cbt, "armour", "dotWard")
+			});
 		}
 		if (cbt.arm.regen > 0 && cbt.hp > 0 && cbt.hp < (cbt.maxHp || 20)) {
 			const _sm = pcSustainMult(cbt), _rg = Math.round(cbt.arm.regen * _sm);
 			if (_rg > 0) {
 				const h = Math.min(_rg, (cbt.maxHp || 20) - cbt.hp);
 				cbt.hp += h;
-				narrate(narrative, `  ${pcWardIcon(cbt)} ${pcWardWord(cbt, "armour", "regen")} knits flesh for ${h}${_sm < 1 ? " — the flesh is slower to close now" : ""}. (HP ${dispFloor(cbt.hp)})`);
+				narrate(narrative, {
+					kind: "a guardian's regeneration knits its flesh",
+					cbtWardIcon: pcWardIcon(cbt),
+					cbtRegenWord: pcWardWord(cbt, "armour", "regen"),
+					healed: h,
+					wordsIfSm: _sm < 1 ? " — the flesh is slower to close now" : "",
+					cbtHp: dispFloor(cbt.hp)
+				});
 			} else if (cbt.kind === "monster" && !cbt._sustainSpent) {
 				cbt._sustainSpent = true;
-				narrate(narrative, `  🜏 ${cbt.name} has nothing left to knit with — its wounds stay open.`);
+				narrate(narrative, {
+					kind: "a fighter has nothing left to knit",
+					cbtName: cbt.name
+				});
 			}
 		}
 		if (cbt.arm.resist) {
 			if (cbt.status.hitPenalty > 0) cbt.status.hitPenalty = Math.max(0, cbt.status.hitPenalty - pcPenaltyFade(cbt.status.hitPenalty));
 			if (cbt.status.stun > 0 && kcRng() < .5) {
 				cbt.status.stun = 0;
-				narrate(narrative, `  🛡 ${cbt.name} shrugs off the daze — their armour holds them steady.`);
+				narrate(narrative, {
+					kind: "a fighter shrugs off the daze, held steady by their armour",
+					cbtName: cbt.name
+				});
 			}
 		}
 	}
@@ -38643,7 +46807,14 @@ function pcRoundStart(cbt, narrative) {
 			const _t = _dw > 0 ? Math.round(d.dmg * (1 - _dw / 100)) : d.dmg;
 			cbt.hp -= _t;
 			d.rounds--;
-			narrate(narrative, `  ${d.label || "Lingering harm"} afflicts ${cbt.name} for ${_t} damage${_dw > 0 ? ` (${pcWardWord(cbt, "hide", "dotWard")} turns ${_dw}% of it)` : ""}. (HP ${Math.max(0, Math.round(cbt.hp))})`);
+			narrate(narrative, {
+				kind: "a lingering harm afflicts a fighter",
+				harmName: d.label || "Lingering harm",
+				cbtName: cbt.name,
+				harmDealt: _t,
+				wordsIfDw: _dw > 0 ? ` (${pcWardWord(cbt, "hide", "dotWard")} turns ${_dw}% of it)` : "",
+				cbtHp: Math.max(0, Math.round(cbt.hp))
+			});
 		}
 	});
 	cbt.status.dot = (cbt.status.dot || []).filter((d) => d.rounds > 0);
@@ -38651,7 +46822,13 @@ function pcRoundStart(cbt, narrative) {
 		const h = Math.min(cbt.status.hot.amt, Math.max(0, (cbt.maxHp || 20) - cbt.hp));
 		cbt.hp += h;
 		cbt.status.hot.rounds--;
-		if (h > 0) narrate(narrative, `  ${cbt.status.hot.label || "Regeneration"} knits ${cbt.name} for ${h}. (HP ${dispFloor(cbt.hp)})`);
+		if (h > 0) narrate(narrative, {
+			kind: "a healing knits a fighter",
+			healingName: cbt.status.hot.label || "Regeneration",
+			cbtName: cbt.name,
+			healed: h,
+			cbtHp: dispFloor(cbt.hp)
+		});
 	}
 	if (cbt.status.hitPenalty > 0) cbt.status.hitPenalty = Math.max(0, cbt.status.hitPenalty - pcPenaltyFade(cbt.status.hitPenalty));
 	if (cbt.status.meleeHalvedRounds > 0) cbt.status.meleeHalvedRounds--;
@@ -38664,7 +46841,11 @@ function pcRoundStart(cbt, narrative) {
 				cbt.status.silenceRounds = 0;
 				cbt.status.meleeHalvedRounds = 0;
 				cbt.status._swShrugPct = 0;
-				narrate(narrative, `  ⛓ ${cbt.name} tears free of the Spiritwrack binding! (${fmtRoll(_pct, _r)} to shrug it off)`);
+				narrate(narrative, {
+					kind: "a fighter tears free of the spiritwrack",
+					cbtName: cbt.name,
+					rollShown: fmtRoll(_pct, _r)
+				});
 			}
 		} else cbt.status._swShrugPct = 0;
 	}
@@ -38693,41 +46874,96 @@ function pcTryCounter(turnContext, hero, foe, narrative, chan) {
 		hero._didMelee = true;
 		pcCombatXP(turnContext, hero, "melee", narrative);
 		const dmg = pcMeleeDamage(hero, foe);
-		narrate(narrative, `  ↩ ${hero.name} seizes the opening and counterattacks! (${_src})`);
+		narrate(narrative, {
+			kind: "the hero seizes the opening and counterattacks",
+			heroName: hero.name,
+			src: _src
+		});
 		const dealt = pcTakeHit(turnContext, foe, dmg, narrative, hero.name, "counterattack");
-		if (dealt) narrate(narrative, `  ↩ The counterstroke strikes ${foe.name} for ${dealt} damage! (${foe.name} HP ${Math.max(0, Math.round(foe.hp))})`);
-	} else narrate(narrative, `  ↩ ${hero.name} lunges to counterattack, but ${foe.name} recovers in time. (${_src})`);
+		if (dealt) narrate(narrative, {
+			kind: "the counterstroke strikes the foe",
+			foeName: foe.name,
+			dealt,
+			foeName2: foe.name,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
+	} else narrate(narrative, {
+		kind: "the hero lunges to counterattack but the foe recovers",
+		heroName: hero.name,
+		foeName: foe.name,
+		src: _src
+	});
 }
 function pcMeleeStrike(turnContext, actor, foe, narrative) {
 	if (actor.status && actor.status.nextAttackFails > 0) {
 		actor.status.nextAttackFails--;
-		narrate(narrative, `  ${actor.name} is still reeling from a crippling wound — the attack fails. (Trueshot)`);
+		narrate(narrative, {
+			kind: "a fighter's attack fails, still reeling from a crippling wound",
+			actorName: actor.name
+		});
 		return;
 	}
 	const hitI = dispFloor(pcHitChance(turnContext, actor, foe)), roll = d100();
-	narrate(narrative, `  ${actor.name} attacks (${pcSkillLabel(actor, "melee")}, ${hitI}% to hit [roll ${roll}]${roll <= hitI ? " ✓" : " ✗"})`);
+	narrate(narrative, {
+		kind: "a fighter attacks with a roll to hit",
+		actorName: actor.name,
+		actorMeleeSkillLabel: pcSkillLabel(actor, "melee"),
+		hitI,
+		roll,
+		rollHitIMark: roll <= hitI ? " ✓" : " ✗"
+	});
 	if (roll <= hitI) {
 		actor._didMelee = true;
 		pcCombatXP(turnContext, actor, "melee", narrative);
 		const dealt = pcTakeHit(turnContext, foe, pcMeleeDamage(actor, foe), narrative, actor.name, "blow");
-		if (dealt) narrate(narrative, `  ${actor.name} strikes ${foe.name} for ${dealt} damage! (HP ${Math.max(0, Math.round(foe.hp))})`);
+		if (dealt) narrate(narrative, {
+			kind: "a fighter strikes the foe",
+			actorName: actor.name,
+			foeName: foe.name,
+			dealt,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 		if (dealt && actor.drain > 0 && actor.hp < (actor.maxHp || 20)) {
 			const _sm = pcSustainMult(actor), _dr = Math.min(Math.round(dealt * actor.drain * _sm), (actor.maxHp || 20) - actor.hp);
 			if (_dr > 0) {
 				actor.hp += _dr;
-				narrate(narrative, `  ${actor.name} drinks the wound — +${_dr} HP${_sm < 1 ? " (the thirst is running dry)" : ""}. (${pcPerkWord(actor, "drain", "Drain")}, HP ${dispFloor(actor.hp)})`);
+				narrate(narrative, {
+					kind: "a fighter drinks the wound",
+					actorName: actor.name,
+					dr: _dr,
+					wordsIfSm: _sm < 1 ? " (the thirst is running dry)" : "",
+					actorDrainWord: pcPerkWord(actor, "drain", "Drain"),
+					actorHp: dispFloor(actor.hp)
+				});
 			}
 		}
 		if (dealt && foe.status.reflect > 0) {
 			actor.hp -= foe.status.reflect;
-			narrate(narrative, `  ${foe.name}'s shield lashes back for ${foe.status.reflect} damage. (${actor.name} HP ${Math.max(0, Math.round(actor.hp))})`);
+			narrate(narrative, {
+				kind: "the foe's shield lashes back",
+				foeName: foe.name,
+				foeStatusReflect: foe.status.reflect,
+				actorName: actor.name,
+				actorHp: Math.max(0, Math.round(actor.hp))
+			});
 		}
 		if (dealt && foe.arm && foe.arm.thorns > 0) {
 			actor.hp -= foe.arm.thorns;
-			narrate(narrative, `  ${pcWardIcon(foe)} ${foe.kind === "monster" ? pcWardWord(foe, "hide", "thorns") : `${foe.name}'s thorned armour`} bites ${actor.name} for ${foe.arm.thorns}. (${actor.name} HP ${Math.max(0, Math.round(actor.hp))})`);
+			narrate(narrative, {
+				kind: "the foe's thorns bite a fighter",
+				foeWardIcon: pcWardIcon(foe),
+				wordsIfFoeKindMonster: foe.kind === "monster" ? pcWardWord(foe, "hide", "thorns") : `${foe.name}'s thorned armour`,
+				actorName: actor.name,
+				foeArmThorns: foe.arm.thorns,
+				actorName2: actor.name,
+				actorHp: Math.max(0, Math.round(actor.hp))
+			});
 		}
 	} else {
-		narrate(narrative, `  ${actor.name}'s blow is turned aside.`);
+		narrate(narrative, {
+			kind: "a fighter's blow is turned aside",
+			actorName: actor.name
+		});
 		pcTryCounter(turnContext, foe, actor, narrative, "melee");
 	}
 }
@@ -38740,39 +46976,75 @@ function pcFleeChance(actor, foe) {
 function pcFreeStrike(turnContext, actor, foe, narrative) {
 	if (!actor || !foe || actor.hp <= 0 || foe.hp <= 0) return;
 	if (actor.status && actor.status.stun > 0) {
-		narrate(narrative, `  …but ${actor.name} is too dazed to punish it.`);
+		narrate(narrative, {
+			kind: "but a fighter is too dazed to punish it",
+			actorName: actor.name
+		});
 		return;
 	}
 	if (actor.status && actor.status.nextAttackFails > 0) {
 		actor.status.nextAttackFails--;
-		narrate(narrative, `  …but ${actor.name} is still reeling and the chance is lost. (Trueshot)`);
+		narrate(narrative, {
+			kind: "but a fighter is still reeling and the chance is lost",
+			actorName: actor.name
+		});
 		return;
 	}
 	const hitI = dispFloor(pcHitChance(turnContext, actor, foe)), roll = d100();
-	narrate(narrative, `  ⚔ ${actor.name} takes a free strike at ${foe.name}'s back (${pcSkillLabel(actor, "melee")}, ${hitI}% to hit [roll ${roll}]${roll <= hitI ? " ✓" : " ✗"})`);
+	narrate(narrative, {
+		kind: "a fighter takes a free strike at the foe's back",
+		actorName: actor.name,
+		foeName: foe.name,
+		actorMeleeSkillLabel: pcSkillLabel(actor, "melee"),
+		hitI,
+		roll,
+		rollHitIMark: roll <= hitI ? " ✓" : " ✗"
+	});
 	if (roll <= hitI) {
 		actor._didMelee = true;
 		pcCombatXP(turnContext, actor, "melee", narrative);
 		const dealt = pcTakeHit(turnContext, foe, pcMeleeDamage(actor, foe), narrative, actor.name, "free strike");
-		if (dealt) narrate(narrative, `  ${actor.name} lands it for ${dealt} damage! (${foe.name} HP ${Math.max(0, Math.round(foe.hp))})`);
+		if (dealt) narrate(narrative, {
+			kind: "a fighter lands the free strike",
+			actorName: actor.name,
+			dealt,
+			foeName: foe.name,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 		if (foe.hp <= 0 && foe._rebirth) {
 			foe._rebirth = false;
 			foe.hp = Math.max(5, Math.round(foe.maxHp * .4));
-			narrate(narrative, `  🔥 ${foe.name} bursts into ash — then blazes back to life! (HP ${foe.hp})`);
+			narrate(narrative, {
+				kind: "the foe bursts into ash then blazes back to life",
+				foeName: foe.name,
+				foeHp: foe.hp
+			});
 		}
-	} else narrate(narrative, `  The free strike misses.`);
+	} else narrate(narrative, { kind: "the free strike misses" });
 }
 function pcAttemptFlee(turnContext, actor, foe, narrative, state, how) {
 	if (actor.neverFlees) return false;
 	actor._fleeAttempted = true;
 	const chance = pcFleeChance(actor, foe), roll = d100();
-	narrate(narrative, `  🏃 ${how === "temper" ? `${actor.name} (${actor.temper}) loses the stomach for the fight and tries to break off` : `${actor.name} attempts to flee`} (${chance}% [roll ${roll}]${roll <= chance ? " ✓" : " ✗"})`);
+	narrate(narrative, {
+		kind: "a fighter tries to flee",
+		lead: how === "temper" ? `${actor.name} (${actor.temper}) loses the stomach for the fight and tries to break off` : `${actor.name} attempts to flee`,
+		chance,
+		roll,
+		rollChanceMark: roll <= chance ? " ✓" : " ✗"
+	});
 	if (roll <= chance) {
 		state.fledBy = actor;
-		narrate(narrative, `  ${actor.name} escapes the fight!`);
+		narrate(narrative, {
+			kind: "a fighter escapes the fight",
+			actorName: actor.name
+		});
 		return true;
 	}
-	narrate(narrative, `  ${actor.name} fails to get clear.`);
+	narrate(narrative, {
+		kind: "a fighter fails to get clear",
+		actorName: actor.name
+	});
 	pcFreeStrike(turnContext, foe, actor, narrative);
 	return false;
 }
@@ -38781,9 +47053,18 @@ function pcAdvanceOrStrike(turnContext, actor, foe, narrative, state) {
 		const _steps = actor.kind === "monster" && pcSpeedOf(actor) >= 3 ? 2 : 1;
 		const _from = state.range;
 		state.range = pcRangeStep(state.range, +_steps);
-		narrate(narrative, `  ${actor.name} ${_steps > 1 ? "surges forward" : "advances"} — the combatants close to ${state.range} range.`);
+		narrate(narrative, {
+			kind: "a fighter advances and the combatants close",
+			actorName: actor.name,
+			advanceWords: _steps > 1 ? "surges forward" : "advances",
+			stateRange: state.range
+		});
 		if (ARCHERY_PARTING_SHOT && state.range === "melee" && _from !== "melee" && foe && foe.kind === "character" && pcHasRanged(foe) && !(foe.status && foe.status.stun > 0) && !(foe.status && foe.status.silenceRounds > 0) && foe.hp > 0) {
-			narrate(narrative, `  🏹 ${foe.name} looses an arrow as ${actor.name} comes on. (parting shot)`);
+			narrate(narrative, {
+				kind: "the foe looses a parting shot as a fighter comes on",
+				foeName: foe.name,
+				actorName: actor.name
+			});
 			pcFireOne(turnContext, foe, actor, narrative);
 			if (actor.hp <= 0) return;
 		}
@@ -38794,7 +47075,10 @@ function pcAdvanceOrStrike(turnContext, actor, foe, narrative, state) {
 			return;
 		}
 		if (state.range === "bow" && pcHasRanged(actor) && !(actor.status && actor.status.silenceRounds > 0)) {
-			narrate(narrative, `  ${actor.name} draws as they come and looses a snap shot.`);
+			narrate(narrative, {
+				kind: "a fighter draws as they come and looses a snap shot",
+				actorName: actor.name
+			});
 			pcFireOne(turnContext, actor, foe, narrative);
 		}
 		return;
@@ -38813,11 +47097,19 @@ function pcArrowDamage(cbt) {
 function pcFireShot(turnContext, actor, foe, narrative) {
 	if (actor.status && actor.status.nextAttackFails > 0) {
 		actor.status.nextAttackFails--;
-		narrate(narrative, `  ${actor.name} is still reeling from a crippling wound — the shot fails. (Trueshot)`);
+		narrate(narrative, {
+			kind: "a fighter's shot fails, still reeling from a crippling wound",
+			actorName: actor.name
+		});
 		return;
 	}
 	const volley = pcVolleySize(actor);
-	if (volley > 1) narrate(narrative, `  ${actor.name} draws and looses a volley of ${volley} arrows (${pcSkillLabel(actor, "archery")}).`);
+	if (volley > 1) narrate(narrative, {
+		kind: "a fighter draws and looses a volley",
+		actorName: actor.name,
+		volley,
+		actorArcherySkillLabel: pcSkillLabel(actor, "archery")
+	});
 	for (let v = 0; v < volley && foe.hp > 0; v++) pcFireOne(turnContext, actor, foe, narrative);
 }
 function pcArrowHitChance(turnContext, actor, foe) {
@@ -38833,22 +47125,48 @@ function pcArrowHitChance(turnContext, actor, foe) {
 }
 function pcFireOne(turnContext, actor, foe, narrative) {
 	const hit = pcArrowHitChance(turnContext, actor, foe), roll = d100();
-	narrate(narrative, `  ${actor.name} shoots (${pcSkillLabel(actor, "archery")}, ${hit}% to hit [roll ${roll}]${roll <= hit ? " ✓" : " ✗"})`);
+	narrate(narrative, {
+		kind: "a fighter shoots with a roll to hit",
+		actorName: actor.name,
+		actorArcherySkillLabel: pcSkillLabel(actor, "archery"),
+		hit,
+		roll,
+		rollHitMark: roll <= hit ? " ✓" : " ✗"
+	});
 	if (roll <= hit) {
 		actor._didArchery = true;
 		pcCombatXP(turnContext, actor, "archery", narrative);
 		const dealt = pcTakeHit(turnContext, foe, pcArrowDamage(actor), narrative, actor.name, "arrow");
-		if (dealt) narrate(narrative, `  ${actor.name}'s shot hits ${foe.name} for ${dealt} damage. (HP ${Math.max(0, Math.round(foe.hp))})`);
+		if (dealt) narrate(narrative, {
+			kind: "a fighter's shot hits the foe",
+			actorName: actor.name,
+			foeName: foe.name,
+			dealt,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 		if (dealt && actor.perkImpale && foe.hp > 0 && kcRng() < .5) {
 			const _imp = pcPushDot(foe, rng(1, 3), PC_MAX_LINGER_ROUNDS, `${actor.name}'s impaling arrow`);
-			narrate(narrative, `  🩸 ${actor.name}'s arrow impales ${foe.name} — it will bleed ${_imp.dmg} a round for ${_imp.rounds} rounds. (Impalement)`);
+			narrate(narrative, {
+				kind: "a fighter's arrow impales the foe",
+				actorName: actor.name,
+				foeName: foe.name,
+				impDmg: _imp.dmg,
+				impRounds: _imp.rounds
+			});
 		}
 		if (dealt && actor.perkTrueshot && foe.hp > 0 && kcRng() < .5) {
 			foe.status.nextAttackFails = (foe.status.nextAttackFails || 0) + 1;
-			narrate(narrative, `  🎯 ${actor.name}'s shot strikes a vital point — ${foe.name}'s next attack will fail. (Trueshot)`);
+			narrate(narrative, {
+				kind: "a fighter's shot strikes a vital point",
+				actorName: actor.name,
+				foeName: foe.name
+			});
 		}
 	} else {
-		narrate(narrative, `  ${actor.name}'s shot flies wide.`);
+		narrate(narrative, {
+			kind: "a fighter's shot flies wide",
+			actorName: actor.name
+		});
 		pcTryCounter(turnContext, foe, actor, narrative, "archery");
 	}
 }
@@ -38883,16 +47201,29 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 	const lvl = caster.school[school] || 0;
 	const lvlEff = Math.min(lvl, 5);
 	if (lvl < 1) {
-		narrate(narrative, `  ${caster.name} cannot cast ${spellName} (no ${SKILL_LABELS[school] || school} skill).`);
+		narrate(narrative, {
+			kind: "the caster cannot cast a spell without its skill",
+			casterName: caster.name,
+			spellName,
+			schoolLabel: SKILL_LABELS[school] || school
+		});
 		return false;
 	}
 	const limit = combatSpellsAllowedPerSchoolEachFight(lvl);
 	if (caster.castSpells.includes(spellName)) {
-		narrate(narrative, `  ${caster.name}: ${spellName} already cast this combat.`);
+		narrate(narrative, {
+			kind: "the caster's spell already cast this combat",
+			casterName: caster.name,
+			spellName
+		});
 		return false;
 	}
 	if ((caster.castSchool[school] || 0) >= limit) {
-		narrate(narrative, `  ${caster.name}: ${SKILL_LABELS[school] || school} spell limit reached this combat.`);
+		narrate(narrative, {
+			kind: "the caster's spell limit reached this combat",
+			casterName: caster.name,
+			schoolLabel: SKILL_LABELS[school] || school
+		});
 		return false;
 	}
 	const _wkSch = !!(target && target.kind === "monster" && target.weak && target.weak.kind === "school" && target.weak.key === school);
@@ -38909,16 +47240,35 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 	}[school] || school;
 	const _castRoll = d100();
 	telSpell(turnContext, caster.ref, spellName, school, lvl, castChance, _castRoll, "duel");
-	narrate(narrative, `  ${caster.name} calls on the ${_schoolWeave} arts, weaving ${spellName} (${castChance}% to cast successfully${_sw > 0 ? `, −${_sw} for ${pcWardWord(target, "ward", "schoolWard")}` : ""}) [roll ${_castRoll} ${_castRoll <= castChance ? "✓" : "✗"}].`);
+	narrate(narrative, {
+		kind: "the caster calls on a school's arts, weaving a spell",
+		casterName: caster.name,
+		schoolWeave: _schoolWeave,
+		spellName,
+		castChance,
+		wordsIfSw: _sw > 0 ? `, −${_sw} for ${pcWardWord(target, "ward", "schoolWard")}` : "",
+		castRoll: _castRoll,
+		castRollCastChanceMark: _castRoll <= castChance ? "✓" : "✗"
+	});
 	if (_castRoll > castChance) {
-		narrate(narrative, `  …but the spell guts and fizzles, coming to nothing.`);
+		narrate(narrative, { kind: "but the spell guts and fizzles" });
 		return false;
 	}
 	caster.castSpells.push(spellName);
 	caster.castSchool[school] = (caster.castSchool[school] || 0) + 1;
 	if (_wkSch) {
-		narrate(narrative, `  💥 ${target.name} is open to the ${_schoolWeave} arts — ${target.weak.name}: the weave takes hold at once and bites twice as deep.`);
-		if (caster.player != null && pcLearnWeakness(G, caster.player, target.name)) narrate(narrative, `  📖 ${caster.name} marks it well: ${target.weak.desc}. Your realm will remember this of every ${target.name}.`);
+		narrate(narrative, {
+			kind: "the target is open to the school's arts",
+			targetName: target.name,
+			schoolWeave: _schoolWeave,
+			targetWeakName: target.weak.name
+		});
+		if (caster.player != null && pcLearnWeakness(G, caster.player, target.name)) narrate(narrative, {
+			kind: "the caster marks the target's weakness well",
+			casterName: caster.name,
+			targetWeakDesc: target.weak.desc,
+			targetName: target.name
+		});
 	}
 	switch (spellName) {
 		case "Lightning Bolt": {
@@ -38926,14 +47276,26 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 			const _lbLvl = Math.min(Math.max(1, lvl), 5);
 			for (let i = 0; i < _lbLvl; i++) d += rng(1, 3);
 			const dealt = pcTakeHit(turnContext, target, d, narrative, caster.name, "Lightning Bolt");
-			if (dealt) narrate(narrative, `  ⚡ ${caster.name}'s Lightning Bolt arcs into ${target.name} for ${dealt} damage. (HP ${Math.max(0, Math.round(target.hp))})`);
+			if (dealt) narrate(narrative, {
+				kind: "the caster's lightning bolt arcs into the target",
+				casterName: caster.name,
+				targetName: target.name,
+				dealt,
+				targetHp: Math.max(0, Math.round(target.hp))
+			});
 			break;
 		}
 		case "Fireball": {
 			const _fbWard = target.arm && target.arm.spellPct || 0;
 			const _fbPct = (SPELL_FIREBALL_BASE_PCT + SPELL_FIREBALL_PCT_PER_LVL * lvlEff) * wx * (1 - _fbWard / 100);
 			const _fbE = pcPushDot(target, Math.max(1, Math.round(target.maxHp * _fbPct / 100)), 3, "Fireball burns");
-			narrate(narrative, `  🔥 Fireball engulfs ${target.name} — it will burn for ${dispFloor(_fbPct)}% of its health each round for ${_fbE ? _fbE.rounds : 3} rounds${_fbWard ? ` (its ward turns ${_fbWard}% of the heat)` : ""}.`);
+			narrate(narrative, {
+				kind: "a fireball engulfs the target and will burn",
+				targetName: target.name,
+				fbPct: dispFloor(_fbPct),
+				burnRounds: _fbE ? _fbE.rounds : 3,
+				wordsIfFbWard: _fbWard ? ` (its ward turns ${_fbWard}% of the heat)` : ""
+			});
 			break;
 		}
 		case "Holy Symbol": {
@@ -38941,16 +47303,32 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 			const _hm = holy ? SPELL_HOLY_UNCLEAN_MULT : 1;
 			const pen = Math.round(lvlEff * SPELL_HOLY_PEN_PER_LVL * _hm * wx);
 			target.status.hitPenalty = (target.status.hitPenalty || 0) + pen;
-			narrate(narrative, `  ✝ ${caster.name} raises a Holy Symbol — ${target.name} suffers −${pen}% to hit${holy ? " (×1.5 against the undead and fiends)" : ""}.`);
+			narrate(narrative, {
+				kind: "the caster raises a holy symbol",
+				casterName: caster.name,
+				targetName: target.name,
+				pen,
+				wordsIfHoly: holy ? " (×1.5 against the undead and fiends)" : ""
+			});
 			const _hsHeal = Math.max(1, Math.round((caster.maxHp || 20) * SPELL_HOLY_HEAL_PCT / 100));
 			if (caster.hp < (caster.maxHp || 20)) {
 				const _h = Math.min(_hsHeal, (caster.maxHp || 20) - caster.hp);
 				caster.hp += _h;
-				narrate(narrative, `  ✝ The light closes ${caster.name}'s hurts — ${_h} recovered. (HP ${dispFloor(caster.hp)})`);
+				narrate(narrative, {
+					kind: "the light closes the caster's hurts",
+					casterName: caster.name,
+					healed: _h,
+					casterHp: dispFloor(caster.hp)
+				});
 			}
 			{
 				const _dealt = pcTakeHit(turnContext, target, Math.max(1, Math.round(target.maxHp * SPELL_HOLY_BURN_PCT * _hm / 100)), narrative, caster.name, "Holy Symbol");
-				if (_dealt) narrate(narrative, `  ✝ ${holy ? `The unclean flesh of ${target.name} chars at the sight of it` : `The light sears ${target.name}`} — ${_dealt} damage. (HP ${Math.max(0, Math.round(target.hp))})`);
+				if (_dealt) narrate(narrative, {
+					kind: "the holy light's damage",
+					wordsIfHoly: holy ? `The unclean flesh of ${target.name} chars at the sight of it` : `The light sears ${target.name}`,
+					dealt: _dealt,
+					targetHp: Math.max(0, Math.round(target.hp))
+				});
 			}
 			break;
 		}
@@ -38961,12 +47339,23 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 			target.status.meleeHalvedRounds = Math.max(target.status.meleeHalvedRounds, _swR);
 			const _shr = target.kind === "monster" ? SPIRITWRACK_SHRUG_PCT[target.power] || 0 : 0;
 			target.status._swShrugPct = _shr;
-			narrate(narrative, `  ${caster.name} binds ${target.name} with Spiritwrack — for ${_swR} round${_swR !== 1 ? "s" : ""} it cannot cast, use its powers or use archery, and its melee is halved.${_shr ? ` (A ${String(target.power).toLowerCase()} guardian may shrug it off — ${_shr}% each round after the first.)` : ""}`);
+			narrate(narrative, {
+				kind: "the caster binds the target with spiritwrack",
+				casterName: caster.name,
+				targetName: target.name,
+				swR: _swR,
+				swRPlural: _swR !== 1 ? "s" : "",
+				wordsIfShr: _shr ? ` (A ${String(target.power).toLowerCase()} guardian may shrug it off — ${_shr}% each round after the first.)` : ""
+			});
 			break;
 		}
 		case "Psychic Blast": {
 			const _stunN = (SPELL_BLAST_BASE_ROUNDS + Math.floor(lvlEff / 2)) * wx + (caster.ref && hasItemBase(caster.ref, "Dreamstone") ? 1 : 0);
-			if (pcLandStun(target, _stunN, narrative, "the blast")) narrate(narrative, `  🧠 Psychic Blast sears ${target.name}'s mind — for their next ${_stunN} rounds they can do nothing at all: no blow, no arrow, no spell, and no flight.`);
+			if (pcLandStun(target, _stunN, narrative, "the blast")) narrate(narrative, {
+				kind: "psychic blast sears the target's mind",
+				targetName: target.name,
+				stunN: _stunN
+			});
 			break;
 		}
 		case "Telekinetic Storm": {
@@ -38974,16 +47363,29 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 			const self = Math.max(0, Math.round(d * .25));
 			const dealt = pcTakeHit(turnContext, target, d, narrative, caster.name, "Telekinetic Storm");
 			caster.hp -= self;
-			if (dealt) narrate(narrative, `  🌀 Telekinetic Storm rips ${target.name} for ${dealt} damage; the strain costs ${caster.name} ${self} damage. (Target HP ${Math.max(0, Math.round(target.hp))})`);
+			if (dealt) narrate(narrative, {
+				kind: "a telekinetic storm rips the target",
+				targetName: target.name,
+				dealt,
+				casterName: caster.name,
+				self,
+				targetHp: Math.max(0, Math.round(target.hp))
+			});
 			break;
 		}
 		case "Mirror Image": {
 			if (!state) {
-				narrate(narrative, `  ${caster.name} conjures a Mirror Image.`);
+				narrate(narrative, {
+					kind: "the caster conjures a mirror image",
+					casterName: caster.name
+				});
 				break;
 			}
 			if (state.mirror) {
-				narrate(narrative, `  ${caster.name} weaves a second Mirror Image — the competing illusions unravel and both vanish.`);
+				narrate(narrative, {
+					kind: "the caster weaves a second mirror image",
+					casterName: caster.name
+				});
 				state.mirror = null;
 				break;
 			}
@@ -39012,22 +47414,42 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 				},
 				life: SPELL_MIRROR_ROUNDS
 			};
-			narrate(narrative, `  🪞 ${caster.name} conjures a phantom of ${target.name} — ${target.name} turns on their own mirror, and ${caster.name} is left free to act.`);
+			narrate(narrative, {
+				kind: "the caster conjures a phantom of the target",
+				casterName: caster.name,
+				targetName: target.name,
+				targetName2: target.name,
+				casterName2: caster.name
+			});
 			break;
 		}
 		case "Invisibility": {
 			const _invPct = SPELL_INVIS_BASE_PCT + SPELL_INVIS_PCT_PER_LVL * lvlEff;
 			caster.status.toHitReduce = Math.max(caster.status.toHitReduce || 0, _invPct);
 			caster.status.fleeBonus = (caster.status.fleeBonus || 0) + 30;
-			narrate(narrative, `  ${caster.name} fades from sight — enemies suffer \u2212${_invPct}% to hit, +30% flee.`);
+			narrate(narrative, {
+				kind: "the caster fades from sight",
+				casterName: caster.name,
+				invPct: _invPct
+			});
 			break;
 		}
 		case "Hand of Death":
 			if (kcRng() * 100 < Math.min(SPELL_HOD_MAX_PCT, lvlEff * 10 * wx)) {
 				const _dfMult = caster.ref && hasItemBase(caster.ref, "Death's Finger Ring") ? 1.1 : 1;
 				const dealt = pcTakeHit(turnContext, target, Math.max(1, Math.round(target.maxHp * SPELL_HOD_BITE_PCT / 100 * _dfMult)), narrative, caster.name, "Hand of Death");
-				if (dealt) narrate(narrative, `  ☠ Hand of Death claims ${SPELL_HOD_BITE_PCT}% of ${target.name}'s health — ${dealt} damage! (HP ${Math.max(0, Math.round(target.hp))})`);
-			} else narrate(narrative, `  ${caster.name}'s Hand of Death fails to take hold. [${Math.min(SPELL_HOD_MAX_PCT, lvlEff * 10 * wx)}%]`);
+				if (dealt) narrate(narrative, {
+					kind: "the hand of death claims part of the target's health",
+					handOfDeathBitePct: SPELL_HOD_BITE_PCT,
+					targetName: target.name,
+					dealt,
+					targetHp: Math.max(0, Math.round(target.hp))
+				});
+			} else narrate(narrative, {
+				kind: "the caster's hand of death fails",
+				casterName: caster.name,
+				handOfDeathChancePct: Math.min(SPELL_HOD_MAX_PCT, lvlEff * 10 * wx)
+			});
 			break;
 		case "Curse": {
 			const bestSchool = KC_MAGIC_SCHOOLS.reduce((b, s) => (target.school[s] || 0) > (target.school[b] || 0) ? s : b, "white");
@@ -39042,34 +47464,73 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 				if (bestKey === "melee") target.melee = Math.floor(target.melee / 2);
 				else if (bestKey === "archery") target.archery = Math.floor(target.archery / 2);
 				else target.school[bestSchool] = Math.floor(target.school[bestSchool] / 2);
-				narrate(narrative, `  ${caster.name}'s Curse withers ${target.name}'s ${bestKey === "magic" ? bestSchool + " magic" : bestKey} — halved to ${bestKey === "melee" ? target.melee : bestKey === "archery" ? target.archery : target.school[bestSchool]} for the fight.`);
-			} else narrate(narrative, `  ${caster.name}'s Curse finds no ability in ${target.name} worth withering.`);
+				narrate(narrative, {
+					kind: "the caster's curse withers the target",
+					casterName: caster.name,
+					targetName: target.name,
+					bestAbility: bestKey === "magic" ? bestSchool + " magic" : bestKey,
+					bestAbilityLevel: bestKey === "melee" ? target.melee : bestKey === "archery" ? target.archery : target.school[bestSchool]
+				});
+			} else narrate(narrative, {
+				kind: "the caster's curse finds no ability",
+				casterName: caster.name,
+				targetName: target.name
+			});
 			break;
 		}
 		case "Control Undead":
 			if (target.isUndead) {
 				const _cuR = Math.max(1, lvlEff);
 				if (!pcLandStun(target, _cuR, narrative, `${caster.name}'s grip`)) break;
-				narrate(narrative, `  ${caster.name} seizes the undead ${target.name} — helpless for ${_cuR} rounds.`);
-			} else narrate(narrative, `  Control Undead has no hold over the living ${target.name}.`);
+				narrate(narrative, {
+					kind: "the caster seizes the undead target",
+					casterName: caster.name,
+					targetName: target.name,
+					cuR: _cuR
+				});
+			} else narrate(narrative, {
+				kind: "control undead has no hold over the living",
+				targetName: target.name
+			});
 			break;
 		case "Charm":
 			if (target && target.kind === "character" && target.ref && target.ref.isKing) {
-				narrate(narrative, `  ${caster.name}'s Charm washes over ${target.name} and finds nothing to grip — a crowned will cannot be swayed.`);
+				narrate(narrative, {
+					kind: "the caster's charm washes over a crowned will",
+					casterName: caster.name,
+					targetName: target.name
+				});
 				break;
 			}
 			if (target && target.kind === "character" && target.ref && target.ref._charmImmuneTurn === G.turn) {
-				narrate(narrative, `  ${caster.name}'s Charm slides off ${target.name} — a mind so lately swayed is closed to enchantment for a season.`);
+				narrate(narrative, {
+					kind: "the caster's charm slides off a mind lately swayed",
+					casterName: caster.name,
+					targetName: target.name
+				});
 				break;
 			}
 			if (target && target.kind === "character" && target.ref && (target.ref._charmResist || 0) > 0 && d100() <= target.ref._charmResist) {
-				narrate(narrative, `  ${caster.name}'s Charm breaks against ${target.name}'s will (${target.ref._charmResist}% resistance) — a mind swayed before knows the feel of it, and shuts.`);
+				narrate(narrative, {
+					kind: "the caster's charm breaks against the target's will",
+					casterName: caster.name,
+					targetName: target.name,
+					targetRefCharmResist: target.ref._charmResist
+				});
 				break;
 			}
 			caster.status.fleeDoubled = true;
-			narrate(narrative, `  ${caster.name} charms ${target.name}'s wits — their next attempt to slip away will come far more easily.`);
+			narrate(narrative, {
+				kind: "the caster charms the target's wits",
+				casterName: caster.name,
+				targetName: target.name
+			});
 			break;
-		default: narrate(narrative, `  ${caster.name} casts ${spellName}.`);
+		default: narrate(narrative, {
+			kind: "the caster casts a spell",
+			casterName: caster.name,
+			spellName
+		});
 	}
 	if (caster.kind === "character" && caster.ref) {
 		const _lvB = skillLevel(caster.ref, school);
@@ -39079,7 +47540,12 @@ function pcCastCombatSpell(turnContext, caster, target, spellName, narrative, st
 	return true;
 }
 function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
-	narrate(narrative, `  ✨ ${actor.name} uses **${sp.name}**!${sp.flavour ? ` "${sp.flavour}"` : ""}`);
+	narrate(narrative, {
+		kind: "a fighter uses a power",
+		actorName: actor.name,
+		spName: sp.name,
+		wordsIfSpFlavour: sp.flavour ? ` "${sp.flavour}"` : ""
+	});
 	const eff = String(sp.effect || "");
 	let dealt = 0;
 	const _w = sp.dmgW != null ? sp.dmgW : sp.dmg && (sp.dmg[0] > 0 || sp.dmg[1] > 0) ? null : 0;
@@ -39087,7 +47553,13 @@ function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
 		let d = _w != null ? Math.max(1, Math.round(pcMeleeDamage(actor, foe) * _w)) : rng(sp.dmg[0], sp.dmg[1]);
 		if (/hits twice/i.test(eff)) d *= 2;
 		dealt = pcTakeHit(turnContext, foe, d, narrative, actor.name, sp.name);
-		if (dealt) narrate(narrative, `  ${sp.name} tears into ${foe.name} for ${dealt} damage. (HP ${Math.max(0, Math.round(foe.hp))})`);
+		if (dealt) narrate(narrative, {
+			kind: "a power tears into the foe",
+			spName: sp.name,
+			foeName: foe.name,
+			dealt,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 	}
 	let heal = 0;
 	if (/heals half/i.test(eff)) heal = Math.ceil(dealt / 2);
@@ -39098,12 +47570,20 @@ function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
 	}
 	if (heal > 0 && actor._selfHealUsed) {
 		heal = 0;
-		if (dealt === 0) narrate(narrative, `  The ${actor.name} reaches for its own wounds again — but that well is dry; it has already drawn on it this fight.`);
+		if (dealt === 0) narrate(narrative, {
+			kind: "the guardian reaches for its own wounds again but the well is dry",
+			actorName: actor.name
+		});
 	}
 	if (heal > 0) {
 		actor._selfHealUsed = true;
 		actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-		narrate(narrative, `  The ${actor.name} knits its wounds for ${heal}. (HP ${dispFloor(actor.hp)})`);
+		narrate(narrative, {
+			kind: "the guardian knits its wounds",
+			actorName: actor.name,
+			heal,
+			actorHp: dispFloor(actor.hp)
+		});
 	}
 	let stun = 0;
 	if (/loses 3 rounds/i.test(eff)) stun = 3;
@@ -39112,10 +47592,20 @@ function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
 	if (stun > 0) {
 		if (pcStunTurned(foe, narrative, `${sp.name}'s daze`)) {} else if (dealt > 0 && pcDeferEffect(foe, () => {
 			foe.status.stun = (foe.status.stun || 0) + stun;
-		})) narrate(narrative, `  ${foe.name} reels from the blow — ${stun} action${stun !== 1 ? "s" : ""} will be lost from the next round.`);
+		})) narrate(narrative, {
+			kind: "the foe reels from the blow, losing actions",
+			foeName: foe.name,
+			stun,
+			stunPlural: stun !== 1 ? "s" : ""
+		});
 		else {
 			foe.status.stun = (foe.status.stun || 0) + stun;
-			narrate(narrative, `  ${foe.name} is caught helpless — ${stun} action${stun !== 1 ? "s" : ""} lost.`);
+			narrate(narrative, {
+				kind: "the foe is caught helpless, losing actions",
+				foeName: foe.name,
+				stun,
+				stunPlural: stun !== 1 ? "s" : ""
+			});
 		}
 	}
 	const pm = eff.match(/[-−](\d+)%/);
@@ -39123,10 +47613,18 @@ function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
 		const pen = parseInt(pm[1]);
 		if (dealt > 0 && pcDeferEffect(foe, () => {
 			foe.status.hitPenalty = (foe.status.hitPenalty || 0) + pen;
-		})) narrate(narrative, `  ${foe.name} is thrown off balance — −${pen}% to hit from the next round.`);
+		})) narrate(narrative, {
+			kind: "the foe is thrown off balance from the next round",
+			foeName: foe.name,
+			pen
+		});
 		else {
 			foe.status.hitPenalty = (foe.status.hitPenalty || 0) + pen;
-			narrate(narrative, `  ${foe.name} is thrown off balance (−${pen}% to hit).`);
+			narrate(narrative, {
+				kind: "the foe is thrown off balance",
+				foeName: foe.name,
+				pen
+			});
 		}
 	}
 	if (/hero\s*[-−]1 melee/i.test(eff)) {
@@ -39135,58 +47633,111 @@ function pcMonsterSpecial(turnContext, actor, foe, sp, narrative, state) {
 			foe.status.meleeDownRounds = 1;
 		};
 		const _now = Math.max(0, pcHitSkill(foe, "melee") - 1);
-		if (dealt > 0 && pcDeferEffect(foe, _chill)) narrate(narrative, `  ${foe.name}'s guard is beaten down — Melee ${_now} next round.`);
+		if (dealt > 0 && pcDeferEffect(foe, _chill)) narrate(narrative, {
+			kind: "the foe's guard is beaten down next round",
+			foeName: foe.name,
+			now: _now
+		});
 		else {
 			_chill();
-			narrate(narrative, `  ${foe.name}'s guard is beaten down — Melee now ${_now}.`);
+			narrate(narrative, {
+				kind: "the foe's guard is beaten down now",
+				foeName: foe.name,
+				now: _now
+			});
 		}
 	}
 	const bm = eff.match(/gains \+(\d+) melee/i);
 	if (bm) {
 		actor.melee = (actor.melee || 0) + parseInt(bm[1]);
-		narrate(narrative, `  The ${actor.name}'s Melee surges to ${actor.melee}!`);
+		narrate(narrative, {
+			kind: "the guardian's melee surges",
+			actorName: actor.name,
+			actorMelee: actor.melee
+		});
 	}
 	const dm = eff.match(/takes (\d+) dmg at start of each round for (\d+) rounds/i);
 	if (dm) {
 		const _e = pcPushDot(foe, parseInt(dm[1]), parseInt(dm[2]), sp.name);
-		if (_e) narrate(narrative, `  ${sp.name} festers on ${foe.name} — ${_e.dmg} a round for ${_e.rounds} round${_e.rounds !== 1 ? "s" : ""}.`);
+		if (_e) narrate(narrative, {
+			kind: "a power festers on the foe",
+			spName: sp.name,
+			foeName: foe.name,
+			eDmg: _e.dmg,
+			eRounds: _e.rounds,
+			eRoundsPlural: _e.rounds !== 1 ? "s" : ""
+		});
 	}
 	const rf = eff.match(/reflects (\d+) dmg/i);
 	if (rf) {
 		actor.status.reflect = (actor.status.reflect || 0) + parseInt(rf[1]);
-		narrate(narrative, `  Every blow against the ${actor.name} will bite back for ${actor.status.reflect}.`);
+		narrate(narrative, {
+			kind: "every blow against the guardian will bite back",
+			actorName: actor.name,
+			actorStatusReflect: actor.status.reflect
+		});
 	}
 	const ab = eff.match(/absorbs next (\d+) dmg/i);
 	if (ab) {
 		actor.status.absorb = (actor.status.absorb || 0) + parseInt(ab[1]);
-		narrate(narrative, `  A ward shrouds the ${actor.name}, ready to drink ${actor.status.absorb} damage.`);
+		narrate(narrative, {
+			kind: "a ward shrouds the guardian",
+			actorName: actor.name,
+			actorStatusAbsorb: actor.status.absorb
+		});
 	}
 	if (/ignores all armour/i.test(eff)) foe.status.incomingDmgBonus = (foe.status.incomingDmgBonus || 0) + 3;
 	const hv = eff.match(/(\d+)% halves current hp/i);
 	if (hv && foe.hp > 1 && kcRng() * 100 < parseInt(hv[1])) {
 		const _cut = Math.floor(foe.hp / 2);
 		foe.hp -= _cut;
-		narrate(narrative, `  ☠ Death's touch takes hold — ${foe.name}'s strength is torn in half (−${_cut}). (HP ${Math.max(0, Math.round(foe.hp))})`);
+		narrate(narrative, {
+			kind: "death's touch tears the foe's strength in half",
+			foeName: foe.name,
+			cut: _cut,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 	}
 	const ik = eff.match(/(\d+)% instant kill/i);
 	if (ik && kcRng() * 100 < parseInt(ik[1])) {
 		foe.hp = 0;
-		narrate(narrative, `  ☠ ${foe.name} is struck down where they stand!`);
+		narrate(narrative, {
+			kind: "the foe is struck down where they stand",
+			foeName: foe.name
+		});
 	}
 	if (/courage test or flee/i.test(eff) && !foe.neverFlees) {
-		if (foe.arm && foe.arm.stunImmune) narrate(narrative, `  ${foe.name} cannot be gripped by it — the terror washes over them and passes.`);
+		if (foe.arm && foe.arm.stunImmune) narrate(narrative, {
+			kind: "the foe cannot be gripped by it",
+			foeName: foe.name
+		});
 		else {
 			const _tc = pcCourageChance(foe, actor), _tr = d100();
-			narrate(narrative, `  ${foe.name} must hold their nerve (${_tc}% to break) [roll ${_tr} ${_tr <= _tc ? "✗" : "✓"}].`);
+			narrate(narrative, {
+				kind: "the foe must hold their nerve",
+				foeName: foe.name,
+				tc: _tc,
+				tr: _tr,
+				trTcMark: _tr <= _tc ? "✗" : "✓"
+			});
 			if (_tr <= _tc) {
 				state.fledBy = foe;
-				narrate(narrative, `  ${foe.name} is overcome with sheer terror and flees!`);
-			} else narrate(narrative, `  ${foe.name} steels their nerve.`);
+				narrate(narrative, {
+					kind: "the foe is overcome with sheer terror",
+					foeName: foe.name
+				});
+			} else narrate(narrative, {
+				kind: "the foe steels their nerve",
+				foeName: foe.name
+			});
 		}
 	}
 	if (/flee chance/i.test(eff)) {
 		foe.status.fleePenalty = (foe.status.fleePenalty || 0) + 30;
-		narrate(narrative, `  ${foe.name} feels dragged towards the creature — escape will be far harder.`);
+		narrate(narrative, {
+			kind: "the foe feels dragged towards the creature",
+			foeName: foe.name
+		});
 	}
 	if (/rebirth/i.test(sp.name || "")) actor._rebirth = true;
 }
@@ -39280,15 +47831,30 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 	const who = actor.kind === "monster" ? `The ${actor.name}` : actor.name;
 	const hurt = (d, label) => {
 		const dealt = pcTakeHit(turnContext, foe, d, narrative, actor.name, label || nm);
-		if (dealt) narrate(narrative, `  ${nm} strikes ${foe.name} for ${dealt} damage. (HP ${Math.max(0, Math.round(foe.hp))})`);
+		if (dealt) narrate(narrative, {
+			kind: "a combat item strikes the foe",
+			nm,
+			foeName: foe.name,
+			dealt,
+			foeHp: Math.max(0, Math.round(foe.hp))
+		});
 		return dealt;
 	};
-	narrate(narrative, `  🧪 ${who} uses the ${nm}!`);
+	narrate(narrative, {
+		kind: "a fighter uses a combat item",
+		who,
+		nm
+	});
 	switch (e.use) {
 		case "heal": {
 			const h = Math.min(e.amt || 5, Math.max(0, (actor.maxHp || 20) - actor.hp));
 			actor.hp += h;
-			narrate(narrative, `  ${who} recovers ${h} HP. (HP ${dispFloor(actor.hp)})`);
+			narrate(narrative, {
+				kind: "a fighter recovers hit points",
+				who,
+				healed: h,
+				actorHp: dispFloor(actor.hp)
+			});
 			break;
 		}
 		case "hot":
@@ -39297,7 +47863,12 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 				rounds: e.rounds || 3,
 				label: nm
 			};
-			narrate(narrative, `  Warmth spreads through ${actor.name} — ${e.amt} HP a round for ${e.rounds} rounds.`);
+			narrate(narrative, {
+				kind: "warmth spreads through a fighter each round",
+				actorName: actor.name,
+				eAmt: e.amt,
+				eRounds: e.rounds
+			});
 			break;
 		case "secondwind": {
 			const h = Math.min(e.amt || 10, Math.max(0, (actor.maxHp || 20) - actor.hp));
@@ -39305,7 +47876,12 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 			st.dot = [];
 			st.hitPenalty = 0;
 			st.hitPenaltyFixed = 0;
-			narrate(narrative, `  ${who} recovers ${h} HP and every lingering affliction lifts. (HP ${dispFloor(actor.hp)})`);
+			narrate(narrative, {
+				kind: "a fighter recovers hit points and every lingering affliction lifts",
+				who,
+				healed: h,
+				actorHp: dispFloor(actor.hp)
+			});
 			break;
 		}
 		case "dmg":
@@ -39315,26 +47891,46 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 				let d = rng(e.dmg[0], e.dmg[1]);
 				if ((e.doubleVs || []).includes(pcFoeCat(foe))) {
 					d *= 2;
-					narrate(narrative, `  The ${nm} blazes twice as bright against ${foe.name}!`);
+					narrate(narrative, {
+						kind: "a combat item blazes twice as bright against the foe",
+						nm,
+						foeName: foe.name
+					});
 				}
 				hurt(d);
 			}
 			if (e.dot && foe.hp > 0) {
 				const _de = pcPushDot(foe, e.dot[0], e.dot[1], nm);
-				if (_de) narrate(narrative, `  ${nm} keeps burning on ${foe.name} — ${_de.dmg} a round for ${_de.rounds} round${_de.rounds !== 1 ? "s" : ""}.`);
+				if (_de) narrate(narrative, {
+					kind: "a combat item keeps burning on the foe",
+					nm,
+					foeName: foe.name,
+					deDmg: _de.dmg,
+					deRounds: _de.rounds,
+					deRoundsPlural: _de.rounds !== 1 ? "s" : ""
+				});
 			}
 			if (e.hitPen && foe.hp > 0) {
 				pcDeferEffect(foe, () => {
 					fs.hitPenalty = (fs.hitPenalty || 0) + e.hitPen;
 				});
-				narrate(narrative, `  ${foe.name} is thrown off (−${e.hitPen}% to hit from the next round).`);
+				narrate(narrative, {
+					kind: "the foe is thrown off from the next round",
+					foeName: foe.name,
+					eHitPen: e.hitPen
+				});
 			}
 			if (e.stun && foe.hp > 0) {
 				if (pcStunTurned(foe, narrative, `the ${nm}'s daze`)) {} else {
 					pcDeferEffect(foe, () => {
 						fs.stun = (fs.stun || 0) + e.stun;
 					});
-					narrate(narrative, `  ${foe.name} reels — ${e.stun} action${e.stun !== 1 ? "s" : ""} lost from the next round.`);
+					narrate(narrative, {
+						kind: "the foe reels losing actions from the next round",
+						foeName: foe.name,
+						eStun: e.stun,
+						eStunPlural: e.stun !== 1 ? "s" : ""
+					});
 				}
 			}
 			break;
@@ -39343,20 +47939,38 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 			const dealt = hurt(rng(e.dmg[0], e.dmg[1]));
 			const h = Math.min(dealt, Math.max(0, (actor.maxHp || 20) - actor.hp));
 			actor.hp += h;
-			if (h > 0) narrate(narrative, `  ${who} drinks the stolen vigour — +${h} HP. (HP ${dispFloor(actor.hp)})`);
+			if (h > 0) narrate(narrative, {
+				kind: "a fighter drinks the stolen vigour",
+				who,
+				healed: h,
+				actorHp: dispFloor(actor.hp)
+			});
 			break;
 		}
 		case "stun":
 		case "banestun":
-			if (pcLandStun(foe, e.stun || 1, narrative, `the ${nm}`)) narrate(narrative, `  ${foe.name} is held fast — ${e.stun || 1} action${(e.stun || 1) !== 1 ? "s" : ""} lost.`);
+			if (pcLandStun(foe, e.stun || 1, narrative, `the ${nm}`)) narrate(narrative, {
+				kind: "the foe is held fast, losing actions",
+				foeName: foe.name,
+				eStun: e.stun || 1,
+				eStunPlural: (e.stun || 1) !== 1 ? "s" : ""
+			});
 			break;
 		case "pen":
 			if (/rest of the fight/i.test(it.desc || "")) {
 				fs.hitPenaltyFixed = (fs.hitPenaltyFixed || 0) + (e.hitPen || 15);
-				narrate(narrative, `  ${foe.name} can barely see to strike (−${e.hitPen || 15}% to hit for the rest of the fight).`);
+				narrate(narrative, {
+					kind: "the foe can barely see to strike",
+					foeName: foe.name,
+					eHitPen: e.hitPen || 15
+				});
 			} else {
 				fs.hitPenalty = (fs.hitPenalty || 0) + (e.hitPen || 15);
-				narrate(narrative, `  ${foe.name} can barely see to strike (−${e.hitPen || 15}% to hit).`);
+				narrate(narrative, {
+					kind: "the foe can barely see to strike for now",
+					foeName: foe.name,
+					eHitPen: e.hitPen || 15
+				});
 			}
 			break;
 		case "weak":
@@ -39368,61 +47982,112 @@ function pcUseCombatItem(turnContext, actor, foe, it, narrative, state) {
 				foe.archery = Math.max(0, (foe.archery || 0) - e.archery);
 				if (foe.archeryRaw != null) foe.archeryRaw = Math.max(0, foe.archeryRaw - e.archery);
 			}
-			narrate(narrative, `  ${foe.name} is sapped — Melee ${pcHitSkill(foe, "melee")}${e.archery ? `, Archery ${pcHitSkill(foe, "archery")}` : ""} for the rest of the fight.`);
+			narrate(narrative, {
+				kind: "the foe is sapped for the rest of the fight",
+				foeName: foe.name,
+				foeMelee: pcHitSkill(foe, "melee"),
+				wordsIfEArchery: e.archery ? `, Archery ${pcHitSkill(foe, "archery")}` : ""
+			});
 			break;
 		case "terror":
 			if (!foe.neverFlees && kcRng() < .5) {
 				state.fledBy = foe;
-				narrate(narrative, `  ${foe.name} is overcome with dread and flees!`);
+				narrate(narrative, {
+					kind: "the foe is overcome with dread and flees",
+					foeName: foe.name
+				});
 			} else {
 				fs.hitPenalty = (fs.hitPenalty || 0) + (e.hitPen || 15);
-				narrate(narrative, `  ${foe.name} holds their ground, badly shaken (−${e.hitPen || 15}% to hit).`);
+				narrate(narrative, {
+					kind: "the foe holds their ground badly shaken",
+					foeName: foe.name,
+					eHitPen: e.hitPen || 15
+				});
 			}
 			break;
 		case "silence":
 			fs.silenceRounds = (fs.silenceRounds || 0) + (e.rounds || 3);
-			narrate(narrative, `  ${foe.name}'s magic and powers are bound for ${e.rounds || 3} rounds.`);
+			narrate(narrative, {
+				kind: "the foe's magic and powers are bound",
+				foeName: foe.name,
+				eRounds: e.rounds || 3
+			});
 			break;
 		case "buff":
 			if (e.melee) actor.melee = (actor.melee || 0) + e.melee;
 			if (e.archery) actor.archery = (actor.archery || 0) + e.archery;
-			narrate(narrative, `  ${who} surges with strength — Melee ${actor.melee}${e.archery ? `, Archery ${actor.archery}` : ""}.`);
+			narrate(narrative, {
+				kind: "a fighter surges with strength",
+				who,
+				actorMelee: actor.melee,
+				wordsIfEArchery: e.archery ? `, Archery ${actor.archery}` : ""
+			});
 			break;
 		case "focus":
 			st.hitBonus = (st.hitBonus || 0) + (e.hitBonus || 10);
-			narrate(narrative, `  ${who}'s eye sharpens (+${e.hitBonus || 10}% to hit).`);
+			narrate(narrative, {
+				kind: "a fighter's eye sharpens",
+				who,
+				eHitBonus: e.hitBonus || 10
+			});
 			break;
 		case "absorb":
 			st.absorb = (st.absorb || 0) + (e.absorb || 10);
 			if (e.reflect) st.reflect = (st.reflect || 0) + e.reflect;
-			narrate(narrative, `  A ward settles over ${actor.name}, ready to drink ${st.absorb} damage${e.reflect ? ` and bite back for ${st.reflect}` : ""}.`);
+			narrate(narrative, {
+				kind: "a ward settles over a fighter",
+				actorName: actor.name,
+				stAbsorb: st.absorb,
+				wordsIfEReflect: e.reflect ? ` and bite back for ${st.reflect}` : ""
+			});
 			break;
 		case "mirror":
 			st.mirrorImages = (st.mirrorImages || 0) + (e.images || 2);
-			narrate(narrative, `  ${e.images || 2} shimmering doubles step out of ${actor.name}.`);
+			narrate(narrative, {
+				kind: "shimmering doubles step out of a fighter",
+				eImages: e.images || 2,
+				actorName: actor.name
+			});
 			break;
 		case "flee":
 			st.fleeBonus = (st.fleeBonus || 0) + (e.fleeBonus || 25);
 			if (e.toHitReduce) st.toHitReduce = (st.toHitReduce || 0) + e.toHitReduce;
-			narrate(narrative, `  ${who} is ready to break away (+${e.fleeBonus || 25}% to flee${e.toHitReduce ? `, foe −${e.toHitReduce}% to hit` : ""}).`);
+			narrate(narrative, {
+				kind: "a fighter is ready to break away",
+				who,
+				eFleeBonus: e.fleeBonus || 25,
+				wordsIfEToHitReduce: e.toHitReduce ? `, foe −${e.toHitReduce}% to hit` : ""
+			});
 			break;
 		case "invis":
 			st.toHitReduce = (st.toHitReduce || 0) + (e.toHitReduce || 25);
-			narrate(narrative, `  ${who} fades from sight — ${foe.name} strikes at shadows (−${e.toHitReduce || 25}% to hit).`);
+			narrate(narrative, {
+				kind: "a fighter fades from sight the foe",
+				who,
+				foeName: foe.name,
+				eToHitReduce: e.toHitReduce || 25
+			});
 			break;
 		case "dispel":
 			st.dot = [];
 			st.hitPenalty = 0;
 			st.hitPenaltyFixed = 0;
-			narrate(narrative, `  Every poison, burn and blinding on ${actor.name} lifts.`);
+			narrate(narrative, {
+				kind: "every poison burn and blinding on a fighter lifts",
+				actorName: actor.name
+			});
 			break;
-		default: narrate(narrative, `  …but nothing happens.`);
+		default: narrate(narrative, { kind: "but nothing happens" });
 	}
 }
 function pcAct(turnContext, actor, foe, narrative, state) {
 	const { G } = turnContext;
 	if (actor.status.stun > 0) {
-		narrate(narrative, `  ${actor.name} is stunned and cannot act. (${actor.status.stun} left)`);
+		narrate(narrative, {
+			kind: "a fighter is stunned and cannot act",
+			actorName: actor.name,
+			actorStatusStun: actor.status.stun
+		});
 		actor.status.stun--;
 		return;
 	}
@@ -39440,12 +48105,18 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 		case "FIRE":
 		case "ARROW":
 			if (actor.status.silenceRounds > 0) {
-				narrate(narrative, `  ${actor.name} cannot shoot (bound by Spiritwrack) — they close in instead.`);
+				narrate(narrative, {
+					kind: "a fighter bound by spiritwrack cannot shoot and closes in",
+					actorName: actor.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
 			if (!pcHasRanged(actor)) {
-				narrate(narrative, `  ${actor.name} has no ranged attack — they press forward instead.`);
+				narrate(narrative, {
+					kind: "a fighter has no ranged attack and presses forward",
+					actorName: actor.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
@@ -39453,14 +48124,27 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 				if (temperOf(actor.temper).openingShot && !actor._openingShotUsed) {
 					actor._openingShotUsed = true;
 					state.range = "bow";
-					narrate(narrative, `  ${actor.name} gives ground and gets to firing range before anything can reach them. (${actor.temper} — opening shot)`);
+					narrate(narrative, {
+						kind: "a fighter gives ground and gets to firing range first",
+						actorName: actor.name,
+						actorTemper: actor.temper
+					});
 					pcFireShot(turnContext, actor, foe, narrative);
 					break;
 				}
 				const ch = dispFloor(pcMoveCheck(actor, foe, "advance")), roll = d100();
-				narrate(narrative, `  ${actor.name} moves up to firing range (${ch}% [roll ${roll}]${roll <= ch ? " ✓" : " ✗"})`);
+				narrate(narrative, {
+					kind: "a fighter moves up to firing range",
+					actorName: actor.name,
+					rangeChance: ch,
+					roll,
+					rollChMark: roll <= ch ? " ✓" : " ✗"
+				});
 				if (roll > ch) {
-					narrate(narrative, `  ${actor.name} cannot close the distance in time — no shot.`);
+					narrate(narrative, {
+						kind: "a fighter cannot close the distance in time",
+						actorName: actor.name
+					});
 					break;
 				}
 				state.range = "bow";
@@ -39469,13 +48153,26 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 				break;
 			} else if (state.range === "melee") {
 				const ch = dispFloor(pcMoveCheck(actor, foe, "withdraw")), roll = d100();
-				narrate(narrative, `  ${actor.name} tries to break away to firing range (${ch}% [roll ${roll}]${roll <= ch ? " ✓" : " ✗"})`);
+				narrate(narrative, {
+					kind: "a fighter tries to break away to firing range",
+					actorName: actor.name,
+					rangeChance: ch,
+					roll,
+					rollChMark: roll <= ch ? " ✓" : " ✗"
+				});
 				if (roll > ch) {
-					narrate(narrative, `  ${foe.name} stays right on top of ${actor.name} — no room to draw.`);
+					narrate(narrative, {
+						kind: "the foe stays right on top of a fighter",
+						foeName: foe.name,
+						actorName: actor.name
+					});
 					break;
 				}
 				state.range = "bow";
-				narrate(narrative, `  ${actor.name} disengages to bow range.`);
+				narrate(narrative, {
+					kind: "a fighter disengages to bow range",
+					actorName: actor.name
+				});
 			}
 			pcFireShot(turnContext, actor, foe, narrative);
 			break;
@@ -39486,13 +48183,22 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 				break;
 			}
 			if (actor.status.silenceRounds > 0) {
-				narrate(narrative, `  ${actor.name}'s power is bound and will not answer — it falls on ${foe.name} with tooth and claw instead.`);
+				narrate(narrative, {
+					kind: "a fighter's power is bound and it attacks with tooth and claw",
+					actorName: actor.name,
+					foeName: foe.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
 			const cc = sp.castChance != null ? sp.castChance : 50;
 			if (kcRng() * 100 >= cc) {
-				narrate(narrative, `  ${actor.name} gathers itself for ${sp.name} but the moment slips away — it attacks instead. [${cc}%]`);
+				narrate(narrative, {
+					kind: "a fighter gathers itself for a power but the moment slips away",
+					actorName: actor.name,
+					spName: sp.name,
+					castChancePct: cc
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
@@ -39502,7 +48208,10 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 		case "CA":
 		case "SPELL": {
 			if (actor.status.silenceRounds > 0) {
-				narrate(narrative, `  ${actor.name} is silenced and cannot cast — they attack instead.`);
+				narrate(narrative, {
+					kind: "a fighter is silenced and cannot cast",
+					actorName: actor.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
@@ -39520,7 +48229,10 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 		case "FL":
 		case "FLEE":
 			if (actor.neverFlees) {
-				narrate(narrative, `  ${actor.name} knows nothing of retreat.`);
+				narrate(narrative, {
+					kind: "a fighter knows nothing of retreat",
+					actorName: actor.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
@@ -39536,18 +48248,36 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 				const dr = actor.kind === "character" ? effStat(turnContext, actor.ref, "druid") : 0;
 				const chance = foe.pacifiable === false ? 0 : 20 + dr * 15;
 				const roll = d100();
-				narrate(narrative, `  ${actor.name} calls for parley (Druid ${dr}, ${chance}%${chance ? ` [roll ${roll}]${roll <= chance ? " ✓" : " ✗"}` : " — it cannot be reasoned with"})`);
+				narrate(narrative, {
+					kind: "a fighter calls for parley with a druid's roll",
+					actorName: actor.name,
+					dr,
+					chance,
+					chanceMark: chance ? ` [roll ${roll}]${roll <= chance ? " ✓" : " ✗"}` : " — it cannot be reasoned with"
+				});
 				if (chance > 0 && roll <= chance) {
 					state.parley = true;
-					narrate(narrative, `  ${foe.name} lowers its guard and stands aside.`);
-				} else narrate(narrative, `  ${foe.name} answers with a roar.`);
-			} else narrate(narrative, `  ${actor.name} calls for parley, but blades are already drawn.`);
+					narrate(narrative, {
+						kind: "the foe lowers its guard and stands aside",
+						foeName: foe.name
+					});
+				} else narrate(narrative, {
+					kind: "the foe answers with a roar",
+					foeName: foe.name
+				});
+			} else narrate(narrative, {
+				kind: "a fighter calls for parley but blades are already drawn",
+				actorName: actor.name
+			});
 			break;
 		case "ST":
 		case "STEAL": {
 			const th = actor.kind === "character" ? effStat(turnContext, actor.ref, "thief") : 0;
 			if (th < 1) {
-				narrate(narrative, `  ${actor.name} has no Thief skill and cannot attempt a steal — they press forward instead.`);
+				narrate(narrative, {
+					kind: "a fighter has no thief skill and cannot steal",
+					actorName: actor.name
+				});
 				pcAdvanceOrStrike(turnContext, actor, foe, narrative, state);
 				break;
 			}
@@ -39560,8 +48290,19 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 			const chance = Math.max(5, Math.min(95, 50 + 10 * Math.min(th, 5) + bonus - tierPen));
 			if (kcRng() * 100 < chance) {
 				state.stoleBy = actor;
-				narrate(narrative, `  ${actor.name} slips past the ${_tier.toLowerCase()} guardian and seizes the prize! [${chance}%${tierPen ? `, −${tierPen}% ${_tier}` : ""}]`);
-			} else narrate(narrative, `  ${actor.name}'s theft is noticed. [${chance}%${tierPen ? `, −${tierPen}% ${_tier}` : ""}]`);
+				narrate(narrative, {
+					kind: "a fighter slips past the guardian and seizes the prize",
+					actorName: actor.name,
+					tierWord: _tier.toLowerCase(),
+					chance,
+					wordsIfTierPen: tierPen ? `, −${tierPen}% ${_tier}` : ""
+				});
+			} else narrate(narrative, {
+				kind: "a fighter's theft is noticed",
+				actorName: actor.name,
+				chance,
+				wordsIfTierPen: tierPen ? `, −${tierPen}% ${_tier}` : ""
+			});
 			break;
 		}
 		case "SC":
@@ -39616,13 +48357,34 @@ function pcAct(turnContext, actor, foe, narrative, state) {
 				}
 				if (PARLEY_ENABLED && foe.pacifiable) vulnClause += " A Druid could talk it down rather than fight it.";
 				const descClause = foe.ref && foe.ref.desc ? ` ${foe.ref.desc}` : "";
-				narrate(narrative, `  🔍 ${actor.name} scouts the ${feat.name}: ${foe.name}${power ? ` (${power})` : ""} stands guard at ${curHp}/${fullHp} HP.${descClause}${abilityClause}${vulnClause} Defeating it will yield exactly ${clearGold}g${itemOut}.`);
+				narrate(narrative, {
+					kind: "a fighter scouts the feature and its guardian",
+					actorName: actor.name,
+					featName: feat.name,
+					foeName: foe.name,
+					wordsIfPower: power ? ` (${power})` : "",
+					curHp,
+					fullHp,
+					descClause,
+					abilityClause,
+					vulnClause,
+					clearGold,
+					itemOut
+				});
 				feat.scouted = true;
-			} else narrate(narrative, `  ${actor.name} scouts the ground, but there is nothing here to guard.`);
+			} else narrate(narrative, {
+				kind: "a fighter scouts the ground but there is nothing to guard",
+				actorName: actor.name
+			});
 			if (b > 0) {
 				const _had = actor.status.hitPenalty || 0, _cut = Math.min(_had, b);
 				actor.status.hitPenalty = _had - _cut;
-				if (_cut > 0) narrate(narrative, `  ${actor.name} reads the ground and steadies — ${_cut}% of their to-hit penalty is shaken off (Explorer ${ex}).`);
+				if (_cut > 0) narrate(narrative, {
+					kind: "a fighter reads the ground and steadies their aim",
+					actorName: actor.name,
+					cut: _cut,
+					ex
+				});
 			}
 			break;
 		}
@@ -39669,17 +48431,42 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 	A.druidBeastWard = _wardOf(A, B);
 	B.druidBeastWard = _wardOf(B, A);
 	for (const [me, foe] of [[A, B], [B, A]]) {
-		if (me.kind === "monster" && (me.perks || []).length) me.perks.forEach((p) => narrate(narrative, `  🜏 ${me.name} — ${p.name}: ${p.desc}.`));
-		else if (me.kind === "monster" && me.passiveName) narrate(narrative, `  🜏 ${me.name} — ${me.passiveName}: ${me.passiveDesc}.`);
+		if (me.kind === "monster" && (me.perks || []).length) me.perks.forEach((p) => narrate(narrative, {
+			kind: "a guardian's perk is named",
+			meName: me.name,
+			pName: p.name,
+			pDesc: p.desc
+		}));
+		else if (me.kind === "monster" && me.passiveName) narrate(narrative, {
+			kind: "a guardian's perk is named",
+			meName: me.name,
+			pName: me.passiveName,
+			pDesc: me.passiveDesc
+		});
 		if (me.aura > 0) foe.status.auraPenalty = (foe.status.auraPenalty || 0) + me.aura;
 	}
-	if (A.druidBeastWard) narrate(narrative, `  🍃 ${A.name} has hunted this kind before — the beast's blows will land at half force (Druid ${A.druidBeastWard}).`);
-	if (B.druidBeastWard) narrate(narrative, `  🍃 ${B.name} has hunted this kind before — the beast's blows will land at half force (Druid ${B.druidBeastWard}).`);
+	if (A.druidBeastWard) narrate(narrative, {
+		kind: "a druid has hunted this kind of beast before",
+		aName: A.name,
+		aDruidBeastWard: A.druidBeastWard
+	});
+	if (B.druidBeastWard) narrate(narrative, {
+		kind: "a druid has hunted this kind of beast before",
+		aName: B.name,
+		aDruidBeastWard: B.druidBeastWard
+	});
 	const first = pcSpeedOf(A) * 10 + (A.melee || 0) + (A.archery || 0) + kcRng() >= pcSpeedOf(B) * 10 + (B.melee || 0) + (B.archery || 0) + kcRng() ? A : B, second = first === A ? B : A;
-	narrate(narrative, `  ${first.name} has the initiative. The fight opens at spell range.`);
+	narrate(narrative, {
+		kind: "one fighter has the initiative",
+		firstName: first.name
+	});
 	const _mirrorExchange = () => {
 		const { caster, victim, phantasm } = state.mirror;
-		narrate(narrative, `  🪞 ${victim.name} fights their own mirror image while ${caster.name} concentrates.`);
+		narrate(narrative, {
+			kind: "the victim fights their own mirror image",
+			victimName: victim.name,
+			casterName: caster.name
+		});
 		{
 			const _vstate = {
 				fledBy: null,
@@ -39690,8 +48477,11 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 				feature: null
 			};
 			pcAct(turnContext, victim, phantasm, narrative, _vstate);
-			if (_vstate.fledBy) narrate(narrative, `    …but there is no escaping one's own reflection — the phantom is on ${victim.name} again at once.`);
-			if (_vstate.mirror) narrate(narrative, `    …but an illusion cast upon an illusion finds no purchase, and fades.`);
+			if (_vstate.fledBy) narrate(narrative, {
+				kind: "but there is no escaping one's own reflection",
+				victimName: victim.name
+			});
+			if (_vstate.mirror) narrate(narrative, { kind: "but an illusion cast upon an illusion" });
 		}
 		if (phantasm.hp > 0) pcAct(turnContext, phantasm, victim, narrative, {
 			fledBy: null,
@@ -39702,14 +48492,23 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 			feature: null
 		});
 		if (phantasm.hp <= 0) {
-			narrate(narrative, `  🪞 ${victim.name} shatters the phantom — the illusion ends.`);
+			narrate(narrative, {
+				kind: "the victim shatters the phantom",
+				victimName: victim.name
+			});
 			state.mirror = null;
 		} else if (state.mirror && --state.mirror.life <= 0) {
-			narrate(narrative, `  🪞 The phantom of ${victim.name} thins to nothing of its own accord.`);
+			narrate(narrative, {
+				kind: "the phantom of the victim thins to nothing",
+				victimName: victim.name
+			});
 			state.mirror = null;
 		}
 		if (victim.hp <= 0) {
-			narrate(narrative, `  ${victim.name} is struck down by their own mirror image!`);
+			narrate(narrative, {
+				kind: "the victim is struck down by their own mirror image",
+				victimName: victim.name
+			});
 			state.mirror = null;
 		}
 	};
@@ -39753,7 +48552,13 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 		if (state.range === "melee") {
 			for (const [me, foe] of [[A, B], [B, A]]) if (me.burn > 0 && me.hp > 0 && foe.hp > 0) {
 				foe.hp -= me.burn;
-				narrate(narrative, `  🜏 ${pcPerkWord(me, "burn", "The aura")} sears ${foe.name} for ${me.burn}. (HP ${Math.max(0, Math.round(foe.hp))})`);
+				narrate(narrative, {
+					kind: "a guardian's aura sears the foe",
+					meBurnWord: pcPerkWord(me, "burn", "The aura"),
+					foeName: foe.name,
+					meBurn: me.burn,
+					foeHp: Math.max(0, Math.round(foe.hp))
+				});
 			}
 		}
 		_stepCheck(_sm);
@@ -39767,7 +48572,11 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 			if (caster && caster.ref && hasItemBase(caster.ref, "Mirror Shard")) disbelief *= .5;
 			disbelief = Math.max(2, Math.min(90, disbelief));
 			if (kcRng() * 100 < disbelief) {
-				narrate(narrative, `  ✨ ${victim.name} sees through the illusion (${disbelief.toFixed(0)}% disbelief) — the phantom dissolves and the real fight resumes.`);
+				narrate(narrative, {
+					kind: "the victim sees through the illusion",
+					victimName: victim.name,
+					disbeliefPct: disbelief.toFixed(0)
+				});
 				state.mirror = null;
 			} else {
 				_mirrorExchange();
@@ -39792,9 +48601,19 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 				const hit = pcHitChance(turnContext, actor, foe);
 				if (kcRng() * 100 < hit) {
 					const dmg = pcMeleeDamage(actor, foe);
-					narrate(narrative, `  ⚔ ${actor.name} takes a free strike at ${foe.name}!`);
+					narrate(narrative, {
+						kind: "a fighter takes a free strike at the foe",
+						actorName: actor.name,
+						foeName: foe.name
+					});
 					const dealt = pcTakeHit(turnContext, foe, dmg, narrative, actor.name, "free strike");
-					if (dealt) narrate(narrative, `  ${actor.name}'s free strike lands for ${dealt} damage! (${foe.name} HP ${Math.max(0, Math.round(foe.hp))})`);
+					if (dealt) narrate(narrative, {
+						kind: "a fighter's free strike lands",
+						actorName: actor.name,
+						dealt,
+						foeName: foe.name,
+						foeHp: Math.max(0, Math.round(foe.hp))
+					});
 				}
 				free--;
 			}
@@ -39802,12 +48621,20 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 			if (foe.hp <= 0 && foe._rebirth) {
 				foe._rebirth = false;
 				foe.hp = Math.max(5, Math.round(foe.maxHp * .4));
-				narrate(narrative, `  🔥 ${foe.name} bursts into ash — then blazes back to life! (HP ${foe.hp})`);
+				narrate(narrative, {
+					kind: "the foe bursts into ash then blazes back to life",
+					foeName: foe.name,
+					foeHp: foe.hp
+				});
 			}
 			if (actor.hp <= 0 && actor._rebirth) {
 				actor._rebirth = false;
 				actor.hp = Math.max(5, Math.round(actor.maxHp * .4));
-				narrate(narrative, `  🔥 ${actor.name} bursts into ash — then blazes back to life! (HP ${actor.hp})`);
+				narrate(narrative, {
+					kind: "the foe bursts into ash then blazes back to life",
+					foeName: actor.name,
+					foeHp: actor.hp
+				});
 			}
 			if (state.fledBy || state.parley || state.stoleBy || foe.hp <= 0 || actor.hp <= 0) break;
 		}
@@ -39820,7 +48647,13 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 			cbt._secondWindUsed = true;
 			const back = Math.max(1, Math.round((cbt.maxHp || 20) * tt.secondWind));
 			cbt.hp = Math.min(cbt.maxHp || 20, cbt.hp + back);
-			narrate(narrative, `  💪 ${cbt.name} (${cbt.temper}) finds their second wind and fights on — ${back} HP recovered. (HP ${dispFloor(cbt.hp)})`);
+			narrate(narrative, {
+				kind: "a fighter finds their second wind and fights on",
+				cbtName: cbt.name,
+				cbtTemper: cbt.temper,
+				back,
+				cbtHp: dispFloor(cbt.hp)
+			});
 		}
 		if (!state.fledBy && !state.parley && !state.stoleBy) {
 			for (const cbt of [A, B]) {
@@ -39868,10 +48701,44 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 			const _k = String(fm && fm.kind || "");
 			const _cls = /^(blow|free strike|counterattack)$/i.test(_k) ? "melee" : /arrow|shot/i.test(_k) ? "ranged" : "power";
 			const _pow = _k && _cls === "power" ? _k : "its power";
-			const plea = !_blow ? `  🙏 As their strength fails and death closes in, ${who} begs ${foeWho} for mercy!${_odds}` : _cls === "ranged" ? _pick([`  🙏 As ${foeWho} draws for the killing shot, ${who} throws down their weapon and begs for their life!${_odds}`, `  🙏 Pinned and bleeding, ${who} cries out for mercy before the last arrow can fly!${_odds}`]) : _cls === "power" ? `  🙏 As ${foeWho} readies ${_pow} for the killing stroke, ${who} falls to their knees and begs to be spared!${_odds}` : _pick([
-				`  🙏 Beaten and bleeding, ${who} sees the killing blow coming — they throw down their weapon and beg ${foeWho} for their life!${_odds}`,
-				`  🙏 As ${foeWho} closes for the kill, ${who} flings up their hands and cries out for mercy!${_odds}`,
-				`  🙏 ${who} drops to their knees before the final stroke can fall, pleading to be spared!${_odds}`
+			const plea = !_blow ? {
+				kind: "as their strength fails a fighter begs the foe for mercy",
+				who,
+				foeWho,
+				odds: _odds
+			} : _cls === "ranged" ? _pick([{
+				kind: "as the foe draws for the killing shot a fighter begs for their life",
+				foeWho,
+				who,
+				odds: _odds
+			}, {
+				kind: "pinned and bleeding a fighter cries out for mercy",
+				who,
+				odds: _odds
+			}]) : _cls === "power" ? {
+				kind: "as the foe readies a power for the killing stroke a fighter begs",
+				foeWho,
+				pow: _pow,
+				who,
+				odds: _odds
+			} : _pick([
+				{
+					kind: "beaten and bleeding a fighter sees the killing blow coming",
+					who,
+					foeWho,
+					odds: _odds
+				},
+				{
+					kind: "as the foe closes for the kill a fighter cries out for mercy",
+					foeWho,
+					who,
+					odds: _odds
+				},
+				{
+					kind: "a fighter drops to their knees before the final stroke",
+					who,
+					odds: _odds
+				}
 			]);
 			const _falls = _cls === "ranged" ? " The arrow flies." : _cls === "power" ? ` ${_pow === "its power" ? "The power" : "The " + _pow} is loosed.` : " The blow falls.";
 			if (_granted) {
@@ -39879,15 +48746,47 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 				if (cbt.ref) cbt.ref.hp = 1;
 				cbt._begged = true;
 				state.fledBy = cbt;
-				const spared = foe.kind === "monster" ? `  ${FoeWho} pauses over its prey — and, for reasons of its own, lets ${who} crawl away. ${who} flees the field with their life. (HP 1)` : !_blow ? `  ${FoeWho} lets them go — ${who} staggers from the field with their life. (HP 1)` : _cls === "ranged" ? `  ${FoeWho} lowers their bow. "Go, while you still can." ${who} flees the field with their life. (HP 1)` : _cls === "power" ? `  ${FoeWho} lets ${_pow} die unspent and waves ${who} away. ${who} flees the field with their life. (HP 1)` : _pick([
-					`  ${FoeWho} stays the blow. "Go — and never let me see your face again." ${who} scrambles away and flees the field with their life. (HP 1)`,
-					`  ${FoeWho} lowers their weapon in disgust and lets ${who} go. ${who} flees the field, alive but broken. (HP 1)`,
-					`  The stroke never falls — ${foeWho} spares them. ${who} stumbles from the field with their life. (HP 1)`
+				const spared = foe.kind === "monster" ? {
+					kind: "the guardian pauses over its prey and lets a fighter crawl away",
+					foeWho: FoeWho,
+					who,
+					who2: who
+				} : !_blow ? {
+					kind: "the foe lets a fighter go",
+					foeWho: FoeWho,
+					who
+				} : _cls === "ranged" ? {
+					kind: "the foe lowers their bow and lets a fighter go",
+					foeWho: FoeWho,
+					who
+				} : _cls === "power" ? {
+					kind: "the foe lets a power die unspent",
+					foeWho: FoeWho,
+					pow: _pow,
+					who,
+					who2: who
+				} : _pick([
+					{
+						kind: "the foe stays the blow and lets a fighter go",
+						foeWho: FoeWho,
+						who
+					},
+					{
+						kind: "the foe lowers their weapon in disgust and lets a fighter go",
+						foeWho: FoeWho,
+						who,
+						who2: who
+					},
+					{
+						kind: "the stroke never falls and the foe spares a fighter",
+						foeWho,
+						who
+					}
 				]);
 				if (_blow) narrateAll(narrative, [
 					plea,
 					spared,
-					...takeBackLinesFrom(narrative, at).filter((x) => typeof x !== "string" || /^\s*(📈|🎉|💰)/.test(x))
+					...takeBackLinesFrom(narrative, at).filter((x) => typeof x === "string" ? /^\s*(📈|🎉|💰)/.test(x) : !(isAPersonalCombatsLine(x) && isALineForEveryoneInTheFight(x)))
 				]);
 				else {
 					narrate(narrative, plea);
@@ -39902,15 +48801,39 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 						applyItemMaxHp(cbt.ref, _lost);
 						foe.ref.items = foe.ref.items || [];
 						foe.ref.items.push(_lost);
-						narrate(narrative, `  🎒 ${cbt.name} surrenders ${_lost.name} to ${foe.name} as the price of mercy.`);
+						narrate(narrative, {
+							kind: "a fighter surrenders an item to the foe as the price of mercy",
+							cbtName: cbt.name,
+							lostName: _lost.name,
+							foeName: foe.name
+						});
 						{
 							const _gn = gainedItemNote(foe.ref, [_lost]);
-							if (_gn) narrate(narrative, "  " + _gn);
+							if (_gn) narrate(narrative, {
+								kind: "a gained item noted",
+								gainedItemNote: _gn
+							});
 						}
 					}
 				}
 			} else {
-				const refused = foe.kind === "monster" ? `  ${FoeWho} knows nothing of mercy.${_blow ? _falls : ""}` : foeAlign === "Evil" || foeAlign === "Undead" ? `  ${FoeWho} laughs at the plea.${_blow ? _falls : ""}` : _pick([`  ${FoeWho} is deaf to the plea.${_blow ? _falls : ""}`, `  There is no pity in ${foeWho} today.${_blow ? _falls : ""}`]);
+				const refused = foe.kind === "monster" ? {
+					kind: "the foe knows nothing of mercy",
+					foeWho: FoeWho,
+					wordsIfABlowFalls: _blow ? _falls : ""
+				} : foeAlign === "Evil" || foeAlign === "Undead" ? {
+					kind: "the foe laughs at the plea",
+					foeWho: FoeWho,
+					wordsIfABlowFalls: _blow ? _falls : ""
+				} : _pick([{
+					kind: "the foe is deaf to the plea",
+					foeWho: FoeWho,
+					wordsIfABlowFalls: _blow ? _falls : ""
+				}, {
+					kind: "there is no pity in the foe",
+					foeWho,
+					wordsIfABlowFalls: _blow ? _falls : ""
+				}]);
 				if (_blow) {
 					narrateAt(narrative, at, [plea, refused]);
 					_mercyShift.push([at, 2]);
@@ -40053,7 +48976,7 @@ function provDistance(turnContext, fromId, toId) {
 		for (const p of frontier) {
 			if (!p) continue;
 			for (const nb of getNeighborsP(p, G.world.cols, G.world.rows, G.world.provinces)) {
-				if (!nb || seen.has(nb.id)) continue;
+				if (seen.has(nb.id)) continue;
 				seen.add(nb.id);
 				if (nb.id === toId) {
 					_distCache.set(key, d);
@@ -40109,7 +49032,7 @@ function stepTowardPath(turnContext, c, toId, extraFilter) {
 		};
 		const next = [];
 		for (const e of frontier) for (const nb of getNeighborsP(e.p, G.world.cols, G.world.rows, G.world.provinces)) {
-			if (!nb || seen.has(nb.id) || !passable(nb) || !edgeOk(e.p, nb)) continue;
+			if (seen.has(nb.id) || !passable(nb) || !edgeOk(e.p, nb)) continue;
 			seen.add(nb.id);
 			next.push({
 				p: nb,
@@ -40411,6 +49334,7 @@ function applyMoveInterlocks(turnContext, ph, intents) {
 				actor: def.player,
 				realms: [def.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: def.fromId
 		});
 		else emit(turnContext, {
@@ -40420,6 +49344,7 @@ function applyMoveInterlocks(turnContext, ph, intents) {
 				actor: def.player,
 				realms: [def.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: def.fromId
 		});
 	});
@@ -40752,7 +49677,12 @@ function syncLeaderCopy(turnContext, real, copy) {
 	syncMaxHp(real, G.players);
 }
 function commandHandoverLine(leader, deflt, provName) {
-	return `\u{1F396} ${leader.name} takes command of the combined host at ${provName} \u2014 the most seasoned captain on the field, and ${deflt.name}'s troops fall in behind him.`;
+	return {
+		kind: "the most seasoned captain takes command of the combined host",
+		leaderName: leader.name,
+		provName,
+		previousCommanderName: deflt.name
+	};
 }
 function armyTotalStr(turnContext, ch, prov) {
 	const { G } = turnContext;
@@ -40802,6 +49732,7 @@ function settleRalliedGarrisons(turnContext) {
 				realms: [prov.owner].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	});
@@ -41348,7 +50279,8 @@ function forceMarker(turnContext, name, playerIdx, role, armies, verbText, opts)
 			_nm = `${_dn}'s leaderless host` + _nm.slice(_dn.length);
 		}
 	}
-	return "⚑FORCE⚑" + JSON.stringify({
+	return {
+		kind: "a force drawn up for battle",
 		name: _nm,
 		color,
 		neutral: playerIdx == null,
@@ -41356,7 +50288,7 @@ function forceMarker(turnContext, name, playerIdx, role, armies, verbText, opts)
 		role: role || "",
 		verb: verbText || "",
 		armies: arr
-	});
+	};
 }
 function battlecryOf(ch) {
 	const n = ch && ch.encounterPlan && ch.encounterPlan.notes;
@@ -41365,7 +50297,12 @@ function battlecryOf(ch) {
 function pushBattlecry(narrative, ch, foeName) {
 	const cry = battlecryOf(ch);
 	if (!cry) return;
-	narrate(narrative, `📣 ${ch.name} cries out to ${foeName}: “${cry}”`);
+	narrate(narrative, {
+		kind: "a hero cries out his battlecry to his foe",
+		heroName: ch.name,
+		foeName,
+		battlecry: cry
+	});
 }
 function druidShortfallLine(turnContext, sideName, ch, force, align) {
 	if (!ch) return null;
@@ -41382,7 +50319,13 @@ function druidShortfallLine(turnContext, sideName, ch, force, align) {
 	});
 	if (!m.size) return null;
 	const n = [...m.values()].reduce((s, x) => s + x, 0);
-	return `⚠ Druid shortfall — ${sideName} cannot fully command ${n} unit${n !== 1 ? "s" : ""}: ${[...m].map(([k, c]) => c > 1 ? `${c}× ${k}` : k).join(", ")}.`;
+	return {
+		kind: "a side's Druid cannot fully command its units",
+		sideName,
+		unitCount: n,
+		unitsPlural: n !== 1 ? "s" : "",
+		shortfallUnitsWords: [...m].map(([k, c]) => c > 1 ? `${c}× ${k}` : k).join(", ")
+	};
 }
 function terrainNoteList(force, terrain) {
 	const m = /* @__PURE__ */ new Map();
@@ -41409,43 +50352,23 @@ function emitBattle(turnContext, battle, prov, ph, participants, opts) {
 		},
 		province: provinceId,
 		phase: ph != null ? ph : void 0,
-		hero: opts.charId !== void 0 ? opts.charId : null,
+		hero: opts.charId ?? THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		heroes: opts.charIds || null
 	};
 	const _bid = ++turnContext._battleSeq;
 	const _lines = battle && battle.narrative || [];
-	const _texts = _lines.map(narrText);
-	const _tiers = battleLineTiers(_texts);
-	let _tally = null;
-	try {
-		_tally = battleTallyLine(_texts);
-	} catch (_e) {
-		_tally = null;
-	}
-	let _tallyDone = false;
-	_lines.forEach((line, i) => {
-		if (_tally && !_tallyDone && i === _tiers.casIdx) {
-			emit(turnContext, {
-				...fight,
-				text: _tally,
-				battle: {
-					id: _bid,
-					tier: "t"
-				}
-			});
-			_tallyDone = true;
-		}
+	_lines.forEach((line) => {
 		emitNarrLine(turnContext, line, {
 			...fight,
 			battle: {
 				id: _bid,
-				tier: _tiers.t[i] || "k"
+				tier: A_TIER_WORKED_OUT_FROM_THE_WORDS_OF_THE_BATTLES_LINES
 			}
 		});
 	});
-	if (_tally && !_tallyDone) emit(turnContext, {
+	if (_lines.some(isALineForEveryoneInTheFight)) emit(turnContext, {
 		...fight,
-		text: _tally,
+		fact: THE_PLACE_OF_A_BATTLES_LOSSES_TALLY,
 		battle: {
 			id: _bid,
 			tier: "t"
@@ -41454,7 +50377,7 @@ function emitBattle(turnContext, battle, prov, ph, participants, opts) {
 	const sTxt = opts.summaryText || battle && battle.summaryText;
 	if (sTxt) emit(turnContext, {
 		...fight,
-		text: sTxt,
+		...theWordsOrTheFactOfALine(sTxt),
 		battle: {
 			id: _bid,
 			tier: "s"
@@ -41643,7 +50566,7 @@ function spreadTerror(turnContext, battleProv, byPlayer, narrative) {
 	const targets = [battleProv, ...getNeighborsP(battleProv, G.world.cols, G.world.rows, G.world.provinces)];
 	const seen = /* @__PURE__ */ new Set();
 	targets.forEach((tp) => {
-		if (!tp || seen.has(tp.id)) return;
+		if (seen.has(tp.id)) return;
 		seen.add(tp.id);
 		tp._terrorStacks = Math.min(TERROR_MAX_STACKS, (tp._terrorStacks || 0) + 1);
 		tp._terrorTurn = G.turn;
@@ -41651,8 +50574,13 @@ function spreadTerror(turnContext, battleProv, byPlayer, narrative) {
 		tp._terrorPct = TERROR_PCT_PER_STACK + discSum(turnContext, byPlayer, "terror", "pct");
 	});
 	if (narrative) {
-		const adjNames = getNeighborsP(battleProv, G.world.cols, G.world.rows, G.world.provinces).map((n) => n && n.name).filter(Boolean);
-		narrate(narrative, `💀 Terror radiates from ${battleProv.name}${adjNames.length ? ` into the surrounding lands (${adjNames.join(", ")})` : ""} — any army that next defends there fights demoralised (−${dispFloor((TERROR_PCT_PER_STACK + discSum(turnContext, byPlayer, "terror", "pct")) * 100)}% per terror, stacking).`);
+		const adjNames = getNeighborsP(battleProv, G.world.cols, G.world.rows, G.world.provinces).map((n) => n.name).filter(Boolean);
+		narrate(narrative, {
+			kind: "terror radiates from a province after an evil victory",
+			provName: battleProv.name,
+			wordsIfTheSurroundingLands: adjNames.length ? ` into the surrounding lands (${adjNames.join(", ")})` : "",
+			terrorPctPerStack: dispFloor((TERROR_PCT_PER_STACK + discSum(turnContext, byPlayer, "terror", "pct")) * 100)
+		});
 	}
 }
 function consumeTerror(prov, defenders, narrative) {
@@ -41669,7 +50597,13 @@ function consumeTerror(prov, defenders, narrative) {
 	(defenders || []).forEach((d) => {
 		d._terrorMult = Math.max(0, 1 - frac);
 	});
-	if (narrative) narrate(narrative, `💀 Terror lingers in ${prov.name} — defenders fight at −${dispFloor(frac * 100)}% strength (${stacks} terror stack${stacks !== 1 ? "s" : ""} from earlier Evil victories nearby).`);
+	if (narrative) narrate(narrative, {
+		kind: "terror lingers in a province and its defenders fight demoralised",
+		provName: prov.name,
+		terrorPct: dispFloor(frac * 100),
+		terrorStacks: stacks,
+		terrorStacksPlural: stacks !== 1 ? "s" : ""
+	});
 	delete prov._terrorStacks;
 	delete prov._terrorTurn;
 	delete prov._terrorisedBy;
@@ -41729,7 +50663,12 @@ function bloodHarvest(turnContext, winner, destroyed, narrative) {
 	const _pl = G.players[winner.player];
 	const _take = destroyed * (BLOOD_HARVEST_PER_UNIT + discSum(turnContext, winner.player, "bloodHarvest", "gold"));
 	_pl.gold = (_pl.gold || 0) + _take;
-	narrate(narrative, `\u{1FA78} Blood Harvest — the old gods claim their due from ${destroyed} fallen enemy unit${destroyed !== 1 ? "s" : ""}: +${_take}g in offerings.`);
+	narrate(narrative, {
+		kind: "the blood harvest claims offerings from the fallen enemy units",
+		fallenUnitCount: destroyed,
+		fallenUnitsPlural: destroyed !== 1 ? "s" : "",
+		offeringsGold: _take
+	});
 }
 function ironThroneRaise(turnContext, winnerChar, deadUnits, narrative) {
 	const { G } = turnContext;
@@ -41753,7 +50692,10 @@ function ironThroneRaise(turnContext, winnerChar, deadUnits, narrative) {
 			_r++;
 		}
 	});
-	if (_r > 0 && narrative) narrate(narrative, `\u{1F480} Iron Throne of Skulls — ${_r} of the enemy's fallen claw their way up to serve as your skeletons.`);
+	if (_r > 0 && narrative) narrate(narrative, {
+		kind: "the iron throne of skulls raises the enemy's fallen as skeletons",
+		raisedCount: _r
+	});
 }
 //#endregion
 //#region src/engine/battle/raid-the-coast-and-landing-parties.ts
@@ -41799,7 +50741,11 @@ var _COMBAT_ITEM_STATS = /* @__PURE__ */ new Set([
 function magicItemsLine(ch) {
 	const its = activeItems(ch).filter((it) => it && it.name && (!it.effect || _COMBAT_ITEM_STATS.has(it.effect.stat) || it.effect.combat));
 	if (!its.length) return null;
-	return `  ⚜ ${ch.name} bears ${its.map((it) => it.name + (isLegendaryItem(it) ? " (Legendary)" : "")).join(", ")} into the fight.`;
+	return {
+		kind: "a hero bears magic items into the fight",
+		chName: ch.name,
+		itemNames: its.map((it) => it.name + (isLegendaryItem(it) ? " (Legendary)" : "")).join(", ")
+	};
 }
 var DUEL_FLEE_DROP = .5;
 function duelFleeItemDrop(turnContext, runnerCbt, stayerCbt, narrative) {
@@ -41811,7 +50757,13 @@ function duelFleeItemDrop(turnContext, runnerCbt, stayerCbt, narrative) {
 	const pool = transferableItems(runner.items || []);
 	if (!pool.length) return null;
 	const roll = d100(), chance = Math.round(DUEL_FLEE_DROP * 100);
-	narrate(narrative, `  ${runner.name} scrambles clear — ${chance}% chance of dropping something in the rout [roll ${roll}${roll <= chance ? " ✓" : " ✗"}]`);
+	narrate(narrative, {
+		kind: "the runner scrambles clear with a chance of dropping something",
+		runnerName: runner.name,
+		chance,
+		roll,
+		rollChanceMark: roll <= chance ? " ✓" : " ✗"
+	});
 	if (roll > chance) return null;
 	const it = pool[Math.floor(kcRng() * pool.length)];
 	runner.items = (runner.items || []).filter((x) => x !== it);
@@ -41819,10 +50771,19 @@ function duelFleeItemDrop(turnContext, runnerCbt, stayerCbt, narrative) {
 	delete it.equipped;
 	stayer.items = (stayer.items || []).concat([it]);
 	if (stayerCbt.ref !== stayer && Array.isArray(stayerCbt.ref.items)) stayerCbt.ref.items = stayerCbt.ref.items.concat([it]);
-	narrate(narrative, `  💎 In the rout ${runner.name} drops ${it.name}${isLegendaryItem(it) ? " (Legendary)" : ""} — ${stayer.name} claims it.`);
+	narrate(narrative, {
+		kind: "in the rout the runner drops an item the one who stays claims",
+		runnerName: runner.name,
+		itName: it.name,
+		wordsIfIsLegendaryItemIt: isLegendaryItem(it) ? " (Legendary)" : "",
+		stayerName: stayer.name
+	});
 	{
 		const _gn = gainedItemNote(stayer, [it]);
-		if (_gn) narrate(narrative, "  " + _gn);
+		if (_gn) narrate(narrative, {
+			kind: "a gained item noted",
+			gainedItemNote: _gn
+		});
 	}
 	return it;
 }
@@ -41844,7 +50805,11 @@ function resolveDuel(turnContext, atk, def, narrative) {
 	narrateAll(narrative, res.narrative);
 	if (res.fledBy) {
 		const runner = res.fledBy.ref, stayer = runner === atk ? def : atk;
-		narrate(narrative, `${runner.name} breaks off the duel and slips away — ${stayer.name} holds the field.`);
+		narrate(narrative, {
+			kind: "the runner breaks off the duel and slips away",
+			runnerName: runner.name,
+			stayerName: stayer.name
+		});
 		duelFleeItemDrop(turnContext, res.fledBy, res.fledBy === A ? B : A, narrative);
 		return {
 			fled: runner,
@@ -41858,7 +50823,15 @@ function resolveDuel(turnContext, atk, def, narrative) {
 }
 function resolveCharVsChar(turnContext, atk, def, atkTactics, defTactics, prov, effStat, rng, G) {
 	const narrative = [];
-	narrate(narrative, `${atk.name} (${atk.race}, ${atk.temper}) meets ${def.name} (${def.race}, ${def.player !== null ? G.players[def.player]?.name : "wandering"}) in a personal encounter.`);
+	narrate(narrative, {
+		kind: "the attacker meets the defender in a personal encounter",
+		atkName: atk.name,
+		atkRace: atk.race,
+		atkTemper: atk.temper,
+		defName: def.name,
+		defRace: def.race,
+		defRealmName: def.player !== null ? G.players[def.player]?.name : "wandering"
+	});
 	pushBattlecry(narrative, atk, def.name);
 	pushBattlecry(narrative, def, atk.name);
 	const A = pcCharCombatant(turnContext, atk), B = pcCharCombatant(turnContext, def);
@@ -41867,37 +50840,68 @@ function resolveCharVsChar(turnContext, atk, def, atkTactics, defTactics, prov, 
 	const res = resolvePersonalCombat(turnContext, A, B, { maxRounds: 20 });
 	narrateAll(narrative, res.narrative);
 	const _pickProof = (x) => perkTier(x, "thief") >= 3;
-	if (res.stoleBy === A && def.player !== null && atk.player !== null && _pickProof(def)) narrate(narrative, `${atk.name} goes for ${def.name}'s purse and comes away with nothing — a master thief keeps their own coin far better hidden.`);
-	else if (res.stoleBy === B && atk.player !== null && def.player !== null && _pickProof(atk)) narrate(narrative, `${def.name} goes for ${atk.name}'s purse and comes away with nothing — a master thief keeps their own coin far better hidden.`);
+	if (res.stoleBy === A && def.player !== null && atk.player !== null && _pickProof(def)) narrate(narrative, {
+		kind: "the attacker goes for the defender's purse and comes away with nothing",
+		atkName: atk.name,
+		defName: def.name
+	});
+	else if (res.stoleBy === B && atk.player !== null && def.player !== null && _pickProof(atk)) narrate(narrative, {
+		kind: "the attacker goes for the defender's purse and comes away with nothing",
+		atkName: def.name,
+		defName: atk.name
+	});
 	else if (res.stoleBy === A && def.player !== null && atk.player !== null) {
 		const purse = G.players[def.player]?.gold || 0;
 		const stolen = Math.min(purse, rng(1, 5));
 		if (stolen > 0) {
 			G.players[def.player].gold -= stolen;
 			G.players[atk.player].gold = (G.players[atk.player].gold || 0) + stolen;
-			narrate(narrative, `${atk.name} lifts ${stolen}g from ${def.name}'s purse and is gone.`);
-		} else narrate(narrative, `${atk.name} finds ${def.name}'s purse empty.`);
+			narrate(narrative, {
+				kind: "the attacker lifts gold from the defender's purse",
+				atkName: atk.name,
+				stolen,
+				defName: def.name
+			});
+		} else narrate(narrative, {
+			kind: "the attacker finds the defender's purse empty",
+			atkName: atk.name,
+			defName: def.name
+		});
 	} else if (res.stoleBy === B && atk.player !== null && def.player !== null) {
 		const purse = G.players[atk.player]?.gold || 0;
 		const stolen = Math.min(purse, rng(1, 5));
 		if (stolen > 0) {
 			G.players[atk.player].gold -= stolen;
 			G.players[def.player].gold = (G.players[def.player].gold || 0) + stolen;
-			narrate(narrative, `${def.name} lifts ${stolen}g from ${atk.name}'s purse and is gone.`);
+			narrate(narrative, {
+				kind: "the attacker lifts gold from the defender's purse",
+				atkName: def.name,
+				stolen,
+				defName: atk.name
+			});
 		}
 	}
 	if (res.fledBy) {
-		narrate(narrative, `${res.fledBy.name} breaks away and escapes the encounter.`);
+		narrate(narrative, {
+			kind: "the one who flees breaks away and escapes",
+			resFledByName: res.fledBy.name
+		});
 		duelFleeItemDrop(turnContext, res.fledBy, res.fledBy === A ? B : A, narrative);
 	}
 	const atkHp = res.aHp, defHp = res.bHp;
 	let atkKilled = false, defKilled = false;
 	if (atkHp <= 0) {
-		narrate(narrative, `${atk.name} is overwhelmed!`);
+		narrate(narrative, {
+			kind: "the attacker is overwhelmed",
+			atkName: atk.name
+		});
 		atkKilled = atk.isKing ? false : kcRng() < .3;
 	}
 	if (defHp <= 0) {
-		narrate(narrative, `${def.name} is overcome!`);
+		narrate(narrative, {
+			kind: "the defender is overcome",
+			defName: def.name
+		});
 		defKilled = !def.isKing && def.player !== null && kcRng() < .3;
 	}
 	return {
@@ -41925,6 +50929,7 @@ function disperseDeadCharArmies(turnContext, deadChar) {
 				realms: deadChar.player != null ? [deadChar.player] : [],
 				seen: prov?.id != null ? "there" : "world"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov?.id
 		});
 	}
@@ -41953,7 +50958,8 @@ function disperseDeadCharArmies(turnContext, deadChar) {
 				audience: {
 					actor: deadChar.player,
 					realms: deadChar.player != null ? [deadChar.player] : []
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		};
 		if (deadChar.player === null) scatterAsMercs();
@@ -41966,6 +50972,7 @@ function disperseDeadCharArmies(turnContext, deadChar) {
 					actor: deadChar.player,
 					realms: [deadChar.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (isOpenSea(prov) && prov.owner == null && !(prov.neutralDefenders || []).length) {
@@ -41983,6 +50990,7 @@ function disperseDeadCharArmies(turnContext, deadChar) {
 					actor: deadChar.player,
 					realms: [deadChar.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -41998,6 +51006,7 @@ function disperseDeadCharArmies(turnContext, deadChar) {
 						actor: deadChar.player,
 						realms: [deadChar.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: safeProv.id
 				});
 			} else scatterAsMercs();
@@ -42041,6 +51050,7 @@ function abandonHostOnFlight(turnContext, c) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return left.length;
@@ -42052,6 +51062,7 @@ function abandonHostOnFlight(turnContext, c) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	disperseDeadCharArmies(turnContext, {
@@ -42117,6 +51128,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				realms: deadChar.player != null ? [deadChar.player] : [],
 				seen: deadChar.location != null ? "battle" : "world"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: deadChar.location != null ? deadChar.location : void 0
 		});
 		return false;
@@ -42134,6 +51146,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				realms: [],
 				seen: deadChar.location != null ? "battle" : "world"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: deadChar.location != null ? deadChar.location : void 0
 		});
 		return false;
@@ -42206,6 +51219,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				realms: deadChar.player != null ? [deadChar.player] : [],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	}
@@ -42234,7 +51248,8 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				audience: {
 					actor: deadChar.player,
 					realms: [deadChar.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			if (recipient.player != null && recipient.player !== deadChar.player) emit(turnContext, {
 				type: "system",
@@ -42267,7 +51282,8 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 			audience: {
 				actor: deadChar.player,
 				realms: [deadChar.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	}
 	deadChar.items = [];
@@ -42293,6 +51309,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 					realms: [deadChar.player],
 					seen: deadChar.location != null ? "there" : "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: deadChar.location != null ? deadChar.location : void 0
 			});
 		} else if (pKing && pKing.alignment === "Divine") emit(turnContext, {
@@ -42302,6 +51319,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				actor: deadChar.player,
 				realms: [deadChar.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: deadChar.location != null ? deadChar.location : void 0
 		});
 		if (pKing) {
@@ -42364,7 +51382,11 @@ function preBattleDuel(turnContext, atk, def, narrative) {
 	const demoralise = (who, why) => {
 		if (who === atk) atkMorale = DUEL_MORALE_PENALTY;
 		else defMorale = DUEL_MORALE_PENALTY;
-		narrate(narrative, `\u{1F4C9} ${who.name}'s force is demoralised — ${why} (−20% strength this battle).`);
+		narrate(narrative, {
+			kind: "a commander's force is demoralised",
+			commanderName: who.name,
+			why
+		});
 	};
 	ensureEncounterPlan(turnContext, atk);
 	ensureEncounterPlan(turnContext, def);
@@ -42379,16 +51401,27 @@ function preBattleDuel(turnContext, atk, def, narrative) {
 	const challenger = atkStance === "challenge" ? atk : def;
 	const challenged = challenger === atk ? def : atk;
 	const challengedStance = challenged === atk ? atkStance : defStance;
-	narrate(narrative, `— ${challenger.name} rides out and challenges ${challenged.name} to single combat. —`);
+	narrate(narrative, {
+		kind: "a commander rides out and challenges the other to single combat",
+		challengerName: challenger.name,
+		challengedName: challenged.name
+	});
 	if (challengedStance === "refuse") {
-		narrate(narrative, `${challenged.name} will not answer the call, and the watching ranks see it.`);
+		narrate(narrative, {
+			kind: "the challenged commander will not answer the call",
+			challengedName: challenged.name
+		});
 		demoralise(challenged, `their commander refused the challenge`);
 		return {
 			atkMorale,
 			defMorale
 		};
 	}
-	narrate(narrative, `\u2694 — Personal duel: ${challenger.name} vs ${challenged.name} —`);
+	narrate(narrative, {
+		kind: "a personal duel before the battle begins",
+		challengerName: challenger.name,
+		challengedName: challenged.name
+	});
 	pushBattlecry(narrative, challenger, challenged.name);
 	pushBattlecry(narrative, challenged, challenger.name);
 	const duelResult = resolveDuel(turnContext, challenger, challenged, narrative);
@@ -42415,9 +51448,19 @@ function preBattleDuel(turnContext, atk, def, narrative) {
 			lines: []
 		};
 		const _duelDied = handleHeroDeath(turnContext, realLoser, realWinner, _dOpts);
-		narrate(narrative, _duelDied === false && _dOpts.outcome === "surgery" ? `\u{1FA79} ${loser.name} falls in the duel — at death's door, but not slain.` : `\u{1F480} ${loser.name} is slain in the duel!`);
+		narrate(narrative, _duelDied === false && _dOpts.outcome === "surgery" ? {
+			kind: "the duel's loser falls at death's door but is not slain",
+			loserName: String(loser.name)
+		} : {
+			kind: "the duel's loser is slain",
+			loserName: String(loser.name)
+		});
 		_dOpts.lines.forEach((l) => {
-			if (l.priv != null) narrateTo(narrative, l.priv, void 0, l.text);
+			if (l.priv != null) narrate(narrative, {
+				kind: "the surgeons reach a fallen duellist too late, for his realm alone",
+				realm: l.priv,
+				words: l.text
+			});
 			else narrate(narrative, l.text);
 		});
 		demoralise(loser, `their commander fell in single combat`);
@@ -42449,7 +51492,7 @@ function preBattleDuel(turnContext, atk, def, narrative) {
 	} else if (duelResult.fled) {
 		demoralise(duelResult.fled, `their commander broke off the duel`);
 		if (duelResult.heldField) awardWinHp(turnContext, duelResult.heldField, narrative, "duel");
-	} else narrate(narrative, `The duel ends inconclusively — both commanders live to fight on, and neither host loses heart.`);
+	} else narrate(narrative, { kind: "the duel ends inconclusively" });
 	return {
 		atkMorale,
 		defMorale,
@@ -42537,11 +51580,25 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	injectPhantoms(c, realCharOf(turnContext, c));
 	const _npcOwnerName = prov.owner != null && G.players[prov.owner] ? G.players[prov.owner].name || null : null;
 	const _npcHeldBy = neutralGuardHero ? `${neutralGuardHero.name.replace(" (wandering)", "")} and the local defenders` : _npcOwnerName ? `${_npcOwnerName}'s garrison` : `its neutral defenders`;
-	if (!c._resumeBattle) narrate(narrative, `➡️ ${c.name}${c.player != null ? ` (${G.players[c.player]?.name})` : ""} moves into ${prov.name}, held by ${_npcHeldBy} — a battle is initiated.`);
+	if (!c._resumeBattle) narrate(narrative, {
+		kind: "the attacker moves into a province held by its defenders and a battle is initiated",
+		cName: c.name,
+		wordsOfTheAttackersRealm: c.player != null ? ` (${G.players[c.player]?.name})` : "",
+		provName: prov.name,
+		heldByName: _npcHeldBy
+	});
 	const _fearAtk = reignOfFearHere(prov, c.player);
 	consumeTerror(prov, defenders, narrative);
-	if (_fearAtk && (c.player != null ? G.players[c.player]?.alignment : null) === "Evil" && armies.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, `💀 Reign of Fear — ${prov.name} still cowers under ${c.name}'s Terror, and the monsters of the host fight at ×${REIGN_OF_FEAR_MULT}.`);
-	narrate(narrative, `⚔ **Battle for ${prov.name}**`);
+	if (_fearAtk && (c.player != null ? G.players[c.player]?.alignment : null) === "Evil" && armies.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, {
+		kind: "the province still cowers under a reign of fear",
+		provName: prov.name,
+		terrorHeroName: c.name,
+		reignOfFearMultiplier: REIGN_OF_FEAR_MULT
+	});
+	narrate(narrative, {
+		kind: "the battle for a province begins",
+		provName: prov.name
+	});
 	{
 		const _ic = magicItemsLine(c);
 		if (_ic) narrate(narrative, _ic);
@@ -42561,7 +51618,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			coastal: provIsCoastal(G, prov),
 			reignOfFear: _fearAtk
 		}) : 0), 0));
-		narrate(narrative, forceMarker(turnContext, `${c.name}${c.player != null ? ` (${G.players[c.player]?.name})` : ""}`, c.player, "attacker", armies, `${pick(ATK_VERBS)} ${prov.name} — army strength ${_aS}, with`));
+		narrate(narrative, forceMarker(turnContext, `${c.name}${c.player != null ? ` (${G.players[c.player]?.name})` : ""}`, c.player, "attacker", armies, `${pick$1(ATK_VERBS)} ${prov.name} — army strength ${_aS}, with`));
 		const _dS = Math.round((defenders || []).reduce((t, a) => t + (a && !a._phantom ? armStr(turnContext, a, neutralGuardHero || null, prov.owner != null ? G.players[prov.owner]?.alignment : null, prov.terrain, {
 			force: defenders,
 			enemyForce: armies,
@@ -42580,8 +51637,14 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	}
 	const _npcAtkMorale = _npcDuel.atkMorale, _npcDefMorale = _npcDuel.defMorale;
 	const atkCmdrSlain = !!_npcDuel.atkSlain || c.alive === false, defCmdrSlain = !!_npcDuel.defSlain;
-	if (defCmdrSlain) narrate(narrative, `⚑ With ${neutralGuardHero.name.replace(" (wandering)", "")} slain before the host, a battle-worn sergeant of the garrison takes up the fallen banner — the defenders close ranks and fight on, leaderless but unbowed.`);
-	if (atkCmdrSlain) narrate(narrative, `⚑ With ${c.name} cut down before the lines were even joined, the eldest captain of the host takes command — the attack goes in regardless, though without their fallen leader's guiding hand.`);
+	if (defCmdrSlain) narrate(narrative, {
+		kind: "the guard is slain before his host, and a sergeant of the garrison takes up the banner",
+		guardName: neutralGuardHero.name.replace(" (wandering)", "")
+	});
+	if (atkCmdrSlain) narrate(narrative, {
+		kind: "the attacker is cut down before the lines join, and the eldest captain takes command",
+		cName: c.name
+	});
 	const cName = atkCmdrSlain ? `${c.name}'s leaderless host` : c.name;
 	const defHero = defCmdrSlain ? null : neutralGuardHero || null;
 	let tactSkill = atkCmdrSlain || c._tacticalNegated ? 0 : effStat(turnContext, c, "tactical") + (charMinor(turnContext, c, "strategist") ? 1 : 0);
@@ -42589,34 +51652,55 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	const tactBonus = Math.min(2, 1 + tactSkill * .2);
 	const isLandBattle = prov.terrain !== "sea";
 	isLandBattle && armies.filter((a) => !FLYING_TYPES.has(a.type) && !SEA_TYPES.has(a.type));
-	if (tactSkill > 0 && !isLandBattle) narrate(narrative, `📊 ${cName}'s Tactical command does not apply in sea terrain.`);
+	if (tactSkill > 0 && !isLandBattle) narrate(narrative, {
+		kind: "the attacker's Tactical command does not apply at sea",
+		cName
+	});
 	const effectiveTactBonus = isLandBattle ? tactBonus : 1;
 	let defBonus = 1.25;
 	{
 		const _sg = discSum(turnContext, c.player, "siege", "delta", (e) => !e.withTypes || (c.armies || []).some((a) => a && e.withTypes.includes(a.type)));
 		if (_sg > 0) {
 			defBonus = Math.max(1, defBonus - _sg);
-			narrate(narrative, `  🏰 ${cName}'s siegecraft wears down the defenders' fortifications (province bonus −${_sg.toFixed(2)}).`);
+			narrate(narrative, {
+				kind: "the attacker's siegecraft wears down the defenders' fortifications",
+				atkName: cName,
+				siegecraftReduction: _sg.toFixed(2)
+			});
 		}
 	}
 	if (prov.owner != null && prov.owner !== c.player && G.players[prov.owner]?.alignment === "Good") {
 		defBonus *= 1.1;
-		narrate(narrative, `✝ Righteous Defence — the defenders of ${prov.name} stand on ground they hold justly (+10% defence).`);
+		narrate(narrative, {
+			kind: "the defenders of a province defend ground held justly",
+			provName: prov.name
+		});
 	}
 	if (activeItems(c).some((it) => it.effect && it.effect.stat === "siegeBonus")) {
 		defBonus = 1 + (defBonus - 1) * .5;
-		narrate(narrative, `  🏰 ${cName}'s siege mastery halves the defenders' fortifications.`);
+		narrate(narrative, {
+			kind: "the attacker's siege mastery halves the defenders' fortifications",
+			atkName: cName
+		});
 	}
 	const _founderN = homeFounderOf(G, prov.id);
 	const isHome = _founderN != null && prov.owner === _founderN;
 	const atkHome = _founderN != null && c.player === _founderN && prov.owner !== _founderN;
-	if (isHome) narrate(narrative, `The defenders fight on home soil, gaining an additional ×1.2 bonus.`);
-	if (atkHome) narrate(narrative, `🏠 ${cName} fights to win back ${prov.name}, the realm's own capital — home ground lends the assault ×1.5 strength.`);
+	if (isHome) narrate(narrative, { kind: "the defenders fight on home soil" });
+	if (atkHome) narrate(narrative, {
+		kind: "the attacker fights to win back his realm's capital",
+		atkName: cName,
+		provName: prov.name
+	});
 	{
 		const _dOwn = prov.owner != null && prov.owner !== c.player ? Math.min(DISC_DEFOWN_CAP, discSum(turnContext, prov.owner, "defOwn", "pct", (e) => !e.home || homeFounderOf(G, prov.id) === prov.owner)) : 0;
 		if (_dOwn > 0) {
 			defBonus *= 1 + _dOwn;
-			narrate(narrative, `  🛡 ${G.players[prov.owner]?.name}'s realm holds its own ground the harder (+${dispFloor(_dOwn * 100)}% defence).`);
+			narrate(narrative, {
+				kind: "the defender's realm holds its own ground the harder",
+				defName: G.players[prov.owner]?.name,
+				ownGroundDefencePct: dispFloor(_dOwn * 100)
+			});
 		}
 	}
 	const homeBonus = isHome ? 1.2 : 1;
@@ -42642,7 +51726,16 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			const castChance = Math.min(95, SPELL_CAST_BASE + spellLvl * 10 + magicL8CastBonus(c) + discSum(turnContext, c.player, "cast", "pct", (e) => (!e.school || e.school === school) && (!e.ctx || e.ctx === "battle")));
 			const castRoll = d100();
 			telSpell(turnContext, c, spellName, school, spellLvl, castChance, castRoll, "battle");
-			narrate(narrative, `✨ **Pre-battle Magic: ${cName} casts ${spellName}** (${SKILL_LABELS[school] || school} ${spellLvl}) — cast chance ${castChance}% [roll ${castRoll}${castRoll <= castChance ? " ✓" : " ✗"}]`);
+			narrate(narrative, {
+				kind: "the attacker casts a spell before the battle against the defenders",
+				cName,
+				spellName,
+				schoolLabel: SKILL_LABELS[school] || school,
+				spellLevel: spellLvl,
+				castChance,
+				castRoll,
+				castMark: castRoll <= castChance ? " ✓" : " ✗"
+			});
 			if (castRoll <= castChance) {
 				if (spellName === "Fireball") {
 					if (defenders.length > 0) {
@@ -42652,30 +51745,48 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 							const cut = Math.max(1, Math.round(unitBaseStrength(d) * .5));
 							d._tempStrReduction = (d._tempStrReduction || 0) + cut;
 						});
-						narrate(narrative, `  🔥 Fireball engulfs the enemy's ${_fbHits.length > 1 ? "two strongest units" : "strongest unit"}, ${_fbHits.map((d) => d.unitName || d.type).join(" and ")} — halved this battle.`);
+						narrate(narrative, {
+							kind: "a fireball engulfs the defenders' strongest units",
+							fireballTargetsWords: _fbHits.length > 1 ? "two strongest units" : "strongest unit",
+							fireballHitUnitNames: _fbHits.map((d) => d.unitName || d.type).join(" and ")
+						});
 					}
 				} else if (spellName === "Telekinetic Storm") {
 					if (defHero) {
 						defHero._tacticalHalved = true;
 						defHero._tacticalMult = .5;
-						narrate(narrative, `  🌀 Telekinetic Storm scatters ${defHero.name}'s formations — their Tactical command is cut to half effectiveness this battle.`);
-					} else narrate(narrative, `  🌀 Telekinetic Storm rages, but these leaderless defenders have no tactical command to unmake.`);
+						narrate(narrative, {
+							kind: "a telekinetic storm scatters the enemy commander's formations",
+							enemyCommanderName: defHero.name
+						});
+					} else narrate(narrative, { kind: "a telekinetic storm finds no command among leaderless defenders" });
 				} else if (spellName === "Psychic Blast") {
 					if (defHero) {
 						defHero._druidNegated = true;
-						narrate(narrative, `  🧠 Psychic Blast severs ${defHero.name}'s bond with their beasts — their Druid skill is negated this battle.`);
-					} else narrate(narrative, `  🧠 Psychic Blast reaches out, but these defenders have no commander to unmake.`);
+						narrate(narrative, {
+							kind: "a psychic blast severs the enemy commander's bond with his beasts",
+							enemyCommanderName: defHero.name
+						});
+					} else narrate(narrative, { kind: "a psychic blast finds no commander among the defenders" });
 				} else if (spellName === "Lightning Bolt") {
 					const n = Math.min(defenders.length, Math.max(1, Math.min(spellLvl, 5)));
 					shuffleP(defenders).slice(0, n).forEach((d) => {
 						d._tempStrReduction = (d._tempStrReduction || 0) + Math.max(1, Math.round(unitBaseStrength(d) * .2));
 					});
-					narrate(narrative, `  ⚡ Lightning Bolt sears ${n} enemy unit${n !== 1 ? "s" : ""} — each loses 20% of its strength this battle.`);
+					narrate(narrative, {
+						kind: "a lightning bolt sears the defending units",
+						unitCount: n,
+						unitsPlural: n !== 1 ? "s" : ""
+					});
 				} else if (spellName === "Curse") {
 					if (defHero) {
 						defHero._curseHalveStat = bestCurseSkill(turnContext, defHero);
-						narrate(narrative, `  ☠ Curse withers ${defHero.name}'s ${curseSkillLabel(defHero._curseHalveStat)} — halved for this battle.`);
-					} else narrate(narrative, `  ☠ Curse seeks a commander to wither, but these defenders are leaderless.`);
+						narrate(narrative, {
+							kind: "a curse withers the enemy commander's skill",
+							enemyCommanderName: defHero.name,
+							cursedSkillLabel: curseSkillLabel(defHero._curseHalveStat)
+						});
+					} else narrate(narrative, { kind: "a curse finds no commander among leaderless defenders" });
 				} else if (spellName === "Control Undead") {
 					const ui = defenders.map((a, i) => ({
 						a,
@@ -42690,26 +51801,38 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 							rc.armies = rc.armies || [];
 							rc.armies.push(unit);
 						}
-						narrate(narrative, `  ☠ Control Undead turns the ${unit.unitName || unit.type} — it defects to ${cName}'s side!`);
-					} else narrate(narrative, `  ☠ Control Undead reaches out, but the enemy fields no undead to turn.`);
+						narrate(narrative, {
+							kind: "control undead turns a defending undead unit to the attacker's side",
+							turnedUnitName: unit.unitName || unit.type,
+							cName
+						});
+					} else narrate(narrative, { kind: "control undead finds no undead among the defenders" });
 				} else if (spellName === "Holy Symbol") {
 					const undeadDefs = defenders.filter((d) => d._isSkeletal || /Skelet|Bone|Wraith|Zombie|Ghoul|Lich|Undead/i.test(d.type || ""));
 					if (undeadDefs.length > 0) {
 						undeadDefs.forEach((d) => {
 							d._tempStrReduction = (d._tempStrReduction || 0) + Math.ceil(unitBaseStrength(d) * .25);
 						});
-						narrate(narrative, `  ✝ Holy Symbol sears the enemy undead — ${undeadDefs.length} undead unit${undeadDefs.length !== 1 ? "s" : ""} fight at 75% strength.`);
-					} else narrate(narrative, `  ✝ Holy Symbol blazes, but no undead stand among the defenders.`);
+						narrate(narrative, {
+							kind: "a holy symbol sears the defending undead",
+							undeadUnitCount: undeadDefs.length,
+							undeadUnitsPlural: undeadDefs.length !== 1 ? "s" : ""
+						});
+					} else narrate(narrative, { kind: "a holy symbol finds no undead among the defenders" });
 				} else if (spellName === "Spiritwrack") {
 					const missileDefs = defenders.filter((d) => MISSILE_ARMIES.has(d.type));
 					if (missileDefs.length > 0) {
 						missileDefs.forEach((d) => {
 							d._tempStrReduction = (d._tempStrReduction || 0) + Math.ceil(unitBaseStrength(d) * .5);
 						});
-						narrate(narrative, `  Spiritwrack unstrings the enemy's bows — ${missileDefs.length} missile unit${missileDefs.length !== 1 ? "s" : ""} fight at half strength.`);
-					} else narrate(narrative, `  Spiritwrack howls, but the enemy fields no missile troops.`);
+						narrate(narrative, {
+							kind: "spiritwrack halves the defenders' missile units",
+							missileUnitCount: missileDefs.length,
+							missileUnitsPlural: missileDefs.length !== 1 ? "s" : ""
+						});
+					} else narrate(narrative, { kind: "spiritwrack finds no missile troops among the defenders" });
 				}
-			} else narrate(narrative, `  The spell fizzles — no pre-battle magical effect.`);
+			} else narrate(narrative, { kind: "the attacker's spell before the battle fizzles" });
 		}
 	}
 	const druIdLvlMag = atkCmdrSlain ? 0 : effStat(turnContext, c, "druid");
@@ -42721,20 +51844,41 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		const sp = armySpells[Math.floor(kcRng() * armySpells.length)];
 		const armySpellChance = primalStrikeChance(druIdLvlMag, atkCmdrSlain ? null : c, atk.type);
 		const armySpellRoll = d100();
-		if (armySpellRoll > armySpellChance && _isPrimalStrikeA) narrate(narrative, `〰 ${atk.unitName || atk.type} gather for **${sp.name}**, but the moment passes — the strike never lands (${armySpellChance}% chance${druIdLvlMag > 0 ? `, Druid ${druIdLvlMag}` : ", no commanding Druid"}).`);
+		if (armySpellRoll > armySpellChance && _isPrimalStrikeA) narrate(narrative, {
+			kind: "a unit's power gathers but never strikes",
+			unitName: atk.unitName || atk.type,
+			powerName: sp.name,
+			strikeChancePct: armySpellChance,
+			druidWords: druIdLvlMag > 0 ? `, Druid ${druIdLvlMag}` : ", no commanding Druid"
+		});
 		if (armySpellRoll <= armySpellChance) {
-			narrate(narrative, `✨ ${atk.unitName || atk.type} — **${sp.name}**: "${sp.flavour}"`);
+			narrate(narrative, {
+				kind: "a unit uses its power in battle",
+				unitName: atk.unitName || atk.type,
+				powerName: sp.name,
+				powerFlavour: sp.flavour
+			});
 			if (sp.target === "all") {
 				const dmg = rng(sp.dmg[0], sp.dmg[1]);
 				defenders.forEach((d) => {
 					d._tempStrReduction = (d._tempStrReduction || 0) + dmg;
 				});
-				narrate(narrative, `  ${sp.name} hits all ${defenders.length} defending units: −${dmg} strength each.`);
+				narrate(narrative, {
+					kind: "a unit's power hits every defending unit",
+					powerName: sp.name,
+					unitCount: defenders.length,
+					damage: dmg
+				});
 			} else {
 				const d = defenders[Math.floor(kcRng() * defenders.length)];
 				const dmg = rng(sp.dmg[0], sp.dmg[1]);
 				d._tempStrReduction = (d._tempStrReduction || 0) + dmg;
-				narrate(narrative, `  ${sp.name} hits ${d.unitName || d.type}: −${dmg} strength this battle.`);
+				narrate(narrative, {
+					kind: "a unit's power hits one unit of the other side",
+					powerName: sp.name,
+					struckUnitName: d.unitName || d.type,
+					damage: dmg
+				});
 			}
 		}
 	});
@@ -42756,7 +51900,10 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			if (kcRng() >= .25) return;
 			const t = hulls[Math.floor(kcRng() * hulls.length)];
 			t._sunk = true;
-			narrate(narrative, `🌊 A whale cohort breaches beneath the ${t.unitName || t.type} and rolls her over — she goes down before a shot is fired.`);
+			narrate(narrative, {
+				kind: "a whale cohort sinks a defending ship before a shot is fired",
+				targetUnitName: t.unitName || t.type
+			});
 		});
 		if (defenders.some((a) => a._sunk)) {
 			const lost = defenders.filter((a) => a._sunk);
@@ -42772,9 +51919,18 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (_eyes) narrate(narrative, _eyes);
 	}
 	const missileAtk = archeryBlockedBy(defenders, prov.terrain, armies) ? [] : abilityMissileUnits(armies, prov.terrain);
-	if (archeryBlockedBy(defenders, prov.terrain, armies) && armies.some((a) => MISSILE_ARMIES.has(a.type))) narrate(narrative, `🌲 ${cName}'s archers can find no target — Forest Wardens hold the thickets and the volley never comes.`);
+	if (archeryBlockedBy(defenders, prov.terrain, armies) && armies.some((a) => MISSILE_ARMIES.has(a.type))) narrate(narrative, {
+		kind: "the hero's archers find no target among the forest wardens",
+		heroName: cName
+	});
 	if (missileAtk.length > 0 && defenders.length > 0) {
-		narrate(narrative, `🏹 **Pre-battle Archery Phase** — ${missileAtk.length} ranged unit${missileAtk.length !== 1 ? "s" : ""}${hasQuiver ? " (Quiver of the Hawk: double volleys)" : ""}${_manyArrows ? " (Quiver of Many Arrows: +1 shot)" : ""}`);
+		narrate(narrative, {
+			kind: "the attacker's archery volley begins",
+			missileUnitCount: missileAtk.length,
+			missileUnitsPlural: missileAtk.length !== 1 ? "s" : "",
+			wordsIfDoubleVolleys: hasQuiver ? " (Quiver of the Hawk: double volleys)" : "",
+			wordsIfOneMoreShot: _manyArrows ? " (Quiver of Many Arrows: +1 shot)" : ""
+		});
 		const volleys = (hasQuiver ? 2 : 1) + (_manyArrows ? 1 : 0);
 		let totalArrowDmg = 0;
 		missileAtk.forEach((atk) => {
@@ -42785,12 +51941,34 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 				const dmgMult = missileDamageMult(atk, armies, prov.terrain, target, true);
 				const hit = applyMissileHit(target, archSkillAtk, atk, { dmgMult });
 				totalArrowDmg += hit.dmg;
-				if (hit.immune) narrate(narrative, `  ${atk.unitName || atk.type} fires at ${target.unitName || target.type}, but the shot glances off the ${hit.why || "armoured hull"}.`);
-				else if (hit.dmg > 0) narrate(narrative, `  ${atk.unitName || atk.type} fires at ${target.unitName || target.type}: −${hit.dmg} strength${hit.isFly ? " (×2 vs flying!)" : ""}${hit.thickHide ? " (Thick Hide: half)" : ""}${dmgMult > 1 ? ` (${atk.type} ability ×${dmgMult.toFixed(2)})` : ""}${hit.capped ? " (softened to the limit)" : ""}.`);
-				else narrate(narrative, `  ${atk.unitName || atk.type} fires at ${target.unitName || target.type}, but they are already softened as much as arrows can manage.`);
+				if (hit.immune) narrate(narrative, {
+					kind: "a unit fires at its target and the shot glances off",
+					shooterName: atk.unitName || atk.type,
+					targetUnitName: target.unitName || target.type,
+					whyTheShotGlances: hit.why || "armoured hull"
+				});
+				else if (hit.dmg > 0) narrate(narrative, {
+					kind: "a unit fires at its target and weakens it",
+					shooterName: atk.unitName || atk.type,
+					targetUnitName: target.unitName || target.type,
+					damage: hit.dmg,
+					wordsIfFlying: hit.isFly ? " (×2 vs flying!)" : "",
+					wordsIfThickHide: hit.thickHide ? " (Thick Hide: half)" : "",
+					wordsIfAbilityMultiplier: dmgMult > 1 ? ` (${atk.type} ability ×${dmgMult.toFixed(2)})` : "",
+					wordsIfSoftenedToTheLimit: hit.capped ? " (softened to the limit)" : ""
+				});
+				else narrate(narrative, {
+					kind: "an attacking unit's target is already softened as far as arrows allow",
+					shooterName: atk.unitName || atk.type,
+					targetUnitName: target.unitName || target.type
+				});
 			}
 		});
-		narrate(narrative, `📊 Archery phase total: −${totalArrowDmg} strength spread across defenders (each unit softened by at most ${dispFloor(MISSILE_CAP_FRACTION * 100)}%).`);
+		narrate(narrative, {
+			kind: "the attacker's archery volley's total",
+			totalDamage: totalArrowDmg,
+			arrowSofteningCapPct: dispFloor(MISSILE_CAP_FRACTION * 100)
+		});
 	}
 	if (defHero) {
 		ensureEncounterPlan(turnContext, defHero);
@@ -42819,34 +51997,61 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 				const castChance = guardCastChance(defHero, school, G.characters);
 				const castRoll = d100();
 				telSpell(turnContext, defHero, defSpellName, school, defSpellLvl, castChance, castRoll, "battle");
-				narrate(narrative, `✨ Defender Magic: ${defHero.name} casts ${defSpellName} (${SKILL_LABELS[school] || school} ${defSpellLvl}) — ${castChance}% chance [roll ${castRoll} ${castRoll <= castChance ? "✓" : "✗"}]`);
+				narrate(narrative, {
+					kind: "the defender casts a spell before the battle",
+					casterName: defHero.name,
+					spellName: defSpellName,
+					schoolLabel: SKILL_LABELS[school] || school,
+					spellLevel: defSpellLvl,
+					castChance,
+					castRoll,
+					castMark: castRoll <= castChance ? "✓" : "✗"
+				});
 				if (castRoll <= castChance) {
 					if (defSpellName === "Fireball") {
 						const tgt = armies.reduce((b, x) => unitBaseStrength(x) > unitBaseStrength(b) ? x : b);
 						const cut = Math.max(1, Math.round(unitBaseStrength(tgt) * .5));
 						tgt._tempStrReduction = (tgt._tempStrReduction || 0) + cut;
-						narrate(narrative, `  🔥 Fireball halves the attackers' strongest unit, ${tgt.unitName || tgt.type} (−${cut}).`);
+						narrate(narrative, {
+							kind: "a fireball halves the attackers' strongest unit",
+							targetUnitName: tgt.unitName || tgt.type,
+							strengthLost: cut
+						});
 					} else if (defSpellName === "Lightning Bolt") {
 						const n = Math.min(armies.length, Math.max(1, defSpellLvl));
 						shuffleP(armies).slice(0, n).forEach((a) => {
 							a._tempStrReduction = (a._tempStrReduction || 0) + Math.max(1, Math.round(unitBaseStrength(a) * .2));
 						});
-						narrate(narrative, `  ⚡ Lightning Bolt sears ${n} attacking unit${n !== 1 ? "s" : ""} — each loses 20% of its strength.`);
+						narrate(narrative, {
+							kind: "a lightning bolt sears the attacking units",
+							unitCount: n,
+							unitsPlural: n !== 1 ? "s" : ""
+						});
 					} else if (defSpellName === "Psychic Blast") {
 						if (c) {
 							c._druidNegated = true;
-							narrate(narrative, `  🧠 Psychic Blast severs ${cName}'s bond with their beasts — their Druid skill is negated this battle.`);
+							narrate(narrative, {
+								kind: "a psychic blast severs the enemy commander's bond with his beasts",
+								enemyCommanderName: cName
+							});
 						}
 					} else if (defSpellName === "Telekinetic Storm") {
 						if (c) {
 							c._tacticalHalved = true;
 							c._tacticalMult = .5;
-							narrate(narrative, `  🌀 Telekinetic Storm scatters ${cName}'s formations — their Tactical command is cut to half effectiveness this battle.`);
+							narrate(narrative, {
+								kind: "a telekinetic storm scatters the enemy commander's formations",
+								enemyCommanderName: cName
+							});
 						}
 					} else if (defSpellName === "Curse") {
 						if (c) {
 							c._curseHalveStat = bestCurseSkill(turnContext, c);
-							narrate(narrative, `  ☠ Curse withers ${cName}'s ${curseSkillLabel(c._curseHalveStat)} — halved for this battle.`);
+							narrate(narrative, {
+								kind: "a curse withers the enemy commander's skill",
+								enemyCommanderName: cName,
+								cursedSkillLabel: curseSkillLabel(c._curseHalveStat)
+							});
 						}
 					} else if (defSpellName === "Control Undead") {
 						const ui = armies.map((a, i) => ({
@@ -42863,26 +52068,38 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 								rc.armies = rc.armies || [];
 								rc.armies.push(unit);
 							}
-							narrate(narrative, `  ☠ Control Undead turns the ${unit.unitName || unit.type} to ${defHero.name}'s side!`);
-						} else narrate(narrative, `  ☠ Control Undead finds no undead among the attackers.`);
+							narrate(narrative, {
+								kind: "control undead turns an enemy undead unit to the caster's side",
+								turnedUnitName: unit.unitName || unit.type,
+								casterName: defHero.name
+							});
+						} else narrate(narrative, { kind: "control undead finds no undead among the attackers" });
 					} else if (defSpellName === "Holy Symbol") {
 						const undeadAtk = armies.filter((a) => a._isSkeletal || /Skelet|Bone|Wraith|Zombie|Ghoul|Lich|Undead/i.test(a.type || ""));
 						if (undeadAtk.length > 0) {
 							undeadAtk.forEach((a) => {
 								a._tempStrReduction = (a._tempStrReduction || 0) + Math.ceil(unitBaseStrength(a) * .25);
 							});
-							narrate(narrative, `  ✝ Holy Symbol sears the attacking undead — ${undeadAtk.length} unit${undeadAtk.length !== 1 ? "s" : ""} at 75% strength.`);
-						} else narrate(narrative, `  ✝ Holy Symbol blazes, but no undead assail this province.`);
+							narrate(narrative, {
+								kind: "a holy symbol sears the attacking undead",
+								undeadUnitCount: undeadAtk.length,
+								undeadUnitsPlural: undeadAtk.length !== 1 ? "s" : ""
+							});
+						} else narrate(narrative, { kind: "a holy symbol finds no undead among the attackers" });
 					} else if (defSpellName === "Spiritwrack") {
 						const missileAtkU = armies.filter((a) => MISSILE_ARMIES.has(a.type));
 						if (missileAtkU.length > 0) {
 							missileAtkU.forEach((a) => {
 								a._tempStrReduction = (a._tempStrReduction || 0) + Math.ceil(unitBaseStrength(a) * .5);
 							});
-							narrate(narrative, `  Spiritwrack unstrings the attackers' bows — ${missileAtkU.length} missile unit${missileAtkU.length !== 1 ? "s" : ""} at half strength.`);
-						} else narrate(narrative, `  Spiritwrack howls, but the attackers field no missile troops.`);
+							narrate(narrative, {
+								kind: "spiritwrack halves the attackers' missile units",
+								missileUnitCount: missileAtkU.length,
+								missileUnitsPlural: missileAtkU.length !== 1 ? "s" : ""
+							});
+						} else narrate(narrative, { kind: "spiritwrack finds no missile troops among the attackers" });
 					}
-				} else narrate(narrative, `  The spell fizzles — no defensive magical effect.`);
+				} else narrate(narrative, { kind: "the defender's spell before the battle fizzles" });
 			}
 		}
 	}
@@ -42890,7 +52107,10 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		(defenders || []).forEach((d) => {
 			if (d) d._laNoTerrain = true;
 		});
-		narrate(narrative, `⚡ ${c.name}'s Lightning Advance catches the defenders completely unready — they fight with no terrain advantage, no pre-battle magic and no answering volley.`);
+		narrate(narrative, {
+			kind: "the attacker's lightning advance catches the defenders unready",
+			cName: c.name
+		});
 	}
 	applyFlakScreen(_cLA ? [] : defenders, armies, defHero && defHero.name || "The defenders", narrative);
 	if (!_cLA) {
@@ -42898,12 +52118,20 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (_eyes) narrate(narrative, _eyes);
 	}
 	const _defArchBlocked = !_cLA && archeryBlockedBy(armies, prov.terrain, defenders);
-	if (_defArchBlocked && defenders.some((a) => MISSILE_ARMIES.has(a.type))) narrate(narrative, `🌲 The defenders' archers can find no target — ${cName}'s Forest Wardens hold the thickets and the answering volley never comes.`);
+	if (_defArchBlocked && defenders.some((a) => MISSILE_ARMIES.has(a.type))) narrate(narrative, {
+		kind: "the defenders' archers find no target among the attacker's forest wardens",
+		cName
+	});
 	const missileDef = _cLA || _defArchBlocked ? [] : abilityMissileUnits(defenders, prov.terrain);
 	if (missileDef.length > 0 && armies.length > 0) {
 		const defArchSkill = defHero ? effStat(turnContext, defHero, "archery") : 0;
 		const _prepared = missileDef.some((d) => abilityVolleys(d, false) > 1);
-		narrate(narrative, `🏹 **Defender Archery Phase** — ${missileDef.length} ranged unit${missileDef.length !== 1 ? "s" : ""}${_prepared ? " (Prepared Ground: the Longbows loose twice)" : ""}`);
+		narrate(narrative, {
+			kind: "the defenders' archery volley begins",
+			missileUnitCount: missileDef.length,
+			missileUnitsPlural: missileDef.length !== 1 ? "s" : "",
+			wordsIfPreparedGround: _prepared ? " (Prepared Ground: the Longbows loose twice)" : ""
+		});
 		let totalDefArrow = 0;
 		missileDef.forEach((def) => {
 			for (let v = 0; v < abilityVolleys(def, false); v++) {
@@ -42913,12 +52141,34 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 				const dmgMult = missileDamageMult(def, defenders, prov.terrain, target, false);
 				const hit = applyMissileHit(target, defArchSkill, def, { dmgMult });
 				totalDefArrow += hit.dmg;
-				if (hit.immune) narrate(narrative, `  ${def.unitName || def.type} fires at ${target.unitName || target.type}, but the shot glances off the ${hit.why || "armoured hull"}.`);
-				else if (hit.dmg > 0) narrate(narrative, `  ${def.unitName || def.type} fires at ${target.unitName || target.type}: −${hit.dmg} strength${hit.isFly ? " (×2 vs flying!)" : ""}${hit.thickHide ? " (Thick Hide: half)" : ""}${dmgMult > 1 ? ` (${def.type} ability ×${dmgMult.toFixed(2)})` : ""}${hit.capped ? " (softened to the limit)" : ""}.`);
-				else narrate(narrative, `  ${def.unitName || def.type} fires at ${target.unitName || target.type}, but they are already as softened as arrows can manage.`);
+				if (hit.immune) narrate(narrative, {
+					kind: "a unit fires at its target and the shot glances off",
+					shooterName: def.unitName || def.type,
+					targetUnitName: target.unitName || target.type,
+					whyTheShotGlances: hit.why || "armoured hull"
+				});
+				else if (hit.dmg > 0) narrate(narrative, {
+					kind: "a unit fires at its target and weakens it",
+					shooterName: def.unitName || def.type,
+					targetUnitName: target.unitName || target.type,
+					damage: hit.dmg,
+					wordsIfFlying: hit.isFly ? " (×2 vs flying!)" : "",
+					wordsIfThickHide: hit.thickHide ? " (Thick Hide: half)" : "",
+					wordsIfAbilityMultiplier: dmgMult > 1 ? ` (${def.type} ability ×${dmgMult.toFixed(2)})` : "",
+					wordsIfSoftenedToTheLimit: hit.capped ? " (softened to the limit)" : ""
+				});
+				else narrate(narrative, {
+					kind: "a defending unit's target is already softened as far as arrows allow",
+					unitName: def.unitName || def.type,
+					targetUnitName: target.unitName || target.type
+				});
 			}
 		});
-		narrate(narrative, `📊 Defender archery total: −${totalDefArrow} strength spread across attackers (each unit softened by at most ${dispFloor(MISSILE_CAP_FRACTION * 100)}%).`);
+		narrate(narrative, {
+			kind: "the defenders' archery volley's total",
+			totalDamage: totalDefArrow,
+			arrowSofteningCapPct: dispFloor(MISSILE_CAP_FRACTION * 100)
+		});
 	}
 	const defDruIdLvl = defHero && !defHero._druidNegated ? effStat(turnContext, defHero, "druid") : 0;
 	(_cLA ? [] : defenders).forEach((def) => {
@@ -42929,35 +52179,72 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		const sp = armySpells[Math.floor(kcRng() * armySpells.length)];
 		const armySpellChance = primalStrikeChance(defDruIdLvl, defHero && !defHero._druidNegated ? defHero : null, def.type);
 		if (kcRng() * 100 < armySpellChance) {
-			narrate(narrative, `✨ ${def.unitName || def.type} (defending) — **${sp.name}**: "${sp.flavour}"`);
+			narrate(narrative, {
+				kind: "a defending unit uses its power in battle",
+				unitName: def.unitName || def.type,
+				powerName: sp.name,
+				powerFlavour: sp.flavour
+			});
 			if (sp.target === "all") {
 				const dmg = rng(sp.dmg[0], sp.dmg[1]);
 				armies.forEach((a) => {
 					a._tempStrReduction = (a._tempStrReduction || 0) + dmg;
 				});
-				narrate(narrative, `  ${sp.name} hits all ${armies.length} attacking units: −${dmg} strength each.`);
+				narrate(narrative, {
+					kind: "a unit's power hits every attacking unit",
+					powerName: sp.name,
+					unitCount: armies.length,
+					damage: dmg
+				});
 			} else {
 				const a = armies[Math.floor(kcRng() * armies.length)];
 				const dmg = rng(sp.dmg[0], sp.dmg[1]);
 				a._tempStrReduction = (a._tempStrReduction || 0) + dmg;
-				narrate(narrative, `  ${sp.name} hits ${a.unitName || a.type}: −${dmg} strength this battle.`);
+				narrate(narrative, {
+					kind: "a unit's power hits one unit of the other side",
+					powerName: sp.name,
+					struckUnitName: a.unitName || a.type,
+					damage: dmg
+				});
 			}
-		} else if (_isPrimalStrike) narrate(narrative, `〰 ${def.unitName || def.type} gather for **${sp.name}**, but the moment passes — the strike never lands (${armySpellChance}% chance${defDruIdLvl > 0 ? `, Druid ${defDruIdLvl}` : ", no commanding Druid"}).`);
+		} else if (_isPrimalStrike) narrate(narrative, {
+			kind: "a unit's power gathers but never strikes",
+			unitName: def.unitName || def.type,
+			powerName: sp.name,
+			strikeChancePct: armySpellChance,
+			druidWords: defDruIdLvl > 0 ? `, Druid ${defDruIdLvl}` : ", no commanding Druid"
+		});
 	});
 	{
 		const _tn = terrainNoteList(armies, prov.terrain);
-		if (_tn) narrate(narrative, `📊 Terrain (${prov.terrain}): ${cName} — ${_tn}`);
+		if (_tn) narrate(narrative, {
+			kind: "the terrain's effect on the attacker's units",
+			terrain: prov.terrain,
+			cName,
+			terrainNotes: _tn
+		});
 	}
 	if (!isLandBattle && armies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type))) {
-		if (isAirborneAtSea(armies)) narrate(narrative, `⚠ Airborne over open water: land units carried by flyers fight at ×${SEA_AIRBORNE_LAND_PENALTY}, and the flyers carrying them at ×${SEA_AIRBORNE_FLYER_PENALTY}.`);
-		else narrate(narrative, `⚠ Land units at sea: ×${SEA_LAND_PENALTY} strength penalty.`);
+		if (isAirborneAtSea(armies)) narrate(narrative, {
+			kind: "hosts airborne over open water fight at a penalty against the defenders",
+			seaAirborneLandPenalty: SEA_AIRBORNE_LAND_PENALTY,
+			seaAirborneFlyerPenalty: SEA_AIRBORNE_FLYER_PENALTY
+		});
+		else narrate(narrative, {
+			kind: "land units fight at sea at a penalty against the defenders",
+			seaLandPenalty: SEA_LAND_PENALTY
+		});
 	}
 	const atkFlankDisc = hasDisc(turnContext, c.player, "sd09");
 	const terrainFront = rollBattleWidth(prov.terrain);
 	let lineWidth = terrainFront;
 	const _illCasterN = prov._illusoryTerrain ? prov._illusoryTerrain.caster : null;
 	const _atkIllActive = _illCasterN != null && c.player !== _illCasterN;
-	if (_atkIllActive) narrate(narrative, `  🌫 The ever-shifting illusory ground of ${prov.name} throws ${cName}'s forces into confusion — every unit fights as though mired in the worst terrain for its kind (at least −15% strength).`);
+	if (_atkIllActive) narrate(narrative, {
+		kind: "the illusory ground of the province confuses a side's forces",
+		provName: prov.name,
+		sideName: cName
+	});
 	const armiesWithStr = armies.map((a) => {
 		const cmd = [];
 		if (MISSILE_ARMIES.has(a.type)) cmd.push({
@@ -43032,11 +52319,17 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	let atkOrdN = 1, defOrdN = 1;
 	if (c._grandStratagemTurn === G.turn) {
 		atkOrdN *= 1.2;
-		narrate(narrative, `  📜 ${cName} unfolds a Grand Stratagem — the assault lands at +20% strength.`);
+		narrate(narrative, {
+			kind: "the attacker unfolds a grand stratagem against the defenders",
+			cName
+		});
 	}
 	if (raidLandedHere(turnContext, c, prov)) {
 		atkOrdN *= 1.25;
-		narrate(narrative, `  ⚓ ${cName} storms ashore in a Raid the Coast — +25% strength.`);
+		narrate(narrative, {
+			kind: "the attacker storms ashore in a raid on the coast against the defenders",
+			cName
+		});
 	}
 	rawAtkStr * _npcAtkMorale * atkOrdN * atkHomeBonus;
 	rawDefStr * defBonus * homeBonus * _npcDefMorale * defOrdN;
@@ -43052,15 +52345,37 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	const skelHeroFanatic = align === "Undead" && !c.isKing && armies.some((a) => a._isSkeletal);
 	const evilMonsterFanatic = align === "Evil" && armies.some((a) => MONSTER_ARMIES.has(a.type));
 	const fanMult = Math.max(1, fanatic ? 1.3 : 1, skeletalFanatic ? UNDEAD_SKEL_KING_FAN : 1, evilMonsterFanatic ? 1.25 : 1, skelHeroFanatic ? UNDEAD_SKEL_HERO_FAN : 1);
-	if (evilMonsterFanatic && !fanatic) narrate(narrative, `${cName}'s monsters are driven to savage fury under their Evil overlord! (+25% strength)`);
-	if (fanatic && !skeletalFanatic && !skelHeroFanatic) narrate(narrative, `Seized by religious fervour, ${cName}'s troops fight with fanatical zeal! (+30% strength)`);
-	if (skeletalFanatic) narrate(narrative, `${cName}'s skeletal legions fight with undying fanaticism under their Undead king! (+${Math.round((UNDEAD_SKEL_KING_FAN - 1) * 100)}% strength)`);
-	if (skelHeroFanatic) narrate(narrative, `${cName}'s skeletal legions know no fear (+${Math.round((UNDEAD_SKEL_HERO_FAN - 1) * 100)}% strength — undying fanaticism).`);
+	if (evilMonsterFanatic && !fanatic) narrate(narrative, {
+		kind: "the attacker's monsters are driven to savage fury",
+		cName
+	});
+	if (fanatic && !skeletalFanatic && !skelHeroFanatic) narrate(narrative, {
+		kind: "the attacker's troops fight with fanatical zeal",
+		cName
+	});
+	if (skeletalFanatic) narrate(narrative, {
+		kind: "a side's skeletal legions fight with fanaticism under their undead king",
+		sideName: cName,
+		undeadKingFanaticismPct: Math.round((UNDEAD_SKEL_KING_FAN - 1) * 100)
+	});
+	if (skelHeroFanatic) narrate(narrative, {
+		kind: "a side's skeletal legions know no fear",
+		sideName: cName,
+		undeadHeroFanaticismPct: Math.round((UNDEAD_SKEL_HERO_FAN - 1) * 100)
+	});
 	const discArmyBonus = 1 + discoveryArmyBonus(c.player);
-	if (discArmyBonus > 1) narrate(narrative, `Realm discoveries grant +${((discArmyBonus - 1) * 100).toFixed(0)}% army strength.`);
+	if (discArmyBonus > 1) narrate(narrative, {
+		kind: "the attacker's realm discoveries strengthen his army",
+		discoveriesArmyBonusPct: ((discArmyBonus - 1) * 100).toFixed(0)
+	});
 	const finalAtkMod = discArmyBonus;
 	const _consecNPC = prov.owner != null && prov.owner !== c.player && isConsecrated(G.players[prov.owner], prov.id) && (align === "Undead" || align === "Evil");
-	if (_consecNPC) narrate(narrative, `✨ The ground of ${prov.name} is consecrated — ${cName}'s ${align.toLowerCase()} host falters on hallowed earth (−15% strength).`);
+	if (_consecNPC) narrate(narrative, {
+		kind: "the consecrated ground of the province weakens the attacker's host",
+		provName: prov.name,
+		atkName: cName,
+		attackersAlignment: align.toLowerCase()
+	});
 	const _nAtkFM = [
 		{
 			label: "morale",
@@ -43150,7 +52465,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	const finalDef = defBaseStr * defRoll;
 	const _defLabelStat = defHero ? defHero.name : `the defenders of ${prov.name}`;
 	const _nAtkTm = tacMulted(effectiveTactBonus, c), _nDefTm = tacMulted(defTactBonus, defHero);
-	narrate(narrative, `📊 **Battle stats:**`);
+	narrate(narrative, { kind: "the battle's statistics begin" });
 	narrateAll(narrative, ladderLines("Attacker", cName, armiesWithStr, lineWidth, atkFlankDisc, _nAtkFM, atkBaseStr, {
 		grid: _gA.grid,
 		tact: isLandBattle && _nAtkTm > 1 ? {
@@ -43165,7 +52480,10 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			label: `Tactical ${ladderFm(_nDefTm)}`
 		} : null
 	}));
-	narrate(narrative, `  ${fortuneNarrative(cName, _defLabelStat, atkBaseStr, defBaseStr, _fort)}`);
+	narrate(narrative, {
+		kind: "the fortune of the battle",
+		fortuneWords: fortuneNarrative(cName, _defLabelStat, atkBaseStr, defBaseStr, _fort)
+	});
 	const margin = finalAtk - finalDef;
 	const won = margin >= 0;
 	if (won && prov.race === "Orcish" && G.players[c.player] && G.players[c.player].race === "Orcish") prov._raidersMuster = G.turn;
@@ -43207,8 +52525,16 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	const _npcTerrain = prov.terrain;
 	const _npcRideAtk = rideThemDownBonus(armies, _npcTerrain, c);
 	const _npcRideDef = rideThemDownBonus(defenders, _npcTerrain, defHero);
-	if (_npcRideAtk > 0 && !OPEN_COUNTRY.has(_npcTerrain)) narrate(narrative, `📯 ${cName}'s War-Horn of the Plains sounds — the Free Lances ride the broken enemy down even in ${_npcTerrain} country.`);
-	if (_npcRideAtk === 0 && countType(armies, "Free Lances") > 0) narrate(narrative, `🐎 ${cName}'s Free Lances find no room to ride in ${_npcTerrain} country.`);
+	if (_npcRideAtk > 0 && !OPEN_COUNTRY.has(_npcTerrain)) narrate(narrative, {
+		kind: "a side's war-horn of the plains lets its free lances ride in rough country",
+		sideName: cName,
+		terrain: _npcTerrain
+	});
+	if (_npcRideAtk === 0 && countType(armies, "Free Lances") > 0) narrate(narrative, {
+		kind: "the attacker's free lances find no room to ride",
+		cName,
+		terrain: _npcTerrain
+	});
 	const _npcCorsairs = isHalfOrMore(armies, "Corsair Fleet");
 	const _npcWargs = isHalfOrMore(armies, "Warg Riders");
 	const _npcSF = shieldFortHolds(armies, _dep && _dep.gA);
@@ -43216,10 +52542,28 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	if (won) {
 		const guardName = defHero ? defHero.name + " and their forces" : "the defenders of " + prov.name;
 		const _noDefLeft = defenders.length === 0;
-		if (_noDefLeft) narrate(narrative, `${cName}'s forces sweep into ${prov.name} — nothing is left to stand against them.`);
-		else narrate(narrative, `After ${aAn(severity)} ${severity} engagement (margin ${(margRatio * 100).toFixed(0)}% of total strength), ${cName}'s forces ${pick(WIN_VERBS)} ${guardName}!`);
-		narrate(narrative, `⚔ **${cName}'s forces** (attacker):`);
-		if (_npcWargs) narrate(narrative, `🐺 The warg packs are into the defenders before they can set themselves — the business is over quickly, and ${cName}'s losses are halved.`);
+		if (_noDefLeft) narrate(narrative, {
+			kind: "the attacker sweeps into a province with no one left to stand against him",
+			cName,
+			provName: prov.name
+		});
+		else narrate(narrative, {
+			kind: "the attacker wins the battle against the defenders",
+			severityArticle: aAn(severity),
+			severity,
+			marginPct: (margRatio * 100).toFixed(0),
+			cName,
+			winVerb: pick$1(WIN_VERBS),
+			guardName
+		});
+		narrate(narrative, {
+			kind: "the attacker's casualties begin",
+			atkName: cName
+		});
+		if (_npcWargs) narrate(narrative, {
+			kind: "the attacker's warg riders halve his losses",
+			cName
+		});
 		const _fw = rollUnitFates(armies, {
 			owner: cName,
 			won: true,
@@ -43229,32 +52573,58 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			say: (l) => narrate(narrative, l)
 		});
 		const winSurv = _fw.survived, winEvents = _fw.died + _fw.promoted;
-		if (winSurv > 0) narrate(narrative, `— ${winEvents > 0 ? "All other" : "All"} forces survive the engagement.`);
+		if (winSurv > 0) narrate(narrative, {
+			kind: "a side's other forces survive the engagement",
+			allOrAllOther: winEvents > 0 ? "All other" : "All"
+		});
 		c.armies = c.armies.filter((a) => !a._died && !a._disbanded);
 		if (isDecisive && G.players[c.player]?.alignment === "Evil" && (c.encounterPlan?.evilMode || "terror") === "terror") spreadTerror(turnContext, prov, c.player, narrative);
 		recordBattleGraves(turnContext, prov, armies.filter((a) => a._died), c.player);
 		const _defOwnerNm = defHero ? defHero.name.replace(" (wandering)", "") : "The defenders of " + prov.name;
-		narrate(narrative, `🛡 **${_defOwnerNm}'s forces** (defender):`);
-		if (_noDefLeft) narrate(narrative, `— None left to fight: every defending unit was lost before the lines closed.`);
+		narrate(narrative, {
+			kind: "the defender's casualties begin",
+			defName: _defOwnerNm
+		});
+		if (_noDefLeft) narrate(narrative, { kind: "every defending unit was lost before the lines closed" });
 		const _npcRideAtkEff = _npcSFDef ? 0 : _npcRideAtk;
-		if (_npcRideAtk > 0 && _npcSFDef) narrate(narrative, `🛡 The defenders' Dwarven Guard lock shields where they stand — ${cName}'s Free Lances find no broken backs to ride down.`);
-		else if (_npcRideAtk > 0) narrate(narrative, `🐎 ${cName}'s Free Lances ride down the broken companies across open ground (+${dispFloor(_npcRideAtk * 100)}% losses).`);
+		if (_npcRideAtk > 0 && _npcSFDef) narrate(narrative, {
+			kind: "the defenders' dwarven guard leave the attacker's free lances no broken backs",
+			cName
+		});
+		else if (_npcRideAtk > 0) narrate(narrative, {
+			kind: "the attacker's free lances ride down the defenders' broken companies",
+			cName,
+			extraLossesPct: dispFloor(_npcRideAtk * 100)
+		});
 		defenders.forEach((a) => {
 			if (kcRng() < loseDeathChance * steelMultOf(a) + _npcRideAtkEff) {
 				a._died = true;
 				const _fc = _facedD.get(a);
-				narrate(narrative, `— ${unitRef(_defOwnerNm, a)}${_fc ? `, ${_fc},` : ""} were destroyed in the rout!`);
+				narrate(narrative, {
+					kind: "a defending unit is destroyed in the rout",
+					defendingUnitName: unitRef(_defOwnerNm, a),
+					facedClauseWords: _fc ? `, ${_fc},` : ""
+				});
 			}
 		});
 		const _trapped = defenders.filter((a) => !a._died);
 		if (_trapped.length > 0) {
-			if (_npcSFDef) narrate(narrative, `🛡 Shield Fort — the defenders of ${prov.name} have nowhere to retreat, so they lock shields where they stand. None are cut down.`);
+			if (_npcSFDef) narrate(narrative, {
+				kind: "the defenders have nowhere to retreat and hold a shield fort",
+				provName: prov.name
+			});
 			else {
-				narrate(narrative, `The defenders of ${prov.name} have nowhere to retreat — they are pinned against their own ground and take further losses!`);
+				narrate(narrative, {
+					kind: "the defenders have nowhere to retreat and take further losses",
+					provName: prov.name
+				});
 				_trapped.forEach((a) => {
 					if (kcRng() < .15) {
 						a._died = true;
-						narrate(narrative, `— ${a.unitName || a.type} are cut down with no escape!`);
+						narrate(narrative, {
+							kind: "a unit is cut down with no escape",
+							unitName: a.unitName || a.type
+						});
 					}
 				});
 			}
@@ -43271,16 +52641,34 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	} else {
 		const defName2 = defHero ? defHero.name : prov.owner != null && !neutralGuardHero ? "the garrison of " + prov.name : "the defenders of " + prov.name;
 		const _holdTag = prov.owner != null && !neutralGuardHero ? prov.terrain === "sea" ? "the garrison holds these waters!" : "the garrison holds its walls!" : "neutral defenders never retreat!";
-		narrate(narrative, `${cName}'s forces are repelled! After ${aAn(severity)} ${severity} engagement (margin ${(margRatio * 100).toFixed(0)}%), ${defName2} hold their ground — ${_holdTag}`);
-		narrate(narrative, `🛡 **${defName2.replace(" (wandering)", "")}'s forces** (defender):`);
+		narrate(narrative, {
+			kind: "the attacker is repelled by the defenders",
+			cName,
+			severityArticle: aAn(severity),
+			severity,
+			marginPct: (margRatio * 100).toFixed(0),
+			defName2,
+			holdWords: _holdTag
+		});
+		narrate(narrative, {
+			kind: "the defender's casualties begin",
+			defName: defName2.replace(" (wandering)", "")
+		});
 		defenders.forEach((a) => {
 			if (kcRng() < winDeathChance * .5) {
 				a._defDied = true;
 				const _fc = _facedD.get(a);
-				narrate(narrative, `— ${unitRef(defName2.replace(" (wandering)", ""), a)}${_fc ? `, ${_fc},` : ""} were destroyed in the fighting.`);
+				narrate(narrative, {
+					kind: "a defending unit is destroyed in the fighting",
+					defendingUnitName: unitRef(defName2.replace(" (wandering)", ""), a),
+					facedClauseWords: _fc ? `, ${_fc},` : ""
+				});
 			}
 		});
-		if (defenders.some((a) => !a._defDied)) narrate(narrative, `— ${defenders.some((a) => a._defDied) ? "All other" : "All"} forces survive the engagement.`);
+		if (defenders.some((a) => !a._defDied)) narrate(narrative, {
+			kind: "a side's other forces survive the engagement",
+			allOrAllOther: defenders.some((a) => a._defDied) ? "All other" : "All"
+		});
 		const defSurv = defenders.filter((a) => !a._defDied);
 		const defLost = defenders.filter((a) => a._defDied);
 		_npcDefWinLost = defLost.filter((a) => a && !a._phantom).length;
@@ -43288,15 +52676,29 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (defHero) defHero.armies = defSurv;
 		if (defHero && defHero._isNeutralGuard && defHero.alive !== false && defSurv.length === 0) {
 			demoteGuardToWanderer(defHero);
-			narrate(narrative, `— but every soldier of ${defHero.name.replace(" (wandering)", "")}'s band lies dead. With no host left to command, they are ${prov.name}'s guardian no more — a masterless hero now.`);
+			narrate(narrative, {
+				kind: "the guard's host is destroyed and he is a masterless hero",
+				guardName: defHero.name.replace(" (wandering)", ""),
+				provName: prov.name
+			});
 		}
 		prov.neutralDefenders = defSurv;
 		prov.npcArmies = defSurv.length;
 		defenders.forEach((a) => delete a._defDied);
-		narrate(narrative, `⚔ **${cName}'s forces** (attacker):`);
+		narrate(narrative, {
+			kind: "the attacker's casualties begin",
+			atkName: cName
+		});
 		const _npcRideDefEff = _npcSF ? 0 : _npcRideDef;
-		if (_npcRideDef > 0 && _npcSF) narrate(narrative, `🛡 ${cName}'s Dwarven Guard lock shields as they give ground — the defenders' Free Lances find no broken backs to ride down.`);
-		else if (_npcRideDef > 0) narrate(narrative, `🐎 The defenders' Free Lances range across the open ground and ride down ${cName}'s broken companies (+${dispFloor(_npcRideDef * 100)}% losses).`);
+		if (_npcRideDef > 0 && _npcSF) narrate(narrative, {
+			kind: "the attacker's dwarven guard leave the defenders' free lances no broken backs",
+			cName
+		});
+		else if (_npcRideDef > 0) narrate(narrative, {
+			kind: "the defenders' free lances ride down the attacker's broken companies",
+			cName,
+			extraLossesPct: dispFloor(_npcRideDef * 100)
+		});
 		rollUnitFates(armies, {
 			owner: cName,
 			won: false,
@@ -43322,32 +52724,63 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (infStay ? "" : navalSplitRetreat(turnContext, c, prov, _retLive, narrative, cName)) {} else if (friendlyAdj.length === 0 || infStay) {
 			if (_npcSeaTrap) narrate(narrative, _npcSeaTrap);
 			if (_dmNPC && !infStay) {
-				narrate(narrative, `💀 Deathless March — ${cName}'s skeletal host has no fear to exploit: none are cut down in flight, and the dead stand their ground in ${prov.name}.`);
+				narrate(narrative, {
+					kind: "the loser's skeletal host stands its ground in a deathless march",
+					loserName: cName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
 			} else if (_sfNPC && !infStay) {
-				narrate(narrative, `🛡 Shield Fort — with no road out, ${cName}'s Dwarven Guard lock shields where they stand. None are cut down in flight, and ${prov.name} remains contested.`);
+				narrate(narrative, {
+					kind: "the loser's dwarven guard hold a shield fort with no road out",
+					loserName: cName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
-			} else if (_seaEscape && !infStay) narrate(narrative, `⛵ ${cName}'s corsairs stand off the shore with boats ready — the beaten force pulls back to the ships in good order rather than being cut down.`);
+			} else if (_seaEscape && !infStay) narrate(narrative, {
+				kind: "the attacker's corsairs take his beaten force back to the ships",
+				cName
+			});
 			else {
-				narrate(narrative, infStay ? `${cName}'s Shield-Wall holds — the infantry refuse to retreat and stand their ground, come what may.` : `${cName}'s forces have nowhere to retreat — they rally desperately but take heavy additional losses!`);
+				narrate(narrative, infStay ? {
+					kind: "the attacker's shield-wall holds and the infantry stand their ground",
+					cName
+				} : {
+					kind: "the attacker has nowhere to retreat and takes further losses",
+					cName
+				});
 				armies.filter((a) => !a._died).forEach((a) => {
 					if (kcRng() < .15) {
-						narrate(narrative, `— ${a.unitName || a.type} are cut down in the rout — no escape!${a._isSkeletal ? " Their bones crumble to dust." : ""}`);
+						narrate(narrative, {
+							kind: "an attacking unit is cut down in the rout with no escape",
+							unitName: a.unitName || a.type,
+							wordsIfSkeletal: a._isSkeletal ? " Their bones crumble to dust." : ""
+						});
 						a._died = true;
 					}
 				});
 			}
 		} else {
-			if (_sfNPC) narrate(narrative, `🛡 Shield Fort — ${cName}'s Dwarven Guard withdraw in good order behind locked shields.`);
+			if (_sfNPC) narrate(narrative, {
+				kind: "the loser's dwarven guard withdraw behind a shield fort",
+				loserName: cName
+			});
 			const fromProv = G.world.provinces[c._attackedFrom];
 			const retreatTo = fromProv && fromProv.id !== prov.id && friendlyAdj.some((p2) => p2.id === fromProv.id) ? fromProv : bestRetreat(turnContext, c, friendlyAdj.filter((p2) => p2.id !== prov.id)) || friendlyAdj[0];
-			narrate(narrative, `${cName}'s forces retreat to ${retreatTo.name}.`);
+			narrate(narrative, {
+				kind: "the attacker's forces retreat to a province",
+				cName,
+				retreatToName: retreatTo.name
+			});
 			prov.characters = (prov.characters || []).filter((id) => id !== c.id);
 			retreatTo.characters = retreatTo.characters || [];
 			if (!retreatTo.characters.includes(c.id)) retreatTo.characters.push(c.id);
 			c.location = retreatTo.id;
 		}
-		if (armies.some((a) => !a._died && !a._notable)) narrate(narrative, `— ${armies.some((a) => a._died || a._notable) ? "All other" : "All"} forces survive the engagement.`);
+		if (armies.some((a) => !a._died && !a._notable)) narrate(narrative, {
+			kind: "a side's other forces survive the engagement",
+			allOrAllOther: armies.some((a) => a._died || a._notable) ? "All other" : "All"
+		});
 		recordBattleGraves(turnContext, prov, armies.filter((a) => a._died), c.player);
 		c.armies = c.armies.filter((a) => !a._died && !a._disbanded);
 	}
@@ -43377,7 +52810,11 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (_rollDruidGain) trySkillGain(turnContext, neutralGuardHero, "druid", SKILLGAIN_STD, narrative, !won ? 1 : .5);
 	}
 	const _sumDef = defHero ? defHero.name.replace(" (wandering)", "") : `the defenders of ${prov.name}`;
-	const summaryText = `⚔ Battle at ${prov.name}: ${won ? `${cName}'s forces defeat ${_sumDef}` : `${_sumDef} hold against ${cName}`}.`;
+	const summaryText = {
+		kind: "the onlookers' summary of a battle",
+		provName: prov.name,
+		outcomeWords: won ? `${cName}'s forces defeat ${_sumDef}` : `${_sumDef} hold against ${cName}`
+	};
 	const _telAtkLost = (armies || []).filter((a) => a && a._died && !a._phantom).length, _telDefLost = (defenders || []).filter((a) => a && a._died && !a._phantom).length + _npcSunkLost + _npcDefWinLost;
 	try {
 		_tel.battles.push({
@@ -43438,7 +52875,11 @@ function combatVsChar(turnContext, atk, def, prov) {
 		(def.armies || []).forEach((a) => {
 			if (a) a._laNoTerrain = true;
 		});
-		narrate(narrative, `⚡ ${atk.name}'s Lightning Advance catches ${def.name} completely unready — no terrain advantage, no pre-battle magic and no answering volley.`);
+		narrate(narrative, {
+			kind: "the attacker's lightning advance catches the defender unready",
+			atkName: atk.name,
+			defName: def.name
+		});
 	}
 	applyWraithTouch(atk.armies || [], def.armies || [], narrative);
 	applyWraithTouch(def.armies || [], atk.armies || [], narrative);
@@ -43485,8 +52926,17 @@ function combatVsChar(turnContext, atk, def, prov) {
 	let atkTactBonus = isPvPSea ? 1 : Math.min(2, 1 + atkTact * .2);
 	let defTactBonus = isPvPSea ? 1 : Math.min(2, 1 + defTact * .2);
 	const _pvpHeldBy = prov.owner != null && G.players[prov.owner] ? `${G.players[prov.owner].name}` : `${G.players[def.player]?.name || def.name}`;
-	if (!atk._resumeBattle) narrate(narrative, `➡️ ${atk.name} (${G.players[atk.player]?.name}) moves into ${prov.name}, held by ${_pvpHeldBy} — a battle is initiated.`);
-	narrate(narrative, `⚔ **Battle for ${prov.name}**`);
+	if (!atk._resumeBattle) narrate(narrative, {
+		kind: "the attacker moves into the province and a battle is initiated",
+		atkName: atk.name,
+		attackersRealmName: G.players[atk.player]?.name,
+		provName: prov.name,
+		heldByName: _pvpHeldBy
+	});
+	narrate(narrative, {
+		kind: "the battle for a province begins",
+		provName: prov.name
+	});
 	{
 		const _ia = magicItemsLine(atk), _id = magicItemsLine(def);
 		if (_ia) narrate(narrative, _ia);
@@ -43530,20 +52980,31 @@ function combatVsChar(turnContext, atk, def, prov) {
 		def,
 		def.name,
 		defArmies
-	]]) if (_f && G.players[_h.player]?.alignment === "Evil" && _ar.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, `💀 Reign of Fear — ${prov.name} still cowers under ${_hn}'s Terror, and the monsters of the host fight at ×${REIGN_OF_FEAR_MULT}.`);
+	]]) if (_f && G.players[_h.player]?.alignment === "Evil" && _ar.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, {
+		kind: "the province still cowers under a reign of fear",
+		provName: prov.name,
+		terrorHeroName: _hn,
+		reignOfFearMultiplier: REIGN_OF_FEAR_MULT
+	});
 	const _duelOutcome = preBattleDuel(turnContext, atk, def, narrative);
 	const atkMorale = _duelOutcome.atkMorale, defMorale = _duelOutcome.defMorale;
 	const atkCmdrSlain = !!_duelOutcome.atkSlain || atk.alive === false;
 	const defCmdrSlain = !!_duelOutcome.defSlain || def.alive === false;
 	if (atkCmdrSlain) {
-		narrate(narrative, `⚑ With ${atk.name} cut down before the lines were joined, the senior captain of the host takes command — the attack goes in regardless, though without their fallen leader's guiding hand.`);
+		narrate(narrative, {
+			kind: "the attacker is cut down before the lines join, and a captain takes command",
+			atkName: atk.name
+		});
 		atkTact = 0;
 		atkTactBonus = 1;
 		atk._druidNegated = true;
 		atk._tacticalNegated = true;
 	}
 	if (defCmdrSlain) {
-		narrate(narrative, `⚑ With ${def.name} slain before their army, a steady-handed veteran steps into command — the defence holds its ground, leaderless but unbowed.`);
+		narrate(narrative, {
+			kind: "the defender is slain before his army, and a veteran takes command",
+			defName: def.name
+		});
 		defTact = 0;
 		defTactBonus = 1;
 		def._druidNegated = true;
@@ -43555,35 +53016,56 @@ function combatVsChar(turnContext, atk, def, prov) {
 	const isHome = _founderP != null && def.player === _founderP && prov.owner === _founderP;
 	const atkHomeP = _founderP != null && atk.player === _founderP && prov.owner !== _founderP;
 	const atkHomeBonusP = atkHomeP ? 1.5 : 1;
-	if (atkHomeP) narrate(narrative, `🏠 ${atkName} fights to win back ${prov.name}, the realm's own capital — home ground lends the assault ×1.5 strength.`);
+	if (atkHomeP) narrate(narrative, {
+		kind: "the attacker fights to win back his realm's capital",
+		atkName,
+		provName: prov.name
+	});
 	let defBonus = 1.25 * (isHome ? 1.2 : 1);
 	{
 		let _sg = discSum(turnContext, atk.player, "siege", "delta", (e) => !e.withTypes || atkArmies.some((a) => a && e.withTypes.includes(a.type)));
 		if (_sg > 0) {
 			defBonus = Math.max(1, defBonus - _sg);
-			narrate(narrative, `  🏰 ${atkName}'s siegecraft wears down the defenders' fortifications (province bonus −${_sg.toFixed(2)}).`);
+			narrate(narrative, {
+				kind: "the attacker's siegecraft wears down the defenders' fortifications",
+				atkName,
+				siegecraftReduction: _sg.toFixed(2)
+			});
 		}
 	}
 	if (prov.owner === def.player && G.players[def.player]?.alignment === "Good") {
 		defBonus *= 1.1;
-		narrate(narrative, `✝ Righteous Defence — ${defName}'s host defends ground held justly (+10% defence).`);
+		narrate(narrative, {
+			kind: "the defender's host defends ground held justly",
+			defName
+		});
 	}
 	{
 		const _dOwnP = prov.owner != null && prov.owner === def.player ? Math.min(DISC_DEFOWN_CAP, discSum(turnContext, def.player, "defOwn", "pct", (e) => !e.home || homeFounderOf(G, prov.id) === def.player)) : 0;
 		if (_dOwnP > 0) {
 			defBonus *= 1 + _dOwnP;
-			narrate(narrative, `  🛡 ${defName}'s realm holds its own ground the harder (+${dispFloor(_dOwnP * 100)}% defence).`);
+			narrate(narrative, {
+				kind: "the defender's realm holds its own ground the harder",
+				defName,
+				ownGroundDefencePct: dispFloor(_dOwnP * 100)
+			});
 		}
 	}
 	if (isHome && prov.owner === def.player && activeItems(def).some((it) => it.effect && it.effect.stat === "homeDefBonus")) {
 		defBonus *= 1.25;
-		narrate(narrative, `  🛡 ${defName}'s Banner of the Realm rallies the home defense (+25%).`);
+		narrate(narrative, {
+			kind: "the defender's banner of the realm rallies the home defence",
+			defName
+		});
 	}
 	if (activeItems(atk).some((it) => it.effect && it.effect.stat === "siegeBonus")) {
 		defBonus = 1 + (defBonus - 1) * .5;
-		narrate(narrative, `  🏰 ${atkName}'s siege mastery halves the defenders' fortifications.`);
+		narrate(narrative, {
+			kind: "the attacker's siege mastery halves the defenders' fortifications",
+			atkName
+		});
 	}
-	if (isHome) narrate(narrative, `The defenders fight on home ground, gaining ×1.5 total defensive bonus.`);
+	if (isHome) narrate(narrative, { kind: "the defenders fight on home ground" });
 	const atkFanChance = { ...FANATIC_CHANCE_BY_ALIGN };
 	const defFanChance = { ...FANATIC_CHANCE_BY_ALIGN };
 	const atkAlign = G.players[atk.player]?.alignment || "Neutral";
@@ -43603,15 +53085,47 @@ function combatVsChar(turnContext, atk, def, prov) {
 	const atkFanMult = Math.max(1, atkFanatic ? 1.3 : 1, atkSkelFanatic ? UNDEAD_SKEL_KING_FAN : 1, atkEvilMonster ? 1.25 : 1, atkSkelHero ? UNDEAD_SKEL_HERO_FAN : 1);
 	const defFanMult = Math.max(1, defFanatic ? 1.3 : 1, defSkelFanatic ? UNDEAD_SKEL_KING_FAN : 1, defEvilMonster ? 1.25 : 1, defSkelHero ? UNDEAD_SKEL_HERO_FAN : 1);
 	const _pct = (m) => Math.round((m - 1) * 100);
-	if (atkSkelFanatic) narrate(narrative, `${atkName}'s skeletal legions fight with undying fanaticism under their Undead king! (+${_pct(UNDEAD_SKEL_KING_FAN)}% strength)`);
-	if (defSkelFanatic) narrate(narrative, `${defName}'s skeletal legions fight with undying fanaticism under their Undead king! (+${_pct(UNDEAD_SKEL_KING_FAN)}% strength)`);
-	if (atkEvilMonster && !atkFanatic) narrate(narrative, `${atkName}'s monsters are driven to savage fury! (+25% strength)`);
-	if (defEvilMonster && !defFanatic) narrate(narrative, `${defName}'s monsters are driven to savage fury! (+25% strength)`);
-	if (atkSkelHero) narrate(narrative, `${atkName}'s skeletal legions know no fear (+${_pct(UNDEAD_SKEL_HERO_FAN)}% strength — undying fanaticism).`);
-	if (defSkelHero) narrate(narrative, `${defName}'s skeletal legions know no fear (+${_pct(UNDEAD_SKEL_HERO_FAN)}% strength — undying fanaticism).`);
-	if (atkFanatic && !atkSkelFanatic && !atkSkelHero) narrate(narrative, `${atkName}'s forces fight with fanatical zeal! (+30% attacking strength)`);
-	if (defFanatic && !defSkelFanatic && !defSkelHero && _consecratedHere) narrate(narrative, `✨ On the consecrated ground of ${prov.name}, ${defName}'s defenders fight before the altars of their gods with fanatical zeal! (+30% defending strength)`);
-	else if (defFanatic && !defSkelFanatic && !defSkelHero) narrate(narrative, `${defName}'s forces fight with fanatical zeal! (+30% defending strength)`);
+	if (atkSkelFanatic) narrate(narrative, {
+		kind: "a side's skeletal legions fight with fanaticism under their undead king",
+		sideName: atkName,
+		undeadKingFanaticismPct: _pct(UNDEAD_SKEL_KING_FAN)
+	});
+	if (defSkelFanatic) narrate(narrative, {
+		kind: "a side's skeletal legions fight with fanaticism under their undead king",
+		sideName: defName,
+		undeadKingFanaticismPct: _pct(UNDEAD_SKEL_KING_FAN)
+	});
+	if (atkEvilMonster && !atkFanatic) narrate(narrative, {
+		kind: "a side's monsters are driven to savage fury",
+		sideName: atkName
+	});
+	if (defEvilMonster && !defFanatic) narrate(narrative, {
+		kind: "a side's monsters are driven to savage fury",
+		sideName: defName
+	});
+	if (atkSkelHero) narrate(narrative, {
+		kind: "a side's skeletal legions know no fear",
+		sideName: atkName,
+		undeadHeroFanaticismPct: _pct(UNDEAD_SKEL_HERO_FAN)
+	});
+	if (defSkelHero) narrate(narrative, {
+		kind: "a side's skeletal legions know no fear",
+		sideName: defName,
+		undeadHeroFanaticismPct: _pct(UNDEAD_SKEL_HERO_FAN)
+	});
+	if (atkFanatic && !atkSkelFanatic && !atkSkelHero) narrate(narrative, {
+		kind: "the attacker's forces fight with fanatical zeal",
+		atkName
+	});
+	if (defFanatic && !defSkelFanatic && !defSkelHero && _consecratedHere) narrate(narrative, {
+		kind: "the defenders fight with fanatical zeal on consecrated ground",
+		provName: prov.name,
+		defName
+	});
+	else if (defFanatic && !defSkelFanatic && !defSkelHero) narrate(narrative, {
+		kind: "the defender's forces fight with fanatical zeal",
+		defName
+	});
 	let pvpFront = rollBattleWidth(prov.terrain);
 	const MISSILE_A = new Set(KC_UNIT_CLASS.missile);
 	const atkArch = atkCmdrSlain ? 0 : effStat(turnContext, atk, "archery");
@@ -43684,9 +53198,18 @@ function combatVsChar(turnContext, atk, def, prov) {
 		const castChance = Math.min(95, SPELL_CAST_BASE + spellLvl * 10 + magicL8CastBonus(caster) + discSum(turnContext, caster.player, "cast", "pct", (e) => (!e.school || e.school === school) && (!e.ctx || e.ctx === "battle")));
 		const castRoll = d100();
 		telSpell(turnContext, caster, spellName, school, spellLvl, castChance, castRoll, "battle");
-		narrate(narr, `✨ **Pre-battle Magic: ${caster.name} casts ${spellName}** (${SKILL_LABELS[school] || school} ${spellLvl}) — ${castChance}% [roll ${castRoll}${castRoll <= castChance ? " ✓" : " ✗"}]`);
+		narrate(narr, {
+			kind: "the caster casts a spell before the battle",
+			casterName: caster.name,
+			spellName,
+			schoolLabel: SKILL_LABELS[school] || school,
+			spellLevel: spellLvl,
+			castChance,
+			castRoll,
+			castMark: castRoll <= castChance ? " ✓" : " ✗"
+		});
 		if (castRoll > castChance) {
-			narrate(narr, `  Spell fizzles.`);
+			narrate(narr, { kind: "the spell before the battle fizzles" });
 			return;
 		}
 		if (spellName === "Fireball") {
@@ -43697,34 +53220,55 @@ function combatVsChar(turnContext, atk, def, prov) {
 					const cut = Math.max(1, Math.round(unitBaseStrength(d) * .5));
 					d._tempStrReduction = (d._tempStrReduction || 0) + cut;
 				});
-				narrate(narr, `  🔥 Fireball halves the enemy's ${_fbHits.length > 1 ? "two strongest units" : "strongest unit"}, ${_fbHits.map((d) => d.unitName || d.type).join(" and ")}.`);
+				narrate(narr, {
+					kind: "a fireball halves the enemy's strongest units",
+					fireballTargetsWords: _fbHits.length > 1 ? "two strongest units" : "strongest unit",
+					fireballHitUnitNames: _fbHits.map((d) => d.unitName || d.type).join(" and ")
+				});
 			}
 		} else if (spellName === "Telekinetic Storm") {
 			if (enemyCmdr) {
 				if (effStat(turnContext, enemyCmdr, "tactical") > 0 && !isPvPSea) {
 					enemyCmdr._tacticalHalved = true;
 					enemyCmdr._tacticalMult = .5;
-					narrate(narr, `  🌀 Telekinetic Storm scatters ${enemyCmdr.name}'s formations — their Tactical command is cut to half effectiveness this battle.`);
+					narrate(narr, {
+						kind: "a telekinetic storm scatters the enemy commander's formations",
+						enemyCommanderName: enemyCmdr.name
+					});
 				} else {
 					enemyCmdr._tacticalHalved = true;
-					narrate(narr, `  🌀 Telekinetic Storm rages, but ${enemyCmdr.name} has no tactical command to disrupt here.`);
+					narrate(narr, {
+						kind: "a telekinetic storm finds no tactical command to disrupt",
+						enemyCommanderName: enemyCmdr.name
+					});
 				}
 			}
 		} else if (spellName === "Psychic Blast") {
 			if (enemyCmdr) {
 				enemyCmdr._druidNegated = true;
-				narrate(narr, `  🧠 Psychic Blast severs ${enemyCmdr.name}'s bond with their beasts — their Druid skill is negated this battle.`);
+				narrate(narr, {
+					kind: "a psychic blast severs the enemy commander's bond with his beasts",
+					enemyCommanderName: enemyCmdr.name
+				});
 			}
 		} else if (spellName === "Lightning Bolt") {
 			const n = Math.min(targets.length, Math.max(1, Math.min(spellLvl, 5)));
 			shuffleP(targets).slice(0, n).forEach((d) => {
 				d._tempStrReduction = (d._tempStrReduction || 0) + Math.max(1, Math.round(unitBaseStrength(d) * .2));
 			});
-			narrate(narr, `  ⚡ Lightning Bolt: ${n} enemy unit${n !== 1 ? "s" : ""} lose 20% strength.`);
+			narrate(narr, {
+				kind: "a lightning bolt weakens enemy units",
+				unitCount: n,
+				unitsPlural: n !== 1 ? "s" : ""
+			});
 		} else if (spellName === "Curse") {
 			if (enemyCmdr) {
 				enemyCmdr._curseHalveStat = bestCurseSkill(turnContext, enemyCmdr);
-				narrate(narr, `  ☠ Curse withers ${enemyCmdr.name}'s ${curseSkillLabel(enemyCmdr._curseHalveStat)} — halved for this battle.`);
+				narrate(narr, {
+					kind: "a curse withers the enemy commander's skill",
+					enemyCommanderName: enemyCmdr.name,
+					cursedSkillLabel: curseSkillLabel(enemyCmdr._curseHalveStat)
+				});
 			}
 		} else if (spellName === "Control Undead") {
 			const ui = targets.map((a, i) => ({
@@ -43741,24 +53285,36 @@ function combatVsChar(turnContext, atk, def, prov) {
 					rc.armies = rc.armies || [];
 					rc.armies.push(unit);
 				}
-				narrate(narr, `  ☠ Control Undead turns the ${unit.unitName || unit.type} to ${caster.name}'s side!`);
-			} else narrate(narr, `  ☠ Control Undead finds no enemy undead to turn.`);
+				narrate(narr, {
+					kind: "control undead turns an enemy undead unit to the caster's side",
+					turnedUnitName: unit.unitName || unit.type,
+					casterName: caster.name
+				});
+			} else narrate(narr, { kind: "control undead finds no enemy undead to turn" });
 		} else if (spellName === "Holy Symbol") {
 			const ud = targets.filter((d) => d._isSkeletal || /Skelet|Bone|Wraith|Zombie|Ghoul|Lich|Undead/i.test(d.type || ""));
 			if (ud.length > 0) {
 				ud.forEach((d) => {
 					d._tempStrReduction = (d._tempStrReduction || 0) + Math.ceil(unitBaseStrength(d) * .25);
 				});
-				narrate(narr, `  ✝ Holy Symbol: ${ud.length} enemy undead unit${ud.length !== 1 ? "s" : ""} at 75% str.`);
-			} else narrate(narr, `  ✝ Holy Symbol: no enemy undead to smite.`);
+				narrate(narr, {
+					kind: "a holy symbol weakens enemy undead units",
+					undeadUnitCount: ud.length,
+					undeadUnitsPlural: ud.length !== 1 ? "s" : ""
+				});
+			} else narrate(narr, { kind: "a holy symbol finds no enemy undead to smite" });
 		} else if (spellName === "Spiritwrack") {
 			const md = targets.filter((d) => MISSILE_A.has(d.type));
 			if (md.length > 0) {
 				md.forEach((d) => {
 					d._tempStrReduction = (d._tempStrReduction || 0) + Math.ceil(unitBaseStrength(d) * .5);
 				});
-				narrate(narr, `  Spiritwrack: ${md.length} enemy missile unit${md.length !== 1 ? "s" : ""} at half str.`);
-			} else narrate(narr, `  Spiritwrack: enemy fields no missile troops.`);
+				narrate(narr, {
+					kind: "spiritwrack halves enemy missile units",
+					missileUnitCount: md.length,
+					missileUnitsPlural: md.length !== 1 ? "s" : ""
+				});
+			} else narrate(narr, { kind: "spiritwrack finds no enemy missile troops" });
 		}
 	}
 	if (!atkCmdrSlain) applyPreBattleMagic(atk, defArmies, narrative, def);
@@ -43773,20 +53329,39 @@ function combatVsChar(turnContext, atk, def, prov) {
 			const sp = armySpells[Math.floor(kcRng() * armySpells.length)];
 			const _pvpStrikeChance = primalStrikeChance(druLvl, heroChar._druidNegated ? null : heroChar, a.type);
 			const _pvpHit = kcRng() * 100 < _pvpStrikeChance;
-			if (!_pvpHit && _isPrimalP) narrate(narr, `〰 ${a.unitName || a.type} gather for **${sp.name}**, but the moment passes — the strike never lands (${_pvpStrikeChance}% chance${druLvl > 0 ? `, Druid ${druLvl}` : ", no commanding Druid"}).`);
+			if (!_pvpHit && _isPrimalP) narrate(narr, {
+				kind: "a unit's power gathers but never strikes",
+				unitName: a.unitName || a.type,
+				powerName: sp.name,
+				strikeChancePct: _pvpStrikeChance,
+				druidWords: druLvl > 0 ? `, Druid ${druLvl}` : ", no commanding Druid"
+			});
 			if (_pvpHit) {
-				narrate(narr, `✨ ${a.unitName || a.type} — **${sp.name}**: "${sp.flavour}"`);
+				narrate(narr, {
+					kind: "a unit uses its power in battle",
+					unitName: a.unitName || a.type,
+					powerName: sp.name,
+					powerFlavour: sp.flavour
+				});
 				if (sp.target === "all") {
 					const dmg = rng(sp.dmg[0], sp.dmg[1]);
 					enemyArmies.forEach((d) => {
 						d._tempStrReduction = (d._tempStrReduction || 0) + dmg;
 					});
-					narrate(narr, `  Hits all ${enemyArmies.length} enemy units: −${dmg} str.`);
+					narrate(narr, {
+						kind: "a unit's power hits all enemy units",
+						enemyUnitCount: enemyArmies.length,
+						damage: dmg
+					});
 				} else {
 					const d = enemyArmies[Math.floor(kcRng() * enemyArmies.length)];
 					const dmg = rng(sp.dmg[0], sp.dmg[1]);
 					d._tempStrReduction = (d._tempStrReduction || 0) + dmg;
-					narrate(narr, `  Hits ${d.unitName || d.type}: −${dmg} str.`);
+					narrate(narr, {
+						kind: "a unit's power hits one enemy unit",
+						struckUnitName: d.unitName || d.type,
+						damage: dmg
+					});
 				}
 			}
 		});
@@ -43800,7 +53375,10 @@ function combatVsChar(turnContext, atk, def, prov) {
 			if (_eyes) narrate(narr, _eyes);
 		}
 		if (archeryBlockedBy(enemyArmies, pvpTerrain, myForce)) {
-			narrate(narr, `🌲 ${heroChar.name}'s archers can find no target — Forest Wardens hold the thickets and the volley never comes.`);
+			narrate(narr, {
+				kind: "the hero's archers find no target among the forest wardens",
+				heroName: heroChar.name
+			});
 			return;
 		}
 		const myMissile = abilityMissileUnits(myForce, pvpTerrain);
@@ -43810,7 +53388,15 @@ function combatVsChar(turnContext, atk, def, prov) {
 		const _manyQ = hasItemBase(heroChar, "Quiver of Many Arrows");
 		const volleys = (hasQ ? 2 : 1) + (_manyQ ? 1 : 0);
 		const _prepared = myMissile.some((a) => abilityVolleys(a, isAtk) > 1);
-		narrate(narr, `🏹 ${heroChar.name}'s archery: ${myMissile.length} unit${myMissile.length !== 1 ? "s" : ""}${hasQ ? " (double volleys)" : ""}${_manyQ ? " (+1 shot)" : ""}${_prepared ? " (Prepared Ground: the Longbows loose twice)" : ""}`);
+		narrate(narr, {
+			kind: "the hero's archery volley begins",
+			heroName: heroChar.name,
+			missileUnitCount: myMissile.length,
+			missileUnitsPlural: myMissile.length !== 1 ? "s" : "",
+			wordsIfDoubleVolleys: hasQ ? " (double volleys)" : "",
+			wordsIfOneMoreShot: _manyQ ? " (+1 shot)" : "",
+			wordsIfPreparedGround: _prepared ? " (Prepared Ground: the Longbows loose twice)" : ""
+		});
 		myMissile.forEach((a) => {
 			for (let v = 0; v < volleys + abilityVolleys(a, isAtk) - 1; v++) {
 				const pool = missileTargetPool(enemyArmies, 0, a, myForce);
@@ -43818,9 +53404,27 @@ function combatVsChar(turnContext, atk, def, prov) {
 				const t = pool[Math.floor(kcRng() * pool.length)];
 				const dmgMult = missileDamageMult(a, myForce, pvpTerrain, t, isAtk);
 				const hit = applyMissileHit(t, archLvl, a, { dmgMult });
-				if (hit.immune) narrate(narr, `  ${a.unitName || a.type} → ${t.unitName || t.type}: shot glances off the ${hit.why || "armoured hull"}.`);
-				else if (hit.dmg > 0) narrate(narr, `  ${a.unitName || a.type} → ${t.unitName || t.type}: −${hit.dmg} str${hit.isFly ? " (×2 vs flying!)" : ""}${hit.thickHide ? " (Thick Hide: half)" : ""}${dmgMult > 1 ? ` (${a.type} ability ×${dmgMult.toFixed(2)})` : ""}${hit.capped ? " (softened to the limit)" : ""}.`);
-				else narrate(narr, `  ${a.unitName || a.type} → ${t.unitName || t.type}: already softened as far as arrows allow.`);
+				if (hit.immune) narrate(narr, {
+					kind: "a unit's shot glances off its target",
+					shooterName: a.unitName || a.type,
+					targetUnitName: t.unitName || t.type,
+					whyTheShotGlances: hit.why || "armoured hull"
+				});
+				else if (hit.dmg > 0) narrate(narr, {
+					kind: "a unit's shot weakens its target",
+					shooterName: a.unitName || a.type,
+					targetUnitName: t.unitName || t.type,
+					damage: hit.dmg,
+					wordsIfFlying: hit.isFly ? " (×2 vs flying!)" : "",
+					wordsIfThickHide: hit.thickHide ? " (Thick Hide: half)" : "",
+					wordsIfAbilityMultiplier: dmgMult > 1 ? ` (${a.type} ability ×${dmgMult.toFixed(2)})` : "",
+					wordsIfSoftenedToTheLimit: hit.capped ? " (softened to the limit)" : ""
+				});
+				else narrate(narr, {
+					kind: "a unit's target is already softened as far as arrows allow",
+					shooterName: a.unitName || a.type,
+					targetUnitName: t.unitName || t.type
+				});
 			}
 		});
 	}
@@ -43837,7 +53441,11 @@ function combatVsChar(turnContext, atk, def, prov) {
 			if (kcRng() >= .25) return;
 			const t = hulls[Math.floor(kcRng() * hulls.length)];
 			t._died = true;
-			narrate(narr, `🌊 A ${myName} whale cohort breaches beneath the ${t.unitName || t.type} and rolls her over — she goes down with all hands before a shot is fired.`);
+			narrate(narr, {
+				kind: "a side's whale cohort sinks an enemy ship",
+				sideName: myName,
+				targetUnitName: t.unitName || t.type
+			});
 		});
 	}
 	applyBreachAndSwamp(atkArmies, defArmies, atk.name, narrative);
@@ -43853,12 +53461,24 @@ function combatVsChar(turnContext, atk, def, prov) {
 	}
 	{
 		const _ta = terrainNoteList(atkArmies, pvpTerrain), _td = terrainNoteList(defArmies, pvpTerrain);
-		if (_ta || _td) narrate(narrative, `📊 Terrain (${pvpTerrain}): ${[_ta ? `${atkName} — ${_ta}` : null, _td ? `${defName} — ${_td}` : null].filter(Boolean).join("; ")}`);
+		if (_ta || _td) narrate(narrative, {
+			kind: "the terrain's effect on each side",
+			terrain: pvpTerrain,
+			terrainNotes: [_ta ? `${atkName} — ${_ta}` : null, _td ? `${defName} — ${_td}` : null].filter(Boolean).join("; ")
+		});
 	}
 	if (!pvpIsLand && (atkArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)) || defArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)))) {
 		const _airA = isAirborneAtSea(atkArmies), _airD = isAirborneAtSea(defArmies);
-		if (_airA || _airD) narrate(narrative, `⚠ ${_airA && _airD ? "Both hosts are" : (_airA ? atkName : defName) + "'s host is"} airborne over open water: land units carried by flyers fight at ×${SEA_AIRBORNE_LAND_PENALTY}, and the flyers carrying them at ×${SEA_AIRBORNE_FLYER_PENALTY}.`);
-		if (atkArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)) && !_airA || defArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)) && !_airD) narrate(narrative, `⚠ Land units fighting at sea: ×${SEA_LAND_PENALTY} strength penalty.`);
+		if (_airA || _airD) narrate(narrative, {
+			kind: "hosts airborne over open water fight at a penalty",
+			airborneHostsWords: _airA && _airD ? "Both hosts are" : (_airA ? atkName : defName) + "'s host is",
+			seaAirborneLandPenalty: SEA_AIRBORNE_LAND_PENALTY,
+			seaAirborneFlyerPenalty: SEA_AIRBORNE_FLYER_PENALTY
+		});
+		if (atkArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)) && !_airA || defArmies.some((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type)) && !_airD) narrate(narrative, {
+			kind: "land units fight at sea at a penalty",
+			seaLandPenalty: SEA_LAND_PENALTY
+		});
 	}
 	atkArmies.length;
 	defArmies.length;
@@ -43885,34 +53505,75 @@ function combatVsChar(turnContext, atk, def, prov) {
 	}
 	const atkDiscBonus = 1 + discoveryArmyBonus(atk.player);
 	const defDiscBonus = 1 + discoveryArmyBonus(def.player);
-	if (atkDiscBonus > 1) narrate(narrative, `${atkName}'s realm discoveries: +${((atkDiscBonus - 1) * 100).toFixed(0)}% army str.`);
-	if (defDiscBonus > 1) narrate(narrative, `${defName}'s realm discoveries: +${((defDiscBonus - 1) * 100).toFixed(0)}% army str.`);
-	if (_atkIllActiveP) narrate(narrative, `  🌫 The ever-shifting illusory ground of ${prov.name} throws ${atkName}'s forces into confusion — every unit fights as though mired in the worst terrain for its kind (at least −15% strength).`);
-	if (_defIllActiveP) narrate(narrative, `  🌫 The ever-shifting illusory ground of ${prov.name} throws ${defName}'s forces into confusion — every unit fights as though mired in the worst terrain for its kind (at least −15% strength).`);
+	if (atkDiscBonus > 1) narrate(narrative, {
+		kind: "a side's realm discoveries strengthen its army",
+		sideName: atkName,
+		discoveriesBonusPct: ((atkDiscBonus - 1) * 100).toFixed(0)
+	});
+	if (defDiscBonus > 1) narrate(narrative, {
+		kind: "a side's realm discoveries strengthen its army",
+		sideName: defName,
+		discoveriesBonusPct: ((defDiscBonus - 1) * 100).toFixed(0)
+	});
+	if (_atkIllActiveP) narrate(narrative, {
+		kind: "the illusory ground of the province confuses a side's forces",
+		provName: prov.name,
+		sideName: atkName
+	});
+	if (_defIllActiveP) narrate(narrative, {
+		kind: "the illusory ground of the province confuses a side's forces",
+		provName: prov.name,
+		sideName: defName
+	});
 	const _sanctBy = prov && prov._sanctuaryTurn === G.turn ? prov._sanctuaryBy : null;
 	const atkSanct = _sanctBy != null && atk.player !== _sanctBy ? .75 : 1;
 	const defSanct = _sanctBy != null && def.player !== _sanctBy ? .75 : 1;
-	if (atkSanct < 1) narrate(narrative, `  ✨ The sanctuary wards of ${prov.name} sap ${atkName}'s attackers (−25% strength).`);
-	if (defSanct < 1) narrate(narrative, `  ✨ The sanctuary wards of ${prov.name} sap ${defName}'s attackers (−25% strength).`);
+	if (atkSanct < 1) narrate(narrative, {
+		kind: "the sanctuary wards of the province sap a side's attackers",
+		provName: prov.name,
+		sideName: atkName
+	});
+	if (defSanct < 1) narrate(narrative, {
+		kind: "the sanctuary wards of the province sap a side's attackers",
+		provName: prov.name,
+		sideName: defName
+	});
 	let atkOrd = 1, defOrd = 1;
 	if (atk._grandStratagemTurn === G.turn) {
 		atkOrd *= 1.2;
-		narrate(narrative, `  📜 ${atkName} unfolds a Grand Stratagem — the attack lands at +20% strength.`);
+		narrate(narrative, {
+			kind: "the attacker unfolds a grand stratagem",
+			atkName
+		});
 	}
 	if (def._grandStratagemTurn === G.turn) {
 		defOrd *= 1.2;
-		narrate(narrative, `  📜 ${defName} unfolds a Grand Stratagem — the defence holds at +20% strength.`);
+		narrate(narrative, {
+			kind: "the defender unfolds a grand stratagem",
+			defName
+		});
 	}
 	if (def._feignedRetreatTurn === G.turn) {
 		defOrd *= 1.25;
-		narrate(narrative, `  🏳 ${defName}'s Feigned Retreat springs shut — the counter-attack strikes at +25% strength.`);
+		narrate(narrative, {
+			kind: "the defender's feigned retreat springs shut",
+			defName
+		});
 	}
 	if (raidLandedHere(turnContext, atk, prov)) {
 		atkOrd *= 1.25;
-		narrate(narrative, `  ⚓ ${atkName} storms ashore in a Raid the Coast — the amphibious assault hits at +25% strength.`);
+		narrate(narrative, {
+			kind: "the attacker storms ashore in a raid on the coast",
+			atkName
+		});
 	}
 	const _consecPenalty = _consecratedHere && (atkAlign === "Undead" || atkAlign === "Evil") ? .85 : 1;
-	if (_consecPenalty < 1) narrate(narrative, `✨ The ground of ${prov.name} is consecrated — ${atkName}'s ${atkAlign.toLowerCase()} host falters on hallowed earth (−15% strength).`);
+	if (_consecPenalty < 1) narrate(narrative, {
+		kind: "the consecrated ground of the province weakens the attacker's host",
+		provName: prov.name,
+		atkName,
+		attackersAlignment: atkAlign.toLowerCase()
+	});
 	const _pAtkFM = [
 		{
 			label: "fanaticism",
@@ -44016,7 +53677,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 		if (rx) delete rx._phantasmalBonus;
 		delete x._phantasmalBonus;
 	});
-	narrate(narrative, `📊 **Battle stats:**`);
+	narrate(narrative, { kind: "the battle's statistics begin" });
 	narrateAll(narrative, ladderLines("Attacker", atkName, atkRows, pvpFront, atkFlankPvp, _pAtkFM, atkBaseStr, {
 		grid: _gA.grid,
 		tact: pvpIsLand && atkTactBonus > 1 ? {
@@ -44031,7 +53692,10 @@ function combatVsChar(turnContext, atk, def, prov) {
 			label: `Tactical ${defTact} ${ladderFm(tacMulted(defTactBonus, def))}`
 		} : null
 	}));
-	narrate(narrative, `  ${fortuneNarrative(atkName, defName, atkBaseStr, defBaseStr, _fortP)}`);
+	narrate(narrative, {
+		kind: "the fortune of the battle",
+		fortuneWords: fortuneNarrative(atkName, defName, atkBaseStr, defBaseStr, _fortP)
+	});
 	const won = atkStr >= defStr;
 	{
 		const _wp = won ? atk.player : def.player;
@@ -44045,7 +53709,12 @@ function combatVsChar(turnContext, atk, def, prov) {
 	_bandPvP.max;
 	const isDecisivePvP = _bandPvP.max > .3;
 	const severity = _bandPvP.label;
-	narrate(narrative, `📊 Outcome: **${won ? atk.name : def.name} wins** — ${severity} (margin ${(margRatioPvP * 100).toFixed(0)}% of combined strength after fortune)`);
+	narrate(narrative, {
+		kind: "the battle's outcome and its margin",
+		winnerName: won ? atk.name : def.name,
+		severity,
+		marginPct: (margRatioPvP * 100).toFixed(0)
+	});
 	const _pvpWinner = won ? atk : def;
 	if (isDecisivePvP && G.players[_pvpWinner.player]?.alignment === "Evil" && (_pvpWinner.encounterPlan?.evilMode || "terror") === "terror") spreadTerror(turnContext, prov, _pvpWinner.player, narrative);
 	Math.min(atkStr, defStr) / Math.max(atkStr, defStr);
@@ -44072,10 +53741,26 @@ function combatVsChar(turnContext, atk, def, prov) {
 	const defTacMult = perkTier(def, "tactical") >= 3 ? .5 : 1;
 	const _rideAtk = rideThemDownBonus(atkArmies, pvpTerrain, atk);
 	const _rideDef = rideThemDownBonus(defArmies, pvpTerrain, def);
-	if (_rideAtk > 0 && !OPEN_COUNTRY.has(pvpTerrain)) narrate(narrative, `📯 ${atkName}'s War-Horn of the Plains sounds — the Free Lances ride the broken enemy down even in ${pvpTerrain} country.`);
-	if (_rideDef > 0 && !OPEN_COUNTRY.has(pvpTerrain)) narrate(narrative, `📯 ${defName}'s War-Horn of the Plains sounds — the Free Lances ride the broken enemy down even in ${pvpTerrain} country.`);
-	if (_rideAtk === 0 && countType(atkArmies, "Free Lances") > 0) narrate(narrative, `🐎 ${atkName}'s Free Lances find no room to ride in ${pvpTerrain} country — the broken enemy scatters into cover.`);
-	if (_rideDef === 0 && countType(defArmies, "Free Lances") > 0) narrate(narrative, `🐎 ${defName}'s Free Lances find no room to ride in ${pvpTerrain} country — the broken enemy scatters into cover.`);
+	if (_rideAtk > 0 && !OPEN_COUNTRY.has(pvpTerrain)) narrate(narrative, {
+		kind: "a side's war-horn of the plains lets its free lances ride in rough country",
+		sideName: atkName,
+		terrain: pvpTerrain
+	});
+	if (_rideDef > 0 && !OPEN_COUNTRY.has(pvpTerrain)) narrate(narrative, {
+		kind: "a side's war-horn of the plains lets its free lances ride in rough country",
+		sideName: defName,
+		terrain: pvpTerrain
+	});
+	if (_rideAtk === 0 && countType(atkArmies, "Free Lances") > 0) narrate(narrative, {
+		kind: "a side's free lances find no room to ride",
+		sideName: atkName,
+		terrain: pvpTerrain
+	});
+	if (_rideDef === 0 && countType(defArmies, "Free Lances") > 0) narrate(narrative, {
+		kind: "a side's free lances find no room to ride",
+		sideName: defName,
+		terrain: pvpTerrain
+	});
 	const _cutAtk = isHalfOrMore(atkArmies, "Corsair Fleet");
 	const _cutDef = isHalfOrMore(defArmies, "Corsair Fleet");
 	const _sfAtk = shieldFortHolds(atkArmies, _dep && _dep.gA);
@@ -44086,14 +53771,36 @@ function combatVsChar(turnContext, atk, def, prov) {
 	const _sharkAtk = pvpTerrain === "sea" && isHalfOrMore(atkArmies, "Shark Shoals"), _sharkDef = pvpTerrain === "sea" && isHalfOrMore(defArmies, "Shark Shoals");
 	const _huntPct = (mant, shark) => (mant ? RUN_THEM_DOWN_PCT : 0) + (shark ? RUN_THEM_DOWN_PCT : 0);
 	const _huntLines = (mant, shark, sf, winner, loser, narr) => {
-		if (mant) narrate(narr, sf ? `🛡 ${loser}'s Dwarven Guard lock shields as they give ground — ${winner}'s Manticore Pride find no broken backs to hunt.` : `🦂 ${winner}'s Manticore Pride hunt the broken companies down before they can get clear (+${dispFloor(RUN_THEM_DOWN_PCT * 100)}% losses to ${loser}).`);
-		if (shark) narrate(narr, sf ? `🛡 ${loser}'s Dwarven Guard lock shields as they give ground — ${winner}'s Shark Shoals find nothing in the water.` : `🦈 Feeding Frenzy — ${winner}'s Shark Shoals tear into ${loser}'s beaten crews as they founder (+${dispFloor(RUN_THEM_DOWN_PCT * 100)}% losses to ${loser}).`);
+		if (mant) narrate(narr, sf ? {
+			kind: "the loser's dwarven guard leave the manticore pride nothing to hunt",
+			loserName: loser,
+			winnerName: winner
+		} : {
+			kind: "the winner's manticore pride hunt the broken companies",
+			winnerName: winner,
+			runThemDownPct: dispFloor(RUN_THEM_DOWN_PCT * 100),
+			loserName: loser
+		});
+		if (shark) narrate(narr, sf ? {
+			kind: "the loser's dwarven guard leave the shark shoals nothing in the water",
+			loserName: loser,
+			winnerName: winner
+		} : {
+			kind: "the winner's shark shoals tear into the beaten crews",
+			winnerName: winner,
+			loserName: loser,
+			runThemDownPct: dispFloor(RUN_THEM_DOWN_PCT * 100),
+			loserName2: loser
+		});
 	};
 	const _noEscapeRoll = (force, name, narr) => {
 		(force || []).forEach((a) => {
 			if (kcRng() < .15) {
 				a._died = true;
-				narrate(narr, `— ${ownedUnitName(name, a)} are cut down with no escape!`);
+				narrate(narr, {
+					kind: "a unit is cut down with no escape",
+					unitName: ownedUnitName(name, a)
+				});
 			}
 		});
 	};
@@ -44147,13 +53854,27 @@ function combatVsChar(turnContext, atk, def, prov) {
 	let _heldField = false;
 	const survLine = (force, n0) => {
 		const f = (force || []).filter(Boolean), got = narrative.length - n0;
-		if (got < f.length) narrate(narrative, `— ${got > 0 ? "All other" : "All"} forces survive the engagement.`);
-		else if (!f.length && got === 0) narrate(narrative, `— No units were left on the field to count.`);
+		if (got < f.length) narrate(narrative, {
+			kind: "a side's other forces survive the engagement",
+			allOrAllOther: got > 0 ? "All other" : "All"
+		});
+		else if (!f.length && got === 0) narrate(narrative, { kind: "no units were left on the field to count" });
 	};
 	if (won) {
-		const _winVerb = pick(WIN_VERBS), _headIdx = narrative.length;
-		narrate(narrative, `After ${aAn(severity)} ${severity} battle, ${atkName}'s forces ${_winVerb} ${defName}'s army and seize ${prov.name}!`);
-		narrate(narrative, `⚔ **${atkName}'s forces** (attacker):`);
+		const _winVerb = pick$1(WIN_VERBS), _headIdx = narrative.length;
+		narrate(narrative, {
+			kind: "the attacker wins the battle and seizes the province",
+			severityArticle: aAn(severity),
+			severity,
+			atkName,
+			winVerb: _winVerb,
+			defName,
+			provName: prov.name
+		});
+		narrate(narrative, {
+			kind: "the attacker's casualties begin",
+			atkName
+		});
 		const _cas0 = narrative.length;
 		rollUnitFates(atkArmies, {
 			owner: atkName,
@@ -44164,11 +53885,32 @@ function combatVsChar(turnContext, atk, def, prov) {
 			say: (l) => narrate(narrative, l)
 		});
 		survLine(atkArmies, _cas0);
-		narrate(narrative, `🛡 **${defName}'s forces** (defender):`);
+		narrate(narrative, {
+			kind: "the defender's casualties begin",
+			defName
+		});
 		const _rideAtkEff = _sfDef ? 0 : _rideAtk + (_wargAtk ? RUN_THEM_DOWN_PCT : 0) + _huntPct(_mantAtk, _sharkAtk);
-		if (_rideAtk > 0 && _sfDef) narrate(narrative, `🛡 ${defName}'s Dwarven Guard lock shields as they give ground — ${atkName}'s Free Lances find no broken backs to ride down.`);
-		else if (_rideAtk > 0) narrate(narrative, `🐎 ${atkName}'s Free Lances ride down the broken companies (+${dispFloor(_rideAtk * 100)}% losses to ${defName}).`);
-		if (_wargAtk) narrate(narrative, _sfDef ? `🛡 ${defName}'s Dwarven Guard lock shields as they give ground — ${atkName}'s Warg Riders find no broken backs to run down.` : `🐺 ${atkName}'s Warg Riders run down the broken companies before they can get clear (+${dispFloor(RUN_THEM_DOWN_PCT * 100)}% losses to ${defName}).`);
+		if (_rideAtk > 0 && _sfDef) narrate(narrative, {
+			kind: "the loser's dwarven guard leave the free lances no broken backs",
+			loserName: defName,
+			winnerName: atkName
+		});
+		else if (_rideAtk > 0) narrate(narrative, {
+			kind: "the winner's free lances ride down the broken companies",
+			winnerName: atkName,
+			rideDownPct: dispFloor(_rideAtk * 100),
+			loserName: defName
+		});
+		if (_wargAtk) narrate(narrative, _sfDef ? {
+			kind: "the loser's dwarven guard leave the warg riders no broken backs",
+			loserName: defName,
+			winnerName: atkName
+		} : {
+			kind: "the winner's warg riders run down the broken companies",
+			winnerName: atkName,
+			runThemDownPct: dispFloor(RUN_THEM_DOWN_PCT * 100),
+			loserName: defName
+		});
 		_huntLines(_mantAtk, _sharkAtk, _sfDef, atkName, defName, narrative);
 		const _cas1 = narrative.length;
 		rollUnitFates(defArmies, {
@@ -44194,7 +53936,11 @@ function combatVsChar(turnContext, atk, def, prov) {
 		if (_cutAtk && defFriendlyAdj.length > 0) {
 			const overland = defFriendlyAdj.filter((p2) => p2.terrain !== "sea");
 			if (overland.length < defFriendlyAdj.length) {
-				narrate(narrative, `⛵ ${atkName}'s corsairs close the sea lanes — ${defName} cannot slip away by water.`);
+				narrate(narrative, {
+					kind: "the winner's corsairs close the sea lanes to the loser",
+					winnerName: atkName,
+					loserName: defName
+				});
 				defFriendlyAdj = overland;
 			}
 		}
@@ -44212,48 +53958,119 @@ function combatVsChar(turnContext, atk, def, prov) {
 				if (_st) narrate(narrative, _st);
 			}
 			if (_dmDef) {
-				narrate(narrative, `💀 Deathless March — ${defName}'s skeletal host has no fear to exploit: none are cut down in flight, and the dead stand their ground in ${prov.name}.`);
+				narrate(narrative, {
+					kind: "the loser's skeletal host stands its ground in a deathless march",
+					loserName: defName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
 				_heldField = true;
 			} else if (_sfDef && def.armies.length > 0) {
-				narrate(narrative, `🛡 Shield Fort — with no road out, ${defName}'s Dwarven Guard lock shields where they stand. None are cut down in flight, and ${prov.name} remains contested.`);
+				narrate(narrative, {
+					kind: "the loser's dwarven guard hold a shield fort with no road out",
+					loserName: defName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
 				_heldField = true;
 			} else {
-				narrate(narrative, `${defName} has nowhere to retreat — their forces take additional casualties!`);
+				narrate(narrative, {
+					kind: "the defender has nowhere to retreat",
+					defName
+				});
 				_noEscapeRoll(def.armies, def.name, narrative);
 				def.armies = def.armies.filter((a) => !a._died && !a._disbanded);
 				if (def.armies.length > 0) prov._battleUnresolved = true;
 				_heldField = true;
 			}
 		} else if (_defStays) {
-			narrate(narrative, `${defName}'s forces are pushed back but not broken — still the stronger host (${n0(_stayLo)} vs ${n0(_stayWi)} on the same footing, before fortune), they hold their ground in ${prov.name} and re-form to fight on rather than retreat.`);
+			narrate(narrative, {
+				kind: "the defender's stronger host is pushed back but stays",
+				defName,
+				stayingHostStrength: n0(_stayLo),
+				victorsStrength: n0(_stayWi),
+				provName: prov.name
+			});
 			prov._battleUnresolved = true;
 			_heldField = true;
 		} else if (def.alive === false || def.killedThisTurn) {
-			if ((def.armies || []).length === 0) narrate(narrative, `📊 ${defName}'s force is destroyed to the last — commander and column both.`);
+			if ((def.armies || []).length === 0) narrate(narrative, {
+				kind: "the loser's force is destroyed to the last",
+				loserName: defName
+			});
 		} else {
-			if (_sfDef && def.armies.length > 0) narrate(narrative, `🛡 Shield Fort — ${defName}'s Dwarven Guard withdraw in good order behind locked shields.`);
+			if (_sfDef && def.armies.length > 0) narrate(narrative, {
+				kind: "the loser's dwarven guard withdraw behind a shield fort",
+				loserName: defName
+			});
 			const defFromProv = G.world.provinces[def._attackedFrom];
 			const defRetreatTo = defFromProv && defFromProv.id !== prov.id && defFriendlyAdj.some((p2) => p2.id === defFromProv.id) ? defFromProv : bestRetreat(turnContext, def, defFriendlyAdj.filter((p2) => p2.id !== prov.id)) || defFriendlyAdj[0];
-			narrate(narrative, `${defName} retreats to ${defRetreatTo.name}.`);
+			narrate(narrative, {
+				kind: "the loser retreats to a province",
+				loserName: defName,
+				retreatToName: defRetreatTo.name
+			});
 			const defSurvivors2 = def.armies || [];
-			if (defSurvivors2.length > 0) narrate(narrative, `📊 ${defName}'s surviving forces: ${describeArmy(defSurvivors2)}.`);
-			else narrate(narrative, `📊 ${defName}'s forces are completely destroyed — they retreat alone.`);
+			if (defSurvivors2.length > 0) narrate(narrative, {
+				kind: "the loser's surviving forces",
+				loserName: defName,
+				survivingForces: describeArmy(defSurvivors2)
+			});
+			else narrate(narrative, {
+				kind: "the loser's forces are completely destroyed and he retreats alone",
+				loserName: defName
+			});
 			prov.characters = (prov.characters || []).filter((id) => id !== def.id);
 			defRetreatTo.characters = defRetreatTo.characters || [];
 			if (!defRetreatTo.characters.includes(def.id)) defRetreatTo.characters.push(def.id);
 			def.location = defRetreatTo.id;
 		}
-		if (_heldField) narrative[_headIdx] = `After ${aAn(severity)} ${severity} battle, ${atkName}'s forces ${_winVerb} ${defName}'s army — but ${defName}'s survivors do not yield ${prov.name}.`;
+		if (_heldField) narrative[_headIdx] = {
+			kind: "the attacker wins the battle but the defender's survivors hold the province",
+			severityArticle: aAn(severity),
+			severity,
+			atkName,
+			winVerb: _winVerb,
+			defName,
+			defName2: defName,
+			provName: prov.name
+		};
 	} else {
 		const _headIdx = narrative.length;
-		narrate(narrative, `${atkName}'s assault is repelled! After ${aAn(severity)} ${severity} engagement, ${defName} drives the attackers from ${prov.name}.`);
-		narrate(narrative, `⚔ **${atkName}'s forces** (attacker):`);
+		narrate(narrative, {
+			kind: "the attacker's assault is repelled and driven from the province",
+			atkName,
+			severityArticle: aAn(severity),
+			severity,
+			defName,
+			provName: prov.name
+		});
+		narrate(narrative, {
+			kind: "the attacker's casualties begin",
+			atkName
+		});
 		const _rideDefEff = _sfAtk ? 0 : _rideDef + (_wargDef ? RUN_THEM_DOWN_PCT : 0) + _huntPct(_mantDef, _sharkDef);
-		if (_rideDef > 0 && _sfAtk) narrate(narrative, `🛡 ${atkName}'s Dwarven Guard lock shields as they give ground — ${defName}'s Free Lances find no broken backs to ride down.`);
-		else if (_rideDef > 0) narrate(narrative, `🐎 ${defName}'s Free Lances ride down the broken companies (+${dispFloor(_rideDef * 100)}% losses to ${atkName}).`);
-		if (_wargDef) narrate(narrative, _sfAtk ? `🛡 ${atkName}'s Dwarven Guard lock shields as they give ground — ${defName}'s Warg Riders find no broken backs to run down.` : `🐺 ${defName}'s Warg Riders run down the broken companies before they can get clear (+${dispFloor(RUN_THEM_DOWN_PCT * 100)}% losses to ${atkName}).`);
+		if (_rideDef > 0 && _sfAtk) narrate(narrative, {
+			kind: "the loser's dwarven guard leave the free lances no broken backs",
+			loserName: atkName,
+			winnerName: defName
+		});
+		else if (_rideDef > 0) narrate(narrative, {
+			kind: "the winner's free lances ride down the broken companies",
+			winnerName: defName,
+			rideDownPct: dispFloor(_rideDef * 100),
+			loserName: atkName
+		});
+		if (_wargDef) narrate(narrative, _sfAtk ? {
+			kind: "the loser's dwarven guard leave the warg riders no broken backs",
+			loserName: atkName,
+			winnerName: defName
+		} : {
+			kind: "the winner's warg riders run down the broken companies",
+			winnerName: defName,
+			runThemDownPct: dispFloor(RUN_THEM_DOWN_PCT * 100),
+			loserName: atkName
+		});
 		_huntLines(_mantDef, _sharkDef, _sfAtk, defName, atkName, narrative);
 		const _cas2 = narrative.length;
 		rollUnitFates(atkArmies, {
@@ -44268,7 +54085,10 @@ function combatVsChar(turnContext, atk, def, prov) {
 			say: (l) => narrate(narrative, l)
 		});
 		survLine(atkArmies, _cas2);
-		narrate(narrative, `🛡 **${defName}'s forces** (defender):`);
+		narrate(narrative, {
+			kind: "the defender's casualties begin",
+			defName
+		});
 		const _cas3 = narrative.length;
 		rollUnitFates(defArmies, {
 			owner: defName,
@@ -44292,7 +54112,11 @@ function combatVsChar(turnContext, atk, def, prov) {
 		if (_cutDef && atkFriendlyAdj.length > 0) {
 			const overland = atkFriendlyAdj.filter((p2) => p2.terrain !== "sea");
 			if (overland.length < atkFriendlyAdj.length) {
-				narrate(narrative, `⛵ ${defName}'s corsairs close the sea lanes — ${atkName} cannot slip away by water.`);
+				narrate(narrative, {
+					kind: "the winner's corsairs close the sea lanes to the loser",
+					winnerName: defName,
+					loserName: atkName
+				});
 				atkFriendlyAdj = overland;
 			}
 		}
@@ -44310,40 +54134,82 @@ function combatVsChar(turnContext, atk, def, prov) {
 				if (_st) narrate(narrative, _st);
 			}
 			if (_dmAtk) {
-				narrate(narrative, `💀 Deathless March — ${atkName}'s skeletal host has no fear to exploit: none are cut down in flight, and the dead stand their ground in ${prov.name}.`);
+				narrate(narrative, {
+					kind: "the loser's skeletal host stands its ground in a deathless march",
+					loserName: atkName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
 				_heldField = true;
 			} else if (_sfAtk && atk.armies.length > 0) {
-				narrate(narrative, `🛡 Shield Fort — with no road out, ${atkName}'s Dwarven Guard lock shields where they stand. None are cut down in flight, and ${prov.name} remains contested.`);
+				narrate(narrative, {
+					kind: "the loser's dwarven guard hold a shield fort with no road out",
+					loserName: atkName,
+					provName: prov.name
+				});
 				prov._battleUnresolved = true;
 				_heldField = true;
 			} else {
-				narrate(narrative, `${atkName} has nowhere to retreat — their forces take additional casualties, ${prov.terrain === "sea" ? "hemmed in on open water" : "cut down against the walls"} with no escape!`);
+				narrate(narrative, {
+					kind: "the attacker has nowhere to retreat",
+					atkName,
+					howTheyAreCutDown: prov.terrain === "sea" ? "hemmed in on open water" : "cut down against the walls"
+				});
 				_noEscapeRoll(atk.armies, atk.name, narrative);
 				atk.armies = atk.armies.filter((a) => !a._died && !a._disbanded);
 				if (atk.armies.length > 0) prov._battleUnresolved = true;
 				_heldField = true;
 			}
 		} else if (_atkStays) {
-			narrate(narrative, `${atkName}'s assault is thrown back but their host is still the stronger (${n0(_stayLo)} vs ${n0(_stayWi)} on the same footing, before fortune) — they hold the field in ${prov.name} and re-form to press the attack again rather than retreat.`);
+			narrate(narrative, {
+				kind: "the attacker's stronger host is thrown back but stays",
+				atkName,
+				stayingHostStrength: n0(_stayLo),
+				victorsStrength: n0(_stayWi),
+				provName: prov.name
+			});
 			prov._battleUnresolved = true;
 			_heldField = true;
 		} else if (atk.alive === false || atk.killedThisTurn) {
-			if ((atk.armies || []).length === 0) narrate(narrative, `📊 ${atkName}'s force is destroyed to the last — commander and column both.`);
+			if ((atk.armies || []).length === 0) narrate(narrative, {
+				kind: "the loser's force is destroyed to the last",
+				loserName: atkName
+			});
 		} else {
-			if (_sfAtk && atk.armies.length > 0) narrate(narrative, `🛡 Shield Fort — ${atkName}'s Dwarven Guard withdraw in good order behind locked shields.`);
+			if (_sfAtk && atk.armies.length > 0) narrate(narrative, {
+				kind: "the loser's dwarven guard withdraw behind a shield fort",
+				loserName: atkName
+			});
 			const fromProv = G.world.provinces[atk._attackedFrom];
 			const retreatTo = fromProv && fromProv.id !== prov.id && atkFriendlyAdj.some((p2) => p2.id === fromProv.id) ? fromProv : bestRetreat(turnContext, atk, atkFriendlyAdj.filter((p2) => p2.id !== prov.id)) || atkFriendlyAdj[0];
-			narrate(narrative, `${atkName} retreats to ${retreatTo.name}.`);
+			narrate(narrative, {
+				kind: "the loser retreats to a province",
+				loserName: atkName,
+				retreatToName: retreatTo.name
+			});
 			const atkSurvivors = atk.armies || [];
-			if (atkSurvivors.length > 0) narrate(narrative, `📊 ${atkName}'s surviving forces: ${describeArmy(atkSurvivors)}.`);
-			else narrate(narrative, `📊 ${atkName}'s forces are completely destroyed — they retreat alone.`);
+			if (atkSurvivors.length > 0) narrate(narrative, {
+				kind: "the loser's surviving forces",
+				loserName: atkName,
+				survivingForces: describeArmy(atkSurvivors)
+			});
+			else narrate(narrative, {
+				kind: "the loser's forces are completely destroyed and he retreats alone",
+				loserName: atkName
+			});
 			prov.characters = (prov.characters || []).filter((id) => id !== atk.id);
 			retreatTo.characters = retreatTo.characters || [];
 			if (!retreatTo.characters.includes(atk.id)) retreatTo.characters.push(atk.id);
 			atk.location = retreatTo.id;
 		}
-		if (_heldField) narrative[_headIdx] = `${atkName}'s assault is repelled! After ${aAn(severity)} ${severity} engagement, ${defName} throws the attackers back — but they are not yet driven from ${prov.name}.`;
+		if (_heldField) narrative[_headIdx] = {
+			kind: "the attacker's assault is repelled but not driven from the province",
+			atkName,
+			severityArticle: aAn(severity),
+			severity,
+			defName,
+			provName: prov.name
+		};
 	}
 	[...atk.armies || [], ...def.armies || []].forEach((a) => {
 		delete a._tempStrReduction;
@@ -44365,7 +54231,11 @@ function combatVsChar(turnContext, atk, def, prov) {
 		trySkillGain(turnContext, won ? atk : def, "druid", SKILLGAIN_STD, narrative);
 		trySkillGain(turnContext, won ? def : atk, "druid", SKILLGAIN_STD, narrative, .5);
 	}
-	const summaryText = `⚔ Battle at ${prov.name}: ${won ? `${atkName}'s forces defeat ${defName}` : `${defName}'s forces hold against ${atkName}`}.`;
+	const summaryText = {
+		kind: "the onlookers' summary of a battle",
+		provName: prov.name,
+		outcomeWords: won ? `${atkName}'s forces defeat ${defName}` : `${defName}'s forces hold against ${atkName}`
+	};
 	_tallyLost();
 	try {
 		_tel.battles.push({
@@ -44736,6 +54606,7 @@ function runDefendMaterializedReactions(turnContext, ph) {
 				realms: targetsPi,
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: [
 				c.id,
@@ -44746,12 +54617,13 @@ function runDefendMaterializedReactions(turnContext, ph) {
 		});
 		if (_hP.changed) emit(turnContext, {
 			type: "combat",
-			text: commandHandoverLine(_hP.leader, quarry, prov.name),
+			fact: commandHandoverLine(_hP.leader, quarry, prov.name),
 			audience: {
 				actor: quarry.player,
 				realms: targetsPi,
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		const battle = combatVsChar(turnContext, combinedAtk, combinedDef, prov);
@@ -44813,6 +54685,7 @@ function runDefendMaterializedReactions(turnContext, ph) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			}
@@ -44859,6 +54732,7 @@ function runDefendAmbush(turnContext, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: quarryProv.id
 		});
 		if (roll > chance) {
@@ -44869,6 +54743,7 @@ function runDefendAmbush(turnContext, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: quarryProv.id
 			});
 			c._defendReactedPhase = ph;
@@ -44901,6 +54776,7 @@ function runDefendAmbush(turnContext, ph) {
 				realms: targetsPi,
 				seen: prov.owner !== null ? "battle" : void 0
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: _duelChars
 		});
@@ -44912,6 +54788,7 @@ function runDefendAmbush(turnContext, ph) {
 				actor: c.player,
 				realms: targetsPi
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: _duelChars
 		}));
@@ -44928,6 +54805,7 @@ function runDefendAmbush(turnContext, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -44938,6 +54816,7 @@ function runDefendAmbush(turnContext, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -44955,6 +54834,7 @@ function runDefendAmbush(turnContext, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -44965,6 +54845,7 @@ function runDefendAmbush(turnContext, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -45020,6 +54901,7 @@ function runReinforcementArrivals(turnContext, ph, intents) {
 				actor: it.player,
 				realms: [it.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: P.id
 		});
 	});
@@ -45033,7 +54915,16 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 	if ((c.armies || []).length === 0) return false;
 	if (prov.owner != null && prov.owner !== c.player && !areEnemies(turnContext, c.player, prov.owner)) {
 		const _rel = areAllied(turnContext, c.player, prov.owner) ? "your realms are allied" : "your realms are not at war";
-		notifyProvinceOwner(turnContext, prov, `👁 ${c.name}${realmTag(turnContext, c.player)} now leads ${(c.armies || []).length} unit${(c.armies || []).length !== 1 ? "s" : ""} inside your province of ${prov.name}, but makes no move against it — ${_rel}. ${prov.name} remains yours.`, c.player, ph);
+		notifyProvinceOwner(turnContext, prov, {
+			kind: "a hero not at war with the province's realm gains a host inside it",
+			cName: c.name,
+			realmTag: realmTag(turnContext, c.player),
+			unitCount: (c.armies || []).length,
+			unitsPlural: (c.armies || []).length !== 1 ? "s" : "",
+			provName: prov.name,
+			relationWords: _rel,
+			provName2: prov.name
+		}, c.player, ph);
 		return false;
 	}
 	if (turnContext._tier0Open && defendAnswerUnitGain(turnContext, c, prov, ph, true).length > 0) {
@@ -45043,11 +54934,16 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 		});
 		emit(turnContext, {
 			type: "system",
-			text: `${c.name}'s new host is still forming up in ${prov.name} — whether the province can be taken will be settled before the season's marches begin.`,
+			fact: {
+				kind: "a hero's new host is still forming up in a province",
+				cName: c.name,
+				provName: prov.name
+			},
 			audience: {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return false;
@@ -45085,12 +54981,23 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 		claim();
 		emit(turnContext, {
 			type: "combat",
-			text: c._warFront ? `No one stands to defend ${prov.name} — ${c.name} takes control of it for ${player.name}!` : `With fresh troops now at their back, ${c.name} takes control of ${prov.name} for ${player.name}!`,
+			fact: c._warFront ? {
+				kind: "no one stands to defend a province and the hero takes control of it",
+				provName: prov.name,
+				cName: c.name,
+				playerName: player.name
+			} : {
+				kind: "with fresh troops the hero takes control of a province",
+				cName: c.name,
+				provName: prov.name,
+				playerName: player.name
+			},
 			audience: {
 				actor: c.player,
 				realms: [],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return false;
@@ -45122,13 +55029,40 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 		creditBattle(turnContext, c, _rbP.leader, battle, prov);
 		if (battle && Array.isArray(battle.narrative)) {
 			const _form = [];
-			if (c._openingClash && !c._warFront) _form.push(`➡️ ${c.name}${realmTag(turnContext, c.player)} turns a newly-gathered host on ${prov.name}, held by ${prov.owner != null && G.players[prov.owner] ? G.players[prov.owner].name : G.players[enemyChar.player]?.name || enemyChar.name} — a battle is initiated.`);
-			if (_defRiders.length > 0) _form.push(`🛡 ${_defRiders.map((d) => d.name).join(" and ")} ${_defRiders.length > 1 ? "were" : "was"} keeping watch over ${prov.name} and ${_defRiders.length > 1 ? "are" : "is"} already in the line when ${c.name}'s ${c._warFront ? "host turns on the province" : "new host forms up"} — ${prov.name} is defended, not retaken.`);
-			if (defReinf.length > 0) _form.push(`${enemyChar.name} is reinforced by ${defReinf.map((d) => d.name).join(", ")} in the defence of ${prov.name}!`);
-			if (_garHere.length > 0) _form.push(`🛡 The standing troops of ${prov.name} rally to ${_rbP.leader.name}: the garrison (${_garHere.length} unit${_garHere.length !== 1 ? "s" : ""} — ${describeArmy(_garHere)}) joins the defence.`);
+			if (c._openingClash && !c._warFront) _form.push({
+				kind: "the hero turns a newly gathered host on a province and a battle is initiated",
+				cName: c.name,
+				realmTag: realmTag(turnContext, c.player),
+				provName: prov.name,
+				heldByName: prov.owner != null && G.players[prov.owner] ? G.players[prov.owner].name : G.players[enemyChar.player]?.name || enemyChar.name
+			});
+			if (_defRiders.length > 0) _form.push({
+				kind: "the defenders riding in were keeping watch and are already in the line",
+				ridersNames: _defRiders.map((d) => d.name).join(" and "),
+				wasOrWere: _defRiders.length > 1 ? "were" : "was",
+				provName: prov.name,
+				isOrAre: _defRiders.length > 1 ? "are" : "is",
+				cName: c.name,
+				whatTheHostDoes: c._warFront ? "host turns on the province" : "new host forms up",
+				provName2: prov.name
+			});
+			if (defReinf.length > 0) _form.push({
+				kind: "the defender is reinforced by other heroes in the defence of a province",
+				defenderName: enemyChar.name,
+				reinforcementsNames: defReinf.map((d) => d.name).join(", "),
+				provName: prov.name
+			});
+			if (_garHere.length > 0) _form.push({
+				kind: "the province's standing troops rally to the defender",
+				provName: prov.name,
+				leaderName: _rbP.leader.name,
+				garrisonUnitCount: _garHere.length,
+				garrisonUnitsPlural: _garHere.length !== 1 ? "s" : "",
+				garrisonWords: describeArmy(_garHere)
+			});
 			if (_rbP.changed) _form.push(commandHandoverLine(_rbP.leader, enemyChar, prov.name));
 			if (_form.length) {
-				const _bi = battle.narrative.findIndex((l) => typeof narrText(l) === "string" && String(narrText(l)).includes("Battle for "));
+				const _bi = battle.narrative.findIndex((l) => l?.kind === "the battle for a province begins");
 				narrateAt(battle.narrative, _bi >= 0 ? _bi : 0, _form);
 			}
 		}
@@ -45140,7 +55074,19 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 				...defReinf.map((d) => d.id)
 			]
 		});
-		[enemyChar, ...defReinf].filter((d) => d.id !== _rbP.leader.id).forEach((d) => notifyTarget(turnContext, d, d.alive === false ? `⚔ ${d.name} stood in the battle line beside ${_rbP.leader.name} in the defence of ${prov.name}, and fell there — the full account is under ${_rbP.leader.name}.` : `⚔ ${d.name} stands in the battle line beside ${_rbP.leader.name} in the defence of ${prov.name} — the full account is under ${_rbP.leader.name}.`, ph, "combat"));
+		[enemyChar, ...defReinf].filter((d) => d.id !== _rbP.leader.id).forEach((d) => notifyTarget(turnContext, d, d.alive === false ? {
+			kind: "a hero fell in the battle line beside the commander of the defence",
+			heroName: d.name,
+			leaderName: _rbP.leader.name,
+			provName: prov.name,
+			leaderName2: _rbP.leader.name
+		} : {
+			kind: "a hero stands in the battle line beside the commander of the defence",
+			heroName: d.name,
+			leaderName: _rbP.leader.name,
+			provName: prov.name,
+			leaderName2: _rbP.leader.name
+		}, ph, "combat"));
 		c.armies = (c.armies || []).filter((a) => !a._died && !a._disbanded);
 		[enemyChar, ...defReinf].forEach((d) => {
 			d.armies = (d.armies || []).filter((a) => !a._died && !a._disbanded);
@@ -45178,12 +55124,18 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 					prov.garrisonArmies = _navalHeldUG.slice();
 					emit(turnContext, {
 						type: "combat",
-						text: `The standing troops of ${prov.name} fall back to ${_defFellBackTo.name} with ${enemyChar.name} rather than be left to the enemy.`,
+						fact: {
+							kind: "the province's standing troops fall back with the defender",
+							provName: prov.name,
+							fellBackToName: _defFellBackTo.name,
+							defenderName: enemyChar.name
+						},
 						audience: {
 							actor: enemyChar.player,
 							realms: targets,
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: _defFellBackTo.id
 					});
 				}
@@ -45200,12 +55152,17 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 			if (typeof refreshMovePool === "function") refreshMovePool(turnContext, enemyChar);
 			emit(turnContext, {
 				type: "combat",
-				text: `🛡 The standing troops of ${prov.name} fall in with ${enemyChar.name} and fight on at their side as the battle continues.`,
+				fact: {
+					kind: "the province's standing troops fall in with the defender as the battle continues",
+					provName: prov.name,
+					defenderName: enemyChar.name
+				},
 				audience: {
 					actor: enemyChar.player,
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -45243,12 +55200,18 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 			if (_overrun.length > 0) {
 				emit(turnContext, {
 					type: "combat",
-					text: `🛡 The garrison of ${prov.name} is overwhelmed as the province falls — ${_overrun.map((a) => a.unitName ? a.unitName + " (" + a.type + ", " + a.quality + ")" : a.quality + " " + a.type).join(", ")} ${_overrun.length === 1 ? "is" : "are"} cut down defending the walls.`,
+					fact: {
+						kind: "the province's garrison is overwhelmed as the province falls",
+						provName: prov.name,
+						overrunUnitsNames: _overrun.map((a) => a.unitName ? a.unitName + " (" + a.type + ", " + a.quality + ")" : a.quality + " " + a.type).join(", "),
+						isOrAre: _overrun.length === 1 ? "is" : "are"
+					},
 					audience: {
 						actor: c.player,
 						realms: [c.player, prov.owner].filter((x) => x != null),
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				_overrun.forEach((a) => recordBattleGraves(turnContext, prov, [a]));
@@ -45263,21 +55226,23 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 		let llLeft = 0;
 		if (neutralGuard && neutralGuard.alive) neutralGuard.armies = erodeGuardSurvivors(turnContext, neutralGuard, prov, neutralGuard.armies || [], (line) => emit(turnContext, {
 			type: "combat",
-			text: line,
+			...theWordsOrTheFactOfALine(line),
 			audience: {
 				actor: c.player,
 				realms: targets
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		}), c.name);
 		else if (neutralGuard && !neutralGuard.alive || llDefs.length > 0) {
 			const _surv = erodeGuardSurvivors(turnContext, null, prov, prov.neutralDefenders || [], (line) => emit(turnContext, {
 				type: "combat",
-				text: line,
+				...theWordsOrTheFactOfALine(line),
 				audience: {
 					actor: c.player,
 					realms: targets
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			}), c.name);
 			prov.neutralDefenders = _surv;
@@ -45292,36 +55257,56 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 			prov._battleUnresolved = true;
 			emit(turnContext, {
 				type: "combat",
-				text: `⚔ ${c.alive === false ? `${c.name}'s leaderless host` : c.name} has the better of the fighting in ${prov.name}, but ${neutralGuard.name.replace(" (wandering)", "")} still holds the field with ${guardLeft} unit${guardLeft !== 1 ? "s" : ""} — the province is not yet taken.`,
+				fact: {
+					kind: "the hero has the better of the fighting but the guard still holds the field",
+					hostName: c.alive === false ? `${c.name}'s leaderless host` : c.name,
+					provName: prov.name,
+					guardName: neutralGuard.name.replace(" (wandering)", ""),
+					guardUnitCount: guardLeft,
+					guardUnitsPlural: guardLeft !== 1 ? "s" : ""
+				},
 				audience: {
 					actor: c.player,
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (llLeft > 0) {
 			prov._battleUnresolved = true;
 			emit(turnContext, {
 				type: "combat",
-				text: `⚔ ${c.alive === false ? `${c.name}'s leaderless host` : c.name} has the better of the fighting in ${prov.name}, but ${llLeft} leaderless defending unit${llLeft !== 1 ? "s" : ""} still hold the field — the province is not yet taken.`,
+				fact: {
+					kind: "the hero has the better of the fighting but leaderless defenders still hold the field",
+					hostName: c.alive === false ? `${c.name}'s leaderless host` : c.name,
+					provName: prov.name,
+					leaderlessUnitCount: llLeft,
+					leaderlessUnitsPlural: llLeft !== 1 ? "s" : ""
+				},
 				audience: {
 					actor: c.player,
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (_hostileLeft) {
 			prov._battleUnresolved = true;
 			emit(turnContext, {
 				type: "combat",
-				text: `⚔ ${c.alive === false ? `${c.name}'s leaderless host` : c.name} has the better of the fighting in ${prov.name}, but enemy forces still hold their ground — the province is not yet taken.`,
+				fact: {
+					kind: "the hero has the better of the fighting but enemy forces still hold their ground",
+					hostName: c.alive === false ? `${c.name}'s leaderless host` : c.name,
+					provName: prov.name
+				},
 				audience: {
 					actor: c.player,
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (_navalBlockUG.length > 0) {
@@ -45334,28 +55319,41 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (_garrisonUnfought && (prov.garrisonArmies || []).length > 0) emit(turnContext, {
 			type: "combat",
-			text: `⚔ ${c.alive === false ? `${c.name}'s leaderless host` : c.name} has the better of the fighting in ${prov.name}, but its garrison still ${prov.terrain === "sea" ? "holds these waters" : "mans the walls"} — the province is not yet taken.`,
+			fact: {
+				kind: "the hero has the better of the fighting but the province's garrison still holds",
+				hostName: c.alive === false ? `${c.name}'s leaderless host` : c.name,
+				provName: prov.name,
+				whatTheGarrisonDoes: prov.terrain === "sea" ? "holds these waters" : "mans the walls"
+			},
 			audience: {
 				actor: c.player,
 				realms: targets,
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		else {
 			claim();
 			emit(turnContext, {
 				type: "combat",
-				text: `${c.alive === false ? `${c.name}'s leaderless host` : c.name} overcomes the defenders and claims ${prov.name} for ${player.name}!`,
+				fact: {
+					kind: "the hero overcomes the defenders and claims the province for his realm",
+					hostName: c.alive === false ? `${c.name}'s leaderless host` : c.name,
+					provName: prov.name,
+					playerName: player.name
+				},
 				audience: {
 					actor: c.player,
 					realms: targets,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -45363,8 +55361,23 @@ function resolveUnitGainInProvince(turnContext, c, prov, ph) {
 	clearNavalHold(prov);
 	if (prov.owner != null && prov.owner !== c.player && battle) {
 		const _n = (c.armies || []).filter((a) => a && !a._died && !a._disbanded).length;
-		if (battle.won) notifyProvinceOwner(turnContext, prov, `⚔ ${c.name}${realmTag(turnContext, c.player)} fought for ${prov.name} this phase and had the better of it, but your defenders still hold the ground — ${prov.name} is not yet taken. ${c.alive === false ? `${c.name} fell in the fighting; his leaderless host` : c.name} stands there with ${_n} unit${_n !== 1 ? "s" : ""}.`, c.player, ph);
-		else notifyProvinceOwner(turnContext, prov, `🛡 ${c.name}${realmTag(turnContext, c.player)} fought for ${prov.name} this phase and was beaten back — ${prov.name} remains yours.`, c.player, ph);
+		if (battle.won) notifyProvinceOwner(turnContext, prov, {
+			kind: "the province's owner learns his defenders still hold against the hero",
+			cName: c.name,
+			realmTag: realmTag(turnContext, c.player),
+			provName: prov.name,
+			provName2: prov.name,
+			hostWords: c.alive === false ? `${c.name} fell in the fighting; his leaderless host` : c.name,
+			unitCount: _n,
+			unitsPlural: _n !== 1 ? "s" : ""
+		}, c.player, ph);
+		else notifyProvinceOwner(turnContext, prov, {
+			kind: "the province's owner learns the hero was beaten back",
+			cName: c.name,
+			realmTag: realmTag(turnContext, c.player),
+			provName: prov.name,
+			provName2: prov.name
+		}, c.player, ph);
 	}
 	return true;
 }
@@ -45387,7 +55400,12 @@ function erodeGuardSurvivors(turnContext, guard, prov, survivors, tellASurviving
 				isSea: SEA_TYPES.has(a.type),
 				id: newMercId(turnContext)
 			});
-			tellASurvivingUnitsFate(`— ${unitRef(gname, a)} break ranks and flee${_vh ? ` before ${_vh}` : ""} — they now roam as mercenaries near ${prov.name}.`);
+			tellASurvivingUnitsFate({
+				kind: "a beaten guard's surviving unit breaks ranks and flees as mercenaries",
+				unitName: unitRef(gname, a),
+				wordsIfTheVictorsHost: _vh ? ` before ${_vh}` : "",
+				provName: prov.name
+			});
 			return;
 		}
 		if (kcRng() < GUARD_DEMOTE_CHANCE) {
@@ -45396,14 +55414,25 @@ function erodeGuardSurvivors(turnContext, guard, prov, survivors, tellASurviving
 				tellASurvivingUnitsFate(disbandLine(gname, a));
 				return;
 			}
-			tellASurvivingUnitsFate(`— ${unitRef(gname, {
-				...a,
-				quality: _q0
-			})} lost heart in defeat, reduced to ${a.quality} — ${_vh ? `beaten by ${_vh}, ` : ""}they rally around ${gname}.`);
+			tellASurvivingUnitsFate({
+				kind: "a beaten guard's surviving unit loses heart and is reduced a tier",
+				unitNameAtItsOldQuality: unitRef(gname, {
+					...a,
+					quality: _q0
+				}),
+				unitQuality: a.quality,
+				wordsIfTheVictorsHost: _vh ? `beaten by ${_vh}, ` : "",
+				guardName: gname
+			});
 			kept.push(a);
 			return;
 		}
-		tellASurvivingUnitsFate(`— ${unitRef(gname, a)} hold their ground unbroken${_vh ? ` against ${_vh}` : ""} and rally around ${gname}.`);
+		tellASurvivingUnitsFate({
+			kind: "a beaten guard's surviving unit holds its ground unbroken",
+			unitName: unitRef(gname, a),
+			wordsIfTheVictorsHost: _vh ? ` against ${_vh}` : "",
+			guardName: gname
+		});
 		kept.push(a);
 	});
 	return kept;
@@ -45434,7 +55463,12 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 			const attacker = [...playerForces].sort(_rankForce)[0];
 			emit(turnContext, {
 				type: "combat",
-				text: `⚔ The unfinished battle for ${prov.name} resumes — ${forceLabel(attacker)} presses the attack on ${guard ? guard.name.replace(" (wandering)", "") : "the leaderless garrison"}.`,
+				fact: {
+					kind: "an unfinished battle against a province's defenders resumes",
+					provName: prov.name,
+					attackersHostName: forceLabel(attacker),
+					defendersName: guard ? guard.name.replace(" (wandering)", "") : "the leaderless garrison"
+				},
 				audience: {
 					actor: attacker.player,
 					realms: [attacker.player],
@@ -45485,7 +55519,7 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 				const _survPool = liveGuard ? guard.armies || [] : prov.neutralDefenders || [];
 				const surv = erodeGuardSurvivors(turnContext, liveGuard ? guard : null, prov, _survPool, (line) => emit(turnContext, {
 					type: "combat",
-					text: line,
+					...theWordsOrTheFactOfALine(line),
 					audience: {
 						actor: attacker.player,
 						realms: [],
@@ -45503,7 +55537,16 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 					if (!liveGuard) prov._leaderlessDefenders = true;
 					emit(turnContext, {
 						type: "combat",
-						text: liveGuard ? `💢 ${guard.name.replace(" (wandering)", "")} still holds with survivors — ${prov.name} remains contested and will be fought over again next phase!` : `💢 Commanderless but unbroken, ${surv.length} surviving unit${surv.length !== 1 ? "s" : ""} still contest ${prov.name} — the fight resumes next phase!`,
+						fact: liveGuard ? {
+							kind: "the guard still holds a contested province with survivors",
+							guardName: guard.name.replace(" (wandering)", ""),
+							provName: prov.name
+						} : {
+							kind: "commanderless survivors still contest a province",
+							survivingUnitCount: surv.length,
+							survivingUnitsPlural: surv.length !== 1 ? "s" : "",
+							provName: prov.name
+						},
 						audience: {
 							actor: attacker.player,
 							realms: [],
@@ -45532,7 +55575,11 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 					if (attacker.alive !== false) attacker.merits = (attacker.merits || 0) + (prov.tax || 0);
 					emit(turnContext, {
 						type: "combat",
-						text: `${forceLabel(attacker)} finally overcomes the defenders and claims ${prov.name}!`,
+						fact: {
+							kind: "the attacker finally overcomes the defenders and claims a province",
+							attackersHostName: forceLabel(attacker),
+							provName: prov.name
+						},
 						audience: {
 							actor: attacker.player,
 							realms: [],
@@ -45570,7 +55617,11 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 						attacker.locationName = dest.name;
 						emit(turnContext, {
 							type: "combat",
-							text: `${forceLabel(attacker)} breaks off and retreats to ${dest.name}.`,
+							fact: {
+								kind: "the attacker breaks off a stalled battle and retreats",
+								attackersHostName: forceLabel(attacker),
+								retreatToName: dest.name
+							},
 							audience: {
 								actor: attacker.player,
 								realms: [attacker.player]
@@ -45597,7 +55648,11 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 						}
 						emit(turnContext, {
 							type: "combat",
-							text: `${forceLabel(attacker)} is pinned in ${prov.name} with no way out — the struggle continues next phase.`,
+							fact: {
+								kind: "the attacker is pinned in a province with no way out",
+								attackersHostName: forceLabel(attacker),
+								provName: prov.name
+							},
 							audience: {
 								actor: attacker.player,
 								realms: [attacker.player]
@@ -45640,7 +55695,12 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 				delete prov._battleUnresolved;
 				emit(turnContext, {
 					type: "combat",
-					text: `The contest for ${prov.name} lapses — ${G.players[attacker.player]?.name || "one side"} and ${G.players[defender.player]?.name || "the other"} are no longer at war, and the two hosts stand down.`,
+					fact: {
+						kind: "a contest for a province lapses as the realms are no longer at war",
+						provName: prov.name,
+						attackersRealmName: G.players[attacker.player]?.name || "one side",
+						defendersRealmName: G.players[defender.player]?.name || "the other"
+					},
 					audience: {
 						actor: attacker.player,
 						realms: [attacker.player, defender.player],
@@ -45656,7 +55716,20 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 			if ((atkPool[attacker.id] ?? 0) > 0) atkPool[attacker.id] = Math.max(0, (atkPool[attacker.id] ?? 0) - 1);
 			emit(turnContext, {
 				type: "combat",
-				text: freshWar ? `⚔ War has come to ${prov.name}: ${forceLabel(attacker)}${realmTag(turnContext, attacker.player)} and ${forceLabel(defender)}${realmTag(turnContext, defender.player)} have stood on the same ground since the season opened, and with ${SEASONS[ph]}'s orders done they fall upon each other.` : `⚔ The unfinished battle for ${prov.name} resumes — ${forceLabel(attacker)} and ${forceLabel(defender)} clash again.`,
+				fact: freshWar ? {
+					kind: "war comes to a province two realms' hosts share",
+					provName: prov.name,
+					attackersHostName: forceLabel(attacker),
+					attackersRealmTag: realmTag(turnContext, attacker.player),
+					defendersHostName: forceLabel(defender),
+					defendersRealmTag: realmTag(turnContext, defender.player),
+					seasonName: SEASONS[ph]
+				} : {
+					kind: "an unfinished battle between two hosts resumes",
+					provName: prov.name,
+					attackersHostName: forceLabel(attacker),
+					defendersHostName: forceLabel(defender)
+				},
 				audience: {
 					actor: attacker.player,
 					realms: [attacker.player, defender.player],
@@ -45729,7 +55802,11 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 				if (wp) applyEvilConquest(turnContext, winner, prov, wp);
 				emit(turnContext, {
 					type: "combat",
-					text: `${forceLabel(winner)} secures ${prov.name}!`,
+					fact: {
+						kind: "the winner of a stalled battle secures a province",
+						winnersHostName: forceLabel(winner),
+						provName: prov.name
+					},
 					audience: {
 						actor: winner.player,
 						realms: [],
@@ -45768,7 +55845,11 @@ function resolveStalledBattles(turnContext, ph, onlyProvId, freshWar) {
 			if (lp && !lp.provinces.includes(prov.id)) lp.provinces.push(prov.id);
 			emit(turnContext, {
 				type: "combat",
-				text: `${forceLabel(lone)} holds ${prov.name} unopposed and secures it.`,
+				fact: {
+					kind: "a host holds a province unopposed and secures it",
+					hostName: forceLabel(lone),
+					provName: prov.name
+				},
 				audience: {
 					actor: lone.player,
 					realms: [],
@@ -45835,7 +55916,18 @@ function resolveWarFronts(turnContext, ph) {
 			};
 			emit(turnContext, {
 				type: "combat",
-				text: `⚔ War stands between ${G.players[c.player]?.name || "their realm"} and ${ownerNm || "the realm whose host shares the ground"}, and ${c.name}${realmTag(turnContext, c.player)} has held ${c.armies.length} unit${c.armies.length !== 1 ? "s" : ""} in ${prov.name} since the season opened. With ${SEASONS[ph]}'s orders done, the host turns on the province${ownerNm ? ` of ${ownerNm}` : ""}.`,
+				fact: {
+					kind: "a hero's host turns on a province it has shared with a realm at war",
+					attackersRealmName: G.players[c.player]?.name || "their realm",
+					ownersRealmName: ownerNm || "the realm whose host shares the ground",
+					cName: c.name,
+					realmTag: realmTag(turnContext, c.player),
+					unitCount: c.armies.length,
+					unitsPlural: c.armies.length !== 1 ? "s" : "",
+					provName: prov.name,
+					seasonName: SEASONS[ph],
+					wordsIfTheOwnersRealm: ownerNm ? ` of ${ownerNm}` : ""
+				},
 				audience: {
 					actor: c.player,
 					realms: [c.player, prov.owner].filter((x) => x != null),
@@ -45933,7 +56025,7 @@ function relationsReadyAndLastTurnsResearchChoicesSettledWithTheBotsOwnPicks(tur
 					actor: pi,
 					realms: [pi]
 				},
-				hero: null,
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				phase: 0
 			});
 		});
@@ -45961,6 +56053,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 						actor: null,
 						realms: [a, b]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 			}
@@ -45987,6 +56080,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 			actor: null,
 			realms: [pi]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		system: true
 	}));
 	if (staleOrderWarnings.length > 0) staleOrderWarnings.forEach((w) => emit(turnContext, {
@@ -45997,6 +56091,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 			realms: [],
 			seen: w.startsWith("🏳") ? "world" : void 0
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		system: true
 	}));
 	if (Array.isArray(G._gmRemovedRealms) && G._gmRemovedRealms.length) {
@@ -46011,6 +56106,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 		});
@@ -46035,8 +56131,6 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 				rcpts = [...new Set(rcpts)];
 				if (rcpts.length === 0) return;
 				const rcptNames = rcpts.map((i) => G.players[i]?.name || "Player " + (i + 1));
-				const _savedDispatchChar = turnContext._logCtx.charId;
-				turnContext._logCtx.charId = null;
 				rcpts.forEach((rpi) => {
 					emit(turnContext, {
 						type: "message",
@@ -46045,10 +56139,10 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 							actor: null,
 							realms: [rpi]
 						},
+						hero: null,
 						phase: 99
 					});
 				});
-				turnContext._logCtx.charId = _savedDispatchChar;
 				emit(turnContext, {
 					type: "message",
 					text: `📨 You sent to ${rcptNames.join(", ")}: “${text}”`,
@@ -46056,6 +56150,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 						actor: senderPi,
 						realms: [senderPi]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					phase: 99
 				});
 			});
@@ -46114,7 +56209,8 @@ function movePoolsPerTurnTrackersEspionageResetsAndTheSaveSweepsBeforeTheBotsPla
 			audience: {
 				actor: null,
 				realms: []
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	}
 	if (!G._guardianHpV2) {
@@ -46134,7 +56230,8 @@ function movePoolsPerTurnTrackersEspionageResetsAndTheSaveSweepsBeforeTheBotsPla
 			audience: {
 				actor: null,
 				realms: []
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	}
 	(G.players || []).forEach((pl) => {
@@ -46250,6 +56347,7 @@ function flushIntrusionNotifications(turnContext) {
 				actor: null,
 				realms: [rec.targetPi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: rec.provId
 		});
 		else emit(turnContext, {
@@ -46259,6 +56357,7 @@ function flushIntrusionNotifications(turnContext) {
 				actor: null,
 				realms: [rec.targetPi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: rec.provId
 		});
 	});
@@ -46280,6 +56379,7 @@ function blessWardNegates(turnContext, prov, caster, spellName) {
 			realms: prov._blessWardBy != null ? [prov._blessWardBy] : [],
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		env: true
 	});
@@ -46344,6 +56444,7 @@ function applyPlague(turnContext, prov, level, ph) {
 				actor: null,
 				realms: [rec.owner]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		};
 		if (rec.charId != null) place.hero = rec.charId;
@@ -46378,6 +56479,7 @@ function spreadPlagues(turnContext, ph) {
 						realms: (nb.owner != null ? [nb.owner] : []).concat(p._plagueCaster != null ? [p._plagueCaster] : []),
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: nb.id,
 					env: true
 				});
@@ -46416,6 +56518,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: here ? here.id : null
 		});
 		endPursuit(c);
@@ -46430,6 +56533,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: here ? here.id : null
 		});
 		endPursuit(c);
@@ -46443,6 +56547,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: here ? here.id : null
 		});
 		endPursuit(c);
@@ -46456,6 +56561,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: here ? here.id : null
 		});
 		return;
@@ -46469,6 +56575,7 @@ function advancePursuit(turnContext, c, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: here ? here.id : null
 			});
 			endPursuit(c);
@@ -46483,6 +56590,7 @@ function advancePursuit(turnContext, c, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: here ? here.id : null
 			});
 			endPursuit(c);
@@ -46498,6 +56606,7 @@ function advancePursuit(turnContext, c, ph) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: here ? here.id : null
 				});
 				endPursuit(c);
@@ -46513,6 +56622,7 @@ function advancePursuit(turnContext, c, ph) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: here ? here.id : null
 				});
 				endPursuit(c);
@@ -46538,6 +56648,7 @@ function advancePursuit(turnContext, c, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: step.id
 			});
 			return;
@@ -46549,6 +56660,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: step.id
 		});
 	}
@@ -46565,7 +56677,8 @@ function advancePursuit(turnContext, c, ph) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	if (roll > chance) {
 		emit(turnContext, {
@@ -46575,6 +56688,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -46587,6 +56701,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		endPursuit(c);
@@ -46600,6 +56715,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		endPursuit(c);
@@ -46614,6 +56730,7 @@ function advancePursuit(turnContext, c, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -46636,6 +56753,7 @@ function advancePursuit(turnContext, c, ph) {
 				realms: targetsPi,
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: [c.id, quarry.id]
 		});
@@ -46691,6 +56809,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				if (!_hostileLeft && _hulls.length) emit(turnContext, {
@@ -46701,6 +56820,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			} else {
@@ -46721,6 +56841,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				if (_wp) applyEvilConquest(turnContext, c, prov, _wp);
@@ -46740,6 +56861,7 @@ function advancePursuit(turnContext, c, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (_roll > _pct) {
@@ -46804,6 +56926,7 @@ function advancePursuit(turnContext, c, ph) {
 				realms: targetsPi,
 				seen: prov.owner !== null ? "battle" : void 0
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: _duelChars
 		});
@@ -46815,6 +56938,7 @@ function advancePursuit(turnContext, c, ph) {
 				actor: c.player,
 				realms: targetsPi
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: _duelChars
 		}));
@@ -46831,6 +56955,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -46841,6 +56966,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -46858,6 +56984,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -46868,6 +56995,7 @@ function advancePursuit(turnContext, c, ph) {
 						realms: targetsPi,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id,
 					heroes: _duelChars
 				});
@@ -46894,7 +57022,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -46910,7 +57039,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -46924,7 +57054,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -46935,7 +57066,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -46950,7 +57082,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -46962,6 +57095,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 		}
@@ -46976,7 +57110,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -46990,6 +57125,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: toProv.id
 		});
 		return;
@@ -47011,6 +57147,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -47025,6 +57162,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				return;
@@ -47049,7 +57187,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47061,7 +57200,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			else if (prov._flood) emit(turnContext, {
 				type: "move",
@@ -47069,7 +57209,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			else emit(turnContext, {
 				type: "move",
@@ -47077,7 +57218,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47091,6 +57233,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: toProv.id
 		});
 	} else if (coastalLanding) {
@@ -47102,7 +57245,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			else emit(turnContext, {
 				type: "move",
@@ -47110,7 +57254,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47129,6 +57274,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 		} else emit(turnContext, {
@@ -47138,6 +57284,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: toProv.id
 		});
 	} else {
@@ -47149,7 +57296,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47162,7 +57310,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -47172,7 +57321,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47183,7 +57333,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -47207,6 +57358,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: pv.id
 	}));
 	if (!toProv.visitedBy) toProv.visitedBy = [];
@@ -47264,6 +57416,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			}]);
 			const _artM = (n) => {
@@ -47280,6 +57433,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				}]);
 			} else if (_spotted.length > 1) {
@@ -47290,6 +57444,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				}]);
 			}
@@ -47321,6 +57476,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				prov.characters = (prov.characters || []).filter((id) => id !== ally.id);
@@ -47339,7 +57495,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		});
 		const combinedArmies = [...c.armies || [], ...friendlyReinforcements.flatMap((a) => a.armies || [])];
@@ -47354,12 +57511,13 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 		if (friendlyReinforcements.length > 0) {
 			if (_aPick.changed) emit(turnContext, {
 				type: "combat",
-				text: commandHandoverLine(_aLead, c, toProv.name),
+				fact: commandHandoverLine(_aLead, c, toProv.name),
 				audience: {
 					actor: c.player,
 					realms: [c.player],
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 			emit(turnContext, {
@@ -47369,6 +57527,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 		}
@@ -47384,6 +57543,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					realms: [c.player],
 					seen: "there"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 			return;
@@ -47408,11 +57568,12 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			_payWinPoint();
 			const defSurvivors = erodeGuardSurvivors(turnContext, _guardSlainInDuel ? null : neutralGuard, toProv, neutralGuard.armies || [], (line) => emit(turnContext, {
 				type: "combat",
-				text: line,
+				...theWordsOrTheFactOfALine(line),
 				audience: {
 					actor: c.player,
 					realms: []
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			}), c.name);
 			neutralGuard.armies = defSurvivors;
@@ -47432,6 +57593,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [],
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 				}
@@ -47446,6 +57608,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				emit(turnContext, {
@@ -47456,6 +57619,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 			} else {
@@ -47481,6 +57645,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 								realms: [],
 								seen: "battle"
 							},
+							hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 							province: toProv.id
 						});
 					} else emit(turnContext, {
@@ -47491,6 +57656,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [],
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 				}
@@ -47510,6 +57676,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				if (!player.provinces.includes(toProv.id)) player.provinces.push(toProv.id);
@@ -47529,6 +57696,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 			}
@@ -47556,6 +57724,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [toProv.owner],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 			}
@@ -47585,6 +57754,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [c.player],
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					prov.characters = (prov.characters || []).filter((id) => id !== ally.id);
@@ -47602,7 +57772,8 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			const defReinforcements = G.characters.filter((d) => d.alive && d.id !== defChar.id && d.player === toProv.owner && d.location === toProv.id && (d.armies || []).length > 0);
@@ -47636,12 +57807,13 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			[...defReinforcements];
 			if (_aP.changed) emit(turnContext, {
 				type: "combat",
-				text: commandHandoverLine(_atkLead, c, toProv.name),
+				fact: commandHandoverLine(_atkLead, c, toProv.name),
 				audience: {
 					actor: c.player,
 					realms: [c.player],
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 			if (_dP.changed) _defFormupLines.push(commandHandoverLine(_defLead, defChar, toProv.name));
@@ -47666,6 +57838,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [c.player],
 						seen: "there"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				return;
@@ -47676,7 +57849,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			creditBattle(turnContext, _atkLead, _defLead, battle, toProv);
 			const targets = [c.player, defChar.player];
 			if (_defFormupLines.length && battle && Array.isArray(battle.narrative)) {
-				let _mi = battle.narrative.findIndex((l) => typeof narrText(l) === "string" && String(narrText(l)).includes("a battle is initiated"));
+				let _mi = battle.narrative.findIndex((l) => l?.kind === "the attacker moves into the province and a battle is initiated");
 				narrateAt(battle.narrative, _mi >= 0 ? _mi + 1 : 0, _defFormupLines);
 			}
 			const _battleChars = [
@@ -47742,6 +57915,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: targets,
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: _defFellBackTo.id
 					});
 					const _fallenBack = [..._garrisonSurv, ..._leaderlessHosts.flatMap((dc) => {
@@ -47761,6 +57935,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 								realms: targets,
 								seen: "battle"
 							},
+							hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 							province: _defFellBackTo.id
 						});
 					}
@@ -47788,6 +57963,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: targets,
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					if (!_hostileLeft && _navalBlock.length > 0) emit(turnContext, {
@@ -47798,6 +57974,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: targets,
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 				} else {
@@ -47817,6 +57994,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: targets,
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					applyEvilConquest(turnContext, c, toProv, player);
@@ -47851,6 +58029,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: targets,
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 			}
@@ -47875,6 +58054,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [c.player],
 							seen: "there"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					return;
@@ -47904,6 +58084,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 									realms: [c.player, toProv.owner].filter((x) => x !== null),
 									seen: "battle"
 								},
+								hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 								province: _dest.id
 							});
 							G.players.forEach((p, pi) => {
@@ -47922,6 +58103,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 									realms: [],
 									seen: "battle"
 								},
+								hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 								province: toProv.id
 							});
 							applyEvilConquest(turnContext, c, toProv, player);
@@ -47935,6 +58117,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 									realms: [c.player, toProv.owner].filter((x) => x !== null),
 									seen: "battle"
 								},
+								hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 								province: toProv.id
 							});
 						}
@@ -47955,6 +58138,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 								realms: [],
 								seen: "battle"
 							},
+							hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 							province: toProv.id
 						});
 						applyEvilConquest(turnContext, c, toProv, player);
@@ -47969,6 +58153,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [c.player, toProv.owner].filter((x) => x !== null),
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					if (_stoodGround) toProv._battleUnresolved = true;
@@ -47992,6 +58177,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: _prevOwnerIdx != null ? [_prevOwnerIdx] : [],
 						seen: "there"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				applyEvilConquest(turnContext, c, toProv, player);
@@ -48011,6 +58197,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [c.player],
 						seen: "there"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				return;
@@ -48025,11 +58212,12 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				_payWinPoint();
 				const llSurv = erodeGuardSurvivors(turnContext, null, toProv, toProv.neutralDefenders || [], (line) => emit(turnContext, {
 					type: "combat",
-					text: line,
+					...theWordsOrTheFactOfALine(line),
 					audience: {
 						actor: c.player,
 						realms: []
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				}), c.name);
 				toProv.neutralDefenders = llSurv;
@@ -48045,6 +58233,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [],
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 				} else {
@@ -48061,6 +58250,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 							realms: [],
 							seen: "battle"
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: toProv.id
 					});
 					applyEvilConquest(turnContext, c, toProv, player);
@@ -48078,6 +58268,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [],
 						seen: "battle"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 			}
@@ -48098,6 +58289,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						realms: [c.player],
 						seen: "there"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				_moveLineLogged = true;
@@ -48109,6 +58301,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: toProv.id
 				});
 				_moveLineLogged = true;
@@ -48121,6 +58314,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: toProv.id
 		});
 	}
@@ -48138,6 +58332,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 					realms: [c.player].concat(_raidPriorOwner != null ? [_raidPriorOwner] : []),
 					seen: "there"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: toProv.id
 			});
 		}
@@ -48218,7 +58413,11 @@ function pcBuildGuardian(turnContext, feature, m, narrative) {
 				if (e.pc) pcApplyFx(mon, e.pc, it.name);
 				if ((_ITEM_ALT_BASE[it.name] || it.name) === "Warbringer Gauntlets") mon.gauntlets = true;
 			});
-			narrate(narrative, `The ${m.name} has turned the hoard's magic to its own use — it bears ${_wield.map((x) => x.name).join(", ")}.`);
+			narrate(narrative, {
+				kind: "the guardian has turned the hoard's magic to its own use",
+				mName: m.name,
+				wieldedItemNames: _wield.map((x) => x.name).join(", ")
+			});
 		}
 	}
 	mon.vuln = {
@@ -48329,27 +58528,52 @@ function resolveEncounter(turnContext, c, feature, prov, tactics, effStat, rng, 
 		default: "approaches"
 	};
 	const entryVerb = featureDescs[feature.name] || featureDescs.default;
-	narrate(narrative, `${c.name} ${entryVerb} the ${feature.name} in ${prov.name}.`);
+	narrate(narrative, {
+		kind: "the hero enters the feature",
+		cName: c.name,
+		entryVerb,
+		featureName: feature.name,
+		provName: prov.name
+	});
 	const monsterPower = m.power || "";
 	const powerDesc = monsterPower ? ` (${monsterPower})` : "";
 	const monFullHp = m._hpFull != null ? m._hpFull : m.hp || 10;
 	const monHp = m.hp != null ? m.hp : monFullHp;
-	narrate(narrative, `Within lurks ${{
-		Weak: "a dangerous",
-		Moderate: "a formidable",
-		Powerful: "a fearsome",
-		Legendary: "a legendary"
-	}[m.power] || "a formidable"} ${m.name}${monsterCatLabel(m) ? ` — ${monsterCatLabel(m).toLowerCase()}` : ""}${powerDesc}, blocking the path to the treasure.`);
+	narrate(narrative, {
+		kind: "within lurks the guardian blocking the path",
+		monHpDesc: {
+			Weak: "a dangerous",
+			Moderate: "a formidable",
+			Powerful: "a fearsome",
+			Legendary: "a legendary"
+		}[m.power] || "a formidable",
+		mName: m.name,
+		wordsIfMonsterCatLabelM: monsterCatLabel(m) ? ` — ${monsterCatLabel(m).toLowerCase()}` : "",
+		powerDesc
+	});
 	if (monHp < monFullHp) {
 		const frac = monHp / monFullHp;
-		narrate(narrative, `It is already ${frac <= .25 ? "grievously wounded and bleeding from a dozen cuts" : frac <= .5 ? "badly wounded, favouring one side" : "nursing fresh wounds"} — someone has been here before ${c.name} this year. (${monHp}/${monFullHp} HP)`);
+		narrate(narrative, {
+			kind: "the guardian is already wounded by someone before",
+			woundDesc: frac <= .25 ? "grievously wounded and bleeding from a dozen cuts" : frac <= .5 ? "badly wounded, favouring one side" : "nursing fresh wounds",
+			cName: c.name,
+			monHp,
+			monFullHp
+		});
 	}
 	pushBattlecry(narrative, c, `the ${m.name}`);
 	const hero = pcCharCombatant(turnContext, c);
 	if (Array.isArray(tactics) && tactics.length) hero.tactics = tactics.slice();
 	hero._vsGuardian = true;
 	const mon = pcBuildGuardian(turnContext, feature, m, narrative);
-	narrate(narrative, `The ${m.name} is ${mon.speedName}-moving${mon.speedName === "fast" ? " (it closes two ranges at a stride)" : ""}${pcHasRanged(mon) ? ", and fights at range as well as close" : ""}. Its plan: ${mon.tactics.slice(0, 6).join(", ")}…`);
+	narrate(narrative, {
+		kind: "the guardian's speed and plan",
+		mName: m.name,
+		monSpeedName: mon.speedName,
+		wordsIfMonSpeedNameFast: mon.speedName === "fast" ? " (it closes two ranges at a stride)" : "",
+		wordsIfPcHasRangedMon: pcHasRanged(mon) ? ", and fights at range as well as close" : "",
+		guardianTactics: mon.tactics.slice(0, 6).join(", ")
+	});
 	const res = resolvePersonalCombat(turnContext, hero, mon, {
 		maxRounds: 20,
 		feature
@@ -48358,20 +58582,37 @@ function resolveEncounter(turnContext, c, feature, prov, tactics, effStat, rng, 
 	let won = false, fled = false;
 	if (res.parley) {
 		won = true;
-		narrate(narrative, `After tense negotiations, the ${m.name} agrees to step aside and allow passage to the treasure.`);
+		narrate(narrative, {
+			kind: "after tense negotiations the guardian agrees",
+			mName: m.name
+		});
 	} else if (res.stoleBy === hero) {
 		fled = true;
 		m._treasureStolen = true;
-		narrate(narrative, `${c.name} slips away with the prize — the ${m.name} never even notices.`);
+		narrate(narrative, {
+			kind: "the hero slips away with the prize",
+			cName: c.name,
+			mName: m.name
+		});
 	} else if (res.fledBy === hero) {
 		fled = true;
-		narrate(narrative, `${c.name} turns and flees from the ${m.name}, escaping into the surrounding terrain!`);
+		narrate(narrative, {
+			kind: "the hero turns and flees from the guardian",
+			cName: c.name,
+			mName: m.name
+		});
 		{
 			const _realC = c && c.id != null && (G.characters || []).find((r) => r && r.id === c.id) || c;
 			const _pool = transferableItems(_realC.items || []);
 			if (_pool.length) {
 				const _roll = d100(), _chance = Math.round(DUEL_FLEE_DROP * 100);
-				narrate(narrative, `  ${c.name} scrambles clear — ${_chance}% chance of dropping something in the rout [roll ${_roll}${_roll <= _chance ? " ✓" : " ✗"}]`);
+				narrate(narrative, {
+					kind: "the runner scrambles clear with a chance of dropping something",
+					runnerName: c.name,
+					chance: _chance,
+					roll: _roll,
+					rollChanceMark: _roll <= _chance ? " ✓" : " ✗"
+				});
 				if (_roll <= _chance) {
 					const _it = _pool[Math.floor(kcRng() * _pool.length)];
 					_realC.items = (_realC.items || []).filter((x) => x !== _it);
@@ -48379,19 +58620,42 @@ function resolveEncounter(turnContext, c, feature, prov, tactics, effStat, rng, 
 					delete _it.equipped;
 					ensureLairHoard(feature, G);
 					feature.hoardItems = (feature.hoardItems || []).concat([_it]);
-					narrate(narrative, `  💎 In the rout ${c.name} drops ${_it.name}${isLegendaryItem(_it) ? " (Legendary)" : ""} — it lies among the ${m.name}'s hoard now${guardianCanUseItem(m, _it) ? ", and the beast will turn it against the next intruder" : ""}.`);
+					narrate(narrative, {
+						kind: "in the rout the hero drops an item into the hoard",
+						cName: c.name,
+						itName: _it.name,
+						wordsIfIsLegendaryItemIt: isLegendaryItem(_it) ? " (Legendary)" : "",
+						mName: m.name,
+						wordsIfGuardianCanUseItemMIt: guardianCanUseItem(m, _it) ? ", and the beast will turn it against the next intruder" : ""
+					});
 				}
 			}
 		}
 	} else if (res.winner === hero) {
 		won = true;
-		narrate(narrative, `With a final ${rng(0, 1) ? "decisive blow" : "burst of effort"}, the ${m.name} is defeated!`);
-	} else if (res.winner === mon) narrate(narrative, `${c.name} falls to their knees, overwhelmed by the ${m.name}!`);
-	else narrate(narrative, `Neither ${c.name} nor the ${m.name} can gain the upper hand. ${c.name} withdraws to recover.`);
+		narrate(narrative, {
+			kind: "with a final effort the guardian is defeated",
+			blowOrBurst: rng(0, 1) ? "decisive blow" : "burst of effort",
+			mName: m.name
+		});
+	} else if (res.winner === mon) narrate(narrative, {
+		kind: "the hero falls to their knees overwhelmed",
+		cName: c.name,
+		mName: m.name
+	});
+	else narrate(narrative, {
+		kind: "neither the hero nor the guardian gains the upper hand",
+		cName: c.name,
+		mName: m.name,
+		cName2: c.name
+	});
 	if (!won && m) {
 		if (m._hpFull == null) m._hpFull = m.hp || 10;
 		m.hp = m._hpFull;
-		if (res.bHp != null && res.bHp < mon.maxHp - (mon._hpItemBonus || 0)) narrate(narrative, `The ${m.name} draws back into its lair; by the time anyone dares it again, its wounds will have closed.`);
+		if (res.bHp != null && res.bHp < mon.maxHp - (mon._hpItemBonus || 0)) narrate(narrative, {
+			kind: "the guardian draws back into its lair",
+			mName: m.name
+		});
 	}
 	const heroHp = res.aHp;
 	c.hp = Math.max(0, heroHp);
@@ -48436,6 +58700,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	}
@@ -48478,6 +58743,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -48489,6 +58755,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (newlyDiscovered.length > 0) {
@@ -48507,6 +58774,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -48519,6 +58787,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -48529,6 +58798,7 @@ function resolveExploreOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	recordDeadHeroSighting(turnContext, c.player, prov.id);
@@ -48542,7 +58812,8 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -48554,7 +58825,8 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -48566,6 +58838,7 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -48580,6 +58853,7 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -48592,7 +58866,8 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -48619,6 +58894,7 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 				realms: [c.player],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -48648,7 +58924,8 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -48672,6 +58949,7 @@ function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player
 			realms: [c.player],
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 }
@@ -48696,6 +58974,7 @@ function resolveHuntingRumoursOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -48707,6 +58986,7 @@ function resolveHuntingRumoursOrder(turnContext, c, target, prov, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	for (const { f, i: _fi } of _feats) {
@@ -48721,6 +59001,7 @@ function resolveHuntingRumoursOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			break;
@@ -48773,6 +59054,7 @@ function resolveHuntingRumoursOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		}));
 	}
@@ -48789,7 +59071,8 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -48801,6 +59084,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -48816,6 +59100,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -48828,6 +59113,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -48863,6 +59149,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	});
@@ -48876,6 +59163,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				realms: [c.player],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		}, { slainBy: `the ${f.monster?.name || "guardian"} of ${prov.name}` }) === false) {
 			c.items = _lairHeld;
@@ -48890,6 +59178,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -48912,6 +59201,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -48933,6 +59223,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -48947,6 +59238,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (_hi.length) {
@@ -48967,6 +59259,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 							actor: c.player,
 							realms: [c.player]
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: prov.id
 					});
 					emit(turnContext, {
@@ -48976,6 +59269,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 							actor: c.player,
 							realms: [c.player]
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: prov.id
 					});
 				} else emit(turnContext, {
@@ -48985,6 +59279,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			}
@@ -49037,6 +59332,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 							actor: c.player,
 							realms: [c.player]
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: prov.id
 					});
 					emit(turnContext, {
@@ -49046,6 +59342,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 							actor: c.player,
 							realms: [c.player]
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: prov.id
 					});
 				}
@@ -49065,6 +59362,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			baseDrops.forEach((it) => emit(turnContext, {
@@ -49074,6 +59372,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			}));
 		}
@@ -49084,6 +59383,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if ((f.lairItems || []).length > 0) {
@@ -49100,6 +59400,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			_recovered.forEach((it) => emit(turnContext, {
@@ -49109,6 +59410,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			}));
 			emit(turnContext, {
@@ -49118,6 +59420,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else if (drops.length === 0) emit(turnContext, {
@@ -49127,6 +59430,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else if (!encounter.fled) {
@@ -49139,6 +59443,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	}
@@ -49152,7 +59457,8 @@ function resolveChartTheUnknownOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49169,6 +59475,7 @@ function resolveChartTheUnknownOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -49202,6 +59509,7 @@ function resolveChartTheUnknownOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: _cuProv.id
 	});
 	trySkillGain(turnContext, c, "explorer", SKILLGAIN_STD);
@@ -49215,7 +59523,8 @@ function resolveDiscoverLostRuinOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49251,6 +59560,7 @@ function resolveDiscoverLostRuinOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		trySkillGain(turnContext, c, "explorer", SKILLGAIN_STD);
@@ -49271,6 +59581,7 @@ function resolveDiscoverLostRuinOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "explorer", SKILLGAIN_STD);
@@ -49383,6 +59694,7 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -49406,6 +59718,7 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				return;
@@ -49419,7 +59732,8 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -49439,6 +59753,7 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: c.location
 			});
 		});
@@ -49456,7 +59771,8 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49516,6 +59832,7 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if (!_destGarrison && _destChar && _destChar.id !== c.id) notifyTarget(turnContext, _destChar, `⚔ ${recruited.join(", ")} muster to ${_destChar.name}'s banner in ${prov.name}, raised by ${c.name}.`, ph, "hire");
@@ -49526,7 +59843,8 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
@@ -49540,7 +59858,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49551,7 +59870,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49562,7 +59882,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49573,7 +59894,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49587,7 +59909,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49598,7 +59921,8 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49636,6 +59960,7 @@ function resolveHireHeroOrder(turnContext, c, ph, target, prov, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	emit(turnContext, {
@@ -49668,6 +59993,7 @@ function applySpySuccess(turnContext, c, sprov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		spy: true,
 		province: sprov.id
 	});
@@ -49688,6 +60014,7 @@ function applySpySuccess(turnContext, c, sprov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: sprov.id
 			});
 			const _spyLvl = effStat(turnContext, c, "spy");
@@ -49704,6 +60031,7 @@ function applySpySuccess(turnContext, c, sprov) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: sprov.id
 				});
 				if (_sr <= _stealPct) {
@@ -49726,6 +60054,7 @@ function applySpySuccess(turnContext, c, sprov) {
 							actor: c.player,
 							realms: [c.player]
 						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 						province: sprov.id
 					});
 				}
@@ -49745,8 +60074,6 @@ function applySpySuccess(turnContext, c, sprov) {
 				turn: G.turn
 			});
 		}
-		const _savedCtxChar = turnContext._logCtx.charId;
-		turnContext._logCtx.charId = null;
 		emit(turnContext, {
 			type: "spy",
 			text: `[Intelligence] 🕵 Counter-intelligence: your watch in ${sprov.name} caught ${_byName}'s agents prying this turn.`,
@@ -49754,9 +60081,9 @@ function applySpySuccess(turnContext, c, sprov) {
 				actor: null,
 				realms: [sprov.owner]
 			},
+			hero: null,
 			province: sprov.id
 		});
-		turnContext._logCtx.charId = _savedCtxChar;
 	}
 	c.merits = (c.merits || 0) + 1;
 	(sprov.features || []).filter((f) => !featDiscovered(f, c.player)).forEach((f) => {
@@ -49775,7 +60102,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49786,7 +60114,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49797,7 +60126,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49810,7 +60140,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49822,7 +60153,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49835,7 +60167,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49847,7 +60180,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49858,7 +60192,8 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49871,6 +60206,7 @@ function resolveConsecrateOrder(turnContext, c, prov, player) {
 			realms: [c.player],
 			seen: "there"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		env: true
 	});
@@ -49884,7 +60220,8 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49895,7 +60232,8 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49906,7 +60244,8 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49918,7 +60257,8 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49929,7 +60269,8 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49955,6 +60296,7 @@ function resolveCallToArmsOrder(turnContext, c, target, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: ctaProv.id
 	});
 }
@@ -49967,7 +60309,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49978,7 +60321,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -49994,7 +60338,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50005,7 +60350,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50017,7 +60363,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50028,7 +60375,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50064,6 +60412,7 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: bhProv.id
 		});
 		emit(turnContext, {
@@ -50087,7 +60436,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50098,7 +60448,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50109,7 +60460,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		applySpySuccess(turnContext, c, sp2);
 	} else emit(turnContext, {
@@ -50118,7 +60470,8 @@ function resolveBrokerOrder(turnContext, c, ph, target, player) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveRemovedAwakenTheWildAndCallFromThePitOrders(turnContext, c, action) {
@@ -50129,7 +60482,8 @@ function resolveRemovedAwakenTheWildAndCallFromThePitOrders(turnContext, c, acti
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
@@ -50141,7 +60495,8 @@ function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50152,7 +60507,8 @@ function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50164,7 +60520,8 @@ function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50188,6 +60545,7 @@ function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
 			realms: [c.player],
 			seen: "there"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (effStat(turnContext, c, "necromancy") < 1) emit(turnContext, {
@@ -50197,6 +60555,7 @@ function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -50209,7 +60568,8 @@ function resolveAwakenGroveOrder(turnContext, c, ph, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50221,7 +60581,8 @@ function resolveAwakenGroveOrder(turnContext, c, ph, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50237,6 +60598,7 @@ function resolveAwakenGroveOrder(turnContext, c, ph, prov) {
 	c.armies.push(grove);
 	logSplit(turnContext, "explore", `🌳 ${c.name} awakens the grove of ${prov.name} — Forest Ents tear their roots from the earth to march under your banner until the turn's end.`, `🌳 ${c.name}${realmTag(turnContext, c.player)} awakens the grove of ${prov.name} — Forest Ents tear their roots from the earth to march under their banner until the turn's end.`, {
 		audience: { actor: c.player },
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -50251,7 +60613,8 @@ function resolveWildCallingOrder(turnContext, c, ph, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50304,6 +60667,7 @@ function resolveWildCallingOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -50317,6 +60681,7 @@ function resolveWildCallingOrder(turnContext, c, ph, prov) {
 				realms: [c.player],
 				seen: "there"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		trySkillGain(turnContext, c, "druid", SKILLGAIN_STD);
@@ -50326,6 +60691,7 @@ function resolveWildCallingOrder(turnContext, c, ph, prov) {
 	const _wcFrom = _wcHeard.length ? ` (torn from ${_wcHeard.join(" and ")})` : "";
 	logSplit(turnContext, "explore", `🐾 ${c.name} sounds a Wild Calling in ${prov.name} — ${_wcWon.length} of ${_wcCalled} wild creature${_wcCalled !== 1 ? "s" : ""} answer and fall in behind your banner${_wcFrom}!`, `🐾 ${c.name}${realmTag(turnContext, c.player)} sounds a Wild Calling in ${prov.name} — ${_wcWon.length} wild creature${_wcWon.length !== 1 ? "s" : ""} answer and fall in behind their banner.`, {
 		audience: { actor: c.player },
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (typeof refreshMovePool === "function") refreshMovePool(turnContext, c);
@@ -50341,7 +60707,8 @@ function resolveGrandDesignOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50354,7 +60721,8 @@ function resolveGrandDesignOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50390,6 +60758,7 @@ function resolveGrandDesignOrder(turnContext, c, prov) {
 			realms: [c.player],
 			seen: "there"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
@@ -50405,7 +60774,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50424,7 +60794,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -50435,7 +60806,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			_rcat = _to;
 		}
@@ -50476,7 +60848,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 			_sideFound = true;
@@ -50494,7 +60867,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	c._researchFailStreak = {
 		turn: G.turn,
@@ -50533,7 +60907,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 		} else if (available.length > 0) {
@@ -50560,7 +60935,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 		} else emit(turnContext, {
@@ -50569,7 +60945,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	} else {
 		emit(turnContext, {
@@ -50578,7 +60955,8 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		trySkillGain(turnContext, c, "sage", SKILLGAIN_COMMON);
 	}
@@ -50601,7 +60979,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	if (!_practiceMaxed) {
 		const coTrainers = (G.characters || []).filter((other) => {
@@ -50677,7 +61056,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			if (_prPayAfter > _prPayBefore) emit(turnContext, {
 				type: "hire",
@@ -50685,7 +61065,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		} else {
 			c._practiceFailStreak = {
@@ -50698,7 +61079,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 	}
@@ -50723,7 +61105,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 						audience: {
 							actor: c.player,
 							realms: [c.player]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 					trainedAny = true;
 				}
@@ -50735,7 +61118,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		else emit(turnContext, {
 			type: "system",
@@ -50743,7 +61127,8 @@ function resolvePracticeSkillOrder(turnContext, c, ph, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	}
 }
@@ -50764,7 +61149,8 @@ function resolveRestOrder(turnContext, c, prov) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveResearchBreakthroughOrder(turnContext, c) {
@@ -50776,7 +61162,8 @@ function resolveResearchBreakthroughOrder(turnContext, c) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50791,7 +61178,8 @@ function resolveResearchBreakthroughOrder(turnContext, c) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 		return;
@@ -50811,7 +61199,8 @@ function resolveResearchBreakthroughOrder(turnContext, c) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 }
@@ -50827,7 +61216,8 @@ function resolveEquipItemsOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50857,7 +61247,8 @@ function resolveEquipItemsOrder(turnContext, c, target) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveUseItemOrder(turnContext, c, target, prov) {
@@ -50882,7 +61273,8 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50893,7 +61285,8 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -50931,7 +61324,8 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -50957,7 +61351,7 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 				actor: null,
 				realms: []
 			},
-			hero: "none"
+			hero: null
 		});
 		G._destroyedItems = (G._destroyedItems || []).concat([{
 			name: _stoneName,
@@ -50986,7 +61380,8 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 					actor: null,
 					realms: [_pi],
 					seen: "world"
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		});
 	} else emit(turnContext, {
@@ -50995,7 +61390,8 @@ function resolveUseItemOrder(turnContext, c, target, prov) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 function resolveSendItemOrder(turnContext, c, ph, target, extra) {
@@ -51020,7 +61416,8 @@ function resolveSendItemOrder(turnContext, c, ph, target, extra) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51055,7 +61452,8 @@ function resolveSendItemOrder(turnContext, c, ph, target, extra) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51066,7 +61464,8 @@ function resolveSendItemOrder(turnContext, c, ph, target, extra) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51087,7 +61486,8 @@ function resolveSendItemOrder(turnContext, c, ph, target, extra) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	}
 	if (uniq.length === 0) {
@@ -51097,7 +61497,8 @@ function resolveSendItemOrder(turnContext, c, ph, target, extra) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51161,7 +61562,8 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51176,6 +61578,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -51188,6 +61591,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -51213,7 +61617,8 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51230,6 +61635,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -51245,6 +61651,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		removed = removed.filter((a) => !a._isSkeletal);
@@ -51271,6 +61678,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (!removed.length) {
@@ -51288,6 +61696,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, recip2, `⚔ ${recip2.name} takes command of ${removed.map((a) => a.unitName || a.type).join(", ")}, handed over by ${c.name} in ${prov.name}.`, ph, "hire");
@@ -51303,6 +61712,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	refreshMovePool(turnContext, c);
@@ -51313,6 +61723,7 @@ function resolveLeaveOrTransferArmyOrder(turnContext, c, ph, target, extra, prov
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 }
@@ -51325,7 +61736,8 @@ function resolveReleaseHeroOrder(turnContext, c, ph, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51337,7 +61749,8 @@ function resolveReleaseHeroOrder(turnContext, c, ph, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51376,7 +61789,8 @@ function resolveDisbandArmyOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51395,7 +61809,8 @@ function resolveDisbandArmyOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51408,6 +61823,7 @@ function resolveDisbandArmyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		disbanding = disbanding.filter((a) => !a._isSkeletal);
@@ -51433,6 +61849,7 @@ function resolveDisbandArmyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	});
@@ -51444,6 +61861,7 @@ function resolveDisbandArmyOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 }
@@ -51460,7 +61878,8 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -51475,6 +61894,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else if (String(target || "").trim().toLowerCase().startsWith("merc:")) {
@@ -51485,6 +61905,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -51500,6 +61921,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -51518,6 +61940,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else {
@@ -51528,7 +61951,11 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 				emit(turnContext, {
 					type: "system",
 					text: `${c.name}: cannot pick up army.`,
-					audience: {}
+					audience: {
+						actor: c.player,
+						realms: [c.player]
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -51543,6 +61970,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -51554,7 +61982,8 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -51567,6 +61996,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -51597,6 +62027,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -51618,6 +62049,7 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -51629,7 +62061,8 @@ function resolvePickUpArmyOrder(turnContext, c, target, prov) {
 		audience: {
 			actor: c.player,
 			realms: [c.player]
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 }
 //#endregion
@@ -51645,6 +62078,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 				actor: thief.player,
 				realms: targetsPi
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: [thief.id, victim.id]
 		});
@@ -51659,6 +62093,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 				actor: thief.player,
 				realms: targetsPi
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: [thief.id, victim.id]
 		});
@@ -51680,6 +62115,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 			realms: targetsPi,
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		heroes: _duelChars
 	});
@@ -51691,6 +62127,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 			actor: thief.player,
 			realms: targetsPi
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		heroes: _duelChars
 	}));
@@ -51707,6 +62144,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -51717,6 +62155,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -51734,6 +62173,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -51744,6 +62184,7 @@ function thiefCaughtScuffle(turnContext, prov, thief, victim, what) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -51799,6 +62240,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -51811,6 +62253,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -51828,6 +62271,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if (_ok) {
@@ -51863,6 +62307,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				spy: true
 			});
@@ -51874,6 +62319,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			trySkillGain(turnContext, c, "spy", SKILLGAIN_COMMON);
@@ -51893,6 +62339,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (_cr <= _catch) {
@@ -51915,6 +62362,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -51933,6 +62381,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (success && !c._spyDisguised && hasDisc(turnContext, c.player, "sd23")) {
@@ -51946,6 +62395,7 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	}
@@ -51960,7 +62410,8 @@ function resolveSpyOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		trySkillGain(turnContext, c, "spy", SKILLGAIN_COMMON);
 	}
@@ -51975,7 +62426,8 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -51992,6 +62444,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -52006,6 +62459,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if (roll <= chance) {
@@ -52023,6 +62477,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (take > 0) emit(turnContext, {
@@ -52032,6 +62487,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [prov.owner]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			trySkillGain(turnContext, c, "thief", SKILLGAIN_STD);
@@ -52045,6 +62501,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			emit(turnContext, {
@@ -52054,6 +62511,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [prov.owner]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else emit(turnContext, {
@@ -52063,6 +62521,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if (roll > chance) trySkillGain(turnContext, c, "thief", SKILLGAIN_COMMON);
@@ -52077,7 +62536,8 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52088,7 +62548,8 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52100,6 +62561,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52113,6 +62575,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52128,6 +62591,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (stealRoll <= stealChance) {
@@ -52142,6 +62606,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			else {
@@ -52155,6 +62620,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				emit(turnContext, {
@@ -52177,6 +62643,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			else {
@@ -52188,6 +62655,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				emit(turnContext, {
@@ -52197,6 +62665,7 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				if (victim.player !== null) emit(turnContext, {
@@ -52220,7 +62689,8 @@ function resolveStealOrder(turnContext, c, target, prov, player) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		trySkillGain(turnContext, c, "thief", SKILLGAIN_COMMON);
 	}
@@ -52234,7 +62704,8 @@ function resolveSabotageOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52246,7 +62717,8 @@ function resolveSabotageOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52257,7 +62729,8 @@ function resolveSabotageOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52274,6 +62747,7 @@ function resolveSabotageOrder(turnContext, c, target) {
 			actor: c.player,
 			realms: [c.player, tp.owner].filter((x) => x != null)
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: tp.id
 	});
 	TM(c).spyActions = (TM(c).spyActions || 0) + 1;
@@ -52289,7 +62763,8 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52300,7 +62775,8 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52313,6 +62789,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52325,6 +62802,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52339,6 +62817,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52357,6 +62836,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (_hRoll <= _hChance) {
@@ -52393,7 +62873,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 					realms: [vp]
 				},
 				province: prov.id,
-				hero: _dest ? _dest.id : null,
+				hero: _dest ? _dest.id : THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				phase: ph
 			});
 		} else parts.push(`though no courier of theirs was on the road to waylay`);
@@ -52406,6 +62886,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		if (_heistItem) {
@@ -52417,6 +62898,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -52427,6 +62909,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 				actor: c.player,
 				realms: [vp]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		trySkillGain(turnContext, c, "thief", SKILLGAIN_STD);
@@ -52440,6 +62923,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -52456,6 +62940,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			emit(turnContext, {
@@ -52465,6 +62950,7 @@ function resolveGrandHeistOrder(turnContext, c, ph, prov) {
 					actor: c.player,
 					realms: [vp]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -52479,7 +62965,8 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52491,7 +62978,8 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52503,6 +62991,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -52514,7 +63003,8 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52528,6 +63018,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		heroes: [c.id, victim.id].filter((v) => v != null),
 		province: prov.id
 	});
@@ -52538,6 +63029,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			actor: victim.player,
 			realms: [victim.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		heroes: [victim.id].filter((v) => v != null),
 		province: prov.id
 	});
@@ -52550,6 +63042,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 				realms: [c.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		else {
@@ -52559,6 +63052,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 					realms: [c.player, victim.player].filter((x) => x != null),
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			awardKillXP(turnContext, c, victim);
@@ -52573,6 +63067,7 @@ function resolveAssassinateOrder(turnContext, c, target, prov) {
 			actor: c.player,
 			realms: [c.player, victim.player].filter((x) => x != null)
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		heroes: [c.id, victim.id].filter((v) => v != null),
 		province: prov.id
 	});
@@ -52587,7 +63082,8 @@ function resolveVanishOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52599,6 +63095,7 @@ function resolveVanishOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "thief", SKILLGAIN_STD);
@@ -52618,6 +63115,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 			actor: caster.player,
 			realms: [caster.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (roll > CHARM_BACKLASH_PCT) return;
@@ -52636,6 +63134,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 				actor: caster.player,
 				realms: targetsPi
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			heroes: [caster.id, t.id]
 		});
@@ -52656,6 +63155,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 			realms: targetsPi,
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		heroes: _duelChars
 	});
@@ -52667,6 +63167,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 			actor: caster.player,
 			realms: targetsPi
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id,
 		heroes: _duelChars
 	}));
@@ -52683,6 +63184,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -52693,6 +63195,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -52710,6 +63213,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -52720,6 +63224,7 @@ function charmBacklash(turnContext, prov, caster, t, why) {
 					realms: targetsPi,
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id,
 				heroes: _duelChars
 			});
@@ -52738,7 +63243,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52749,7 +63255,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52763,6 +63270,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			o._castNotWorked = true;
@@ -52788,7 +63296,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -52804,7 +63313,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52815,7 +63325,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52827,7 +63338,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52841,7 +63353,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -52897,6 +63410,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		trySkillGain(turnContext, c, "sage", SKILLGAIN_COMMON);
@@ -52911,6 +63425,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (castRoll > castChance) {
@@ -52920,7 +63435,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		if (!_itemCast) trySkillGain(turnContext, c, school, SKILLGAIN_COMMON);
 		if (spellDef.fn === "psychic_charm") {
@@ -52941,7 +63457,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52952,7 +63469,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52963,7 +63481,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -52981,7 +63500,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -52993,7 +63513,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -53004,7 +63525,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -53015,7 +63537,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		} else if (graveServedOther(grave, c.player)) {
@@ -53025,7 +63548,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53036,7 +63560,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53048,7 +63573,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53059,7 +63585,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53085,6 +63612,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: grave.player,
 						realms: [grave.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			}
@@ -53108,6 +63636,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		else emit(turnContext, {
@@ -53117,6 +63646,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		{
@@ -53144,7 +63674,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			}
 			const fin = G.turnOrders[deadHero.id] || [
@@ -53173,7 +63704,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53194,6 +63726,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					realms: [c.player],
 					seen: "there"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: targetProv.id,
 				env: true
 			});
@@ -53207,6 +63740,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: targetProv.id,
 				env: true
 			});
@@ -53222,6 +63756,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: _hsProv.id
 		});
 		else {
@@ -53244,7 +63779,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53255,7 +63791,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53275,6 +63812,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id,
 			env: true
 		});
@@ -53287,7 +63825,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53298,7 +63837,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53309,7 +63849,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53322,6 +63863,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			charmBacklash(turnContext, prov, c, t, "closed to enchantment this season");
@@ -53336,6 +63878,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			if (_rr <= t._charmResist) {
@@ -53346,6 +63889,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				if (t.player != null) emit(turnContext, {
@@ -53372,6 +63916,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		};
@@ -53382,7 +63927,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53393,7 +63939,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53431,7 +63978,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -53443,7 +63991,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					audience: {
 						actor: c.player,
 						realms: [c.player]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return;
 			}
@@ -53465,6 +64014,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			_charmIntel(t);
@@ -53475,7 +64025,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		} else {
 			const _origOwner = t.player;
@@ -53500,6 +64051,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			_charmIntel(t);
@@ -53523,6 +64075,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -53537,6 +64090,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: c.location
 		});
 	} else if (fn === "psychic_clairvoyance") {
@@ -53553,6 +64107,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					spy: true,
 					province: bodyLoc
 				});
@@ -53564,7 +64119,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53576,6 +64132,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: c.location
 			});
 			return;
@@ -53613,6 +64170,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			spy: true,
 			province: targetChar.location
 		});
@@ -53624,7 +64182,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53635,7 +64194,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53655,6 +64215,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player, targetChar.player].filter((x) => x != null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				heroes: [c.id, targetChar.id].filter((v) => v != null),
 				province: prov.id
 			});
@@ -53668,6 +64229,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `🧠 ${targetChar.name} reels — ${c.name}'s Psychic Blast sears away ${_pbDrops.join(" and ")}.`, ph, "combat");
@@ -53694,7 +64256,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53705,7 +64268,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53718,6 +64282,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player, targetChar.player].filter((x) => x != null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				heroes: [c.id, targetChar.id].filter((v) => v != null),
 				province: prov.id
 			});
@@ -53752,6 +64317,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `🌀 ${c.name}'s Telekinetic Storm scatters ${targetChar.name}'s formations — ${destroyed} destroyed, ${demoted} permanently reduced one experience level. (${_lines.join("; ")})`, ph, "combat");
@@ -53765,7 +64331,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53790,6 +64357,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id
 		});
 	} else if (fn === "illusory_phantasmal") {
@@ -53801,7 +64369,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53814,7 +64383,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53837,6 +64407,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: t.location
 		});
 	} else if (fn === "illusory_hide_feature") {
@@ -53849,7 +64420,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53861,7 +64433,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53876,6 +64449,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id
 		});
 	} else if (fn === "elemental_earthquake") {
@@ -53888,7 +64462,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53902,6 +64477,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: targetProv.owner != null && targetProv.owner !== c.player ? [targetProv.owner] : [],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id,
 			env: true
 		});
@@ -53916,7 +64492,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53927,7 +64504,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53946,6 +64524,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: targetProv.owner != null && targetProv.owner !== c.player ? [targetProv.owner] : [],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id,
 			env: true
 		});
@@ -53958,7 +64537,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -53998,6 +64578,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 		c._elementalSummonedThisTurn = true;
 		logSplit(turnContext, "explore", `✨ ${c.name} tears open a rift in ${prov.name} and ${pick.unitName} — a ${pick.type} — surges forth to fight under your command! It will dissolve at the end of the turn.`, `✨ ${c.name}${realmTag(turnContext, c.player)} tears open a rift in ${prov.name} — ${pick.unitName}, a ${pick.type}, surges forth to fight under their banner.`, {
 			audience: { actor: c.player },
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -54013,6 +64594,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			} else {
@@ -54030,6 +64612,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			}
@@ -54050,6 +64633,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 				else if (_nbrs.length > 0) emit(turnContext, {
@@ -54059,6 +64643,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 						actor: c.player,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: prov.id
 				});
 			}
@@ -54072,7 +64657,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54083,7 +64669,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54099,6 +64686,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -54109,6 +64697,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 		c.armies.push(seized);
 		logSplit(turnContext, "hire", `✨ ${c.name}'s Control Undead wrests the ${seized.unitName || seized.type} from ${targetChar.name} in ${prov.name} — it now marches under your banner!`, `✨ ${c.name}${realmTag(turnContext, c.player)}'s Control Undead wrests the ${seized.unitName || seized.type} from ${targetChar.name}${realmTag(turnContext, targetChar.player)} in ${prov.name} — it now marches under ${c.name}'s banner.`, {
 			audience: { actor: c.player },
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			alsoNotFor: [targetChar.player]
 		});
@@ -54123,6 +64712,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -54149,6 +64739,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					realms: [c.player],
 					seen: "there"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		}
@@ -54161,7 +64752,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54172,7 +64764,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54184,7 +64777,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54203,6 +64797,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `☠ A Curse from ${c.name} settles over ${targetChar.name} — every skill is halved for the rest of the turn (${_parts.join(", ")}).`, ph, "combat");
@@ -54216,7 +64811,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54227,7 +64823,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54244,6 +64841,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: targetProv.owner != null && targetProv.owner !== c.player ? [targetProv.owner] : [],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id,
 			env: true
 		});
@@ -54258,7 +64856,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54272,6 +64871,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player],
 				seen: "there"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id
 		});
 		notifyProvinceOwner(turnContext, targetProv, `✨ ${c.name} (${G.players[c.player]?.name || "a foreign realm"}) has raised a Sanctuary over ${targetProv.name} — armies hostile to that realm that give battle there fight at −25% strength this turn.`, c.player, ph);
@@ -54283,7 +64883,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54294,7 +64895,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54311,6 +64913,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `⚡ Divine Judgment falls on ${targetChar.name} from ${c.name} — ${dmg} holy damage${kills > 0 ? `, ${kills} unit${kills !== 1 ? "s" : ""} smitten` : ""}.`, ph, "combat");
@@ -54322,7 +64925,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54333,7 +64937,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54346,6 +64951,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `✨ Mass Confusion from ${c.name} grips ${targetChar.name} — their Tactical command deserts them in their next battle.`, ph, "combat");
@@ -54357,7 +64963,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54368,7 +64975,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54381,6 +64989,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player, targetChar.player].filter((x) => x != null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				heroes: [c.id, targetChar.id].filter((v) => v != null),
 				province: prov.id
 			});
@@ -54391,6 +65000,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 		c.armies = (c.armies || []).concat(seized);
 		logSplit(turnContext, "hire", `✨ ${c.name} Dominates ${targetChar.name} in ${prov.name} — ${seized.length} of their unit${seized.length !== 1 ? "s" : ""} turn coat and march under your banner!`, `✨ ${c.name}${realmTag(turnContext, c.player)} Dominates ${targetChar.name}${realmTag(turnContext, targetChar.player)} in ${prov.name} — ${seized.length} of their unit${seized.length !== 1 ? "s" : ""} turn coat and march under ${c.name}'s banner.`, {
 			audience: { actor: c.player },
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id,
 			alsoNotFor: [targetChar.player]
 		});
@@ -54406,7 +65016,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54429,6 +65040,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else if (fn === "illusory_invisibility") {
@@ -54443,6 +65055,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else emit(turnContext, {
@@ -54452,6 +65065,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else if (fn === "illusory_veil") {
@@ -54464,6 +65078,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 	} else if (fn === "elemental_chainlightning") {
@@ -54474,7 +65089,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54485,7 +65101,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54498,6 +65115,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player, targetChar.player].filter((x) => x != null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				heroes: [c.id, targetChar.id].filter((v) => v != null),
 				province: prov.id
 			});
@@ -54512,6 +65130,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player, targetChar.player].filter((x) => x != null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				heroes: [c.id, targetChar.id].filter((v) => v != null),
 				province: prov.id
 			});
@@ -54533,6 +65152,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player, targetChar.player].filter((x) => x != null),
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		notifyTarget(turnContext, targetChar, `⚡ ${c.name}'s Chain Lightning tears through ${targetChar.name}'s ranks — ${killed} unit${killed !== 1 ? "s" : ""} blasted apart.`, ph, "combat");
@@ -54546,7 +65166,8 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -54570,6 +65191,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [..._ccVictims],
 				seen: "battle"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: targetProv.id
 		});
 		notifyProvinceOwner(turnContext, targetProv, `☄ An enemy Cataclysm has devastated ${targetProv.name} — its tax base is permanently ruined${totalDestroyed > 0 ? ` and ${totalDestroyed} of your unit${totalDestroyed !== 1 ? "s were" : " was"} destroyed` : ""}.`, c.player, ph);
@@ -54582,6 +65204,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -54610,6 +65233,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 		c.armies.push(wraith);
 		logSplit(turnContext, "explore", `💀 ${c.name} binds the dead of ${prov.name} into ${wraith.unitName} — Elite undead at your side! (Upkeep 1g/turn.)`, `💀 ${c.name}${realmTag(turnContext, c.player)} binds the dead of ${prov.name} into ${wraith.unitName} — Elite undead now march at their side.`, {
 			audience: { actor: c.player },
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -54623,6 +65247,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			return;
@@ -54652,6 +65277,7 @@ function resolveCastSpellOrder(turnContext, c, o, ph, target, extra, prov, playe
 				realms: [c.player],
 				seen: "there"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		resolveUnitGainInProvince(turnContext, c, prov, ph);
@@ -54672,6 +65298,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54684,6 +65311,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54696,6 +65324,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54708,6 +65337,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54720,6 +65350,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54733,6 +65364,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54750,6 +65382,7 @@ function resolveEncounterCharacterOrder(turnContext, c, ph, target, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	advancePursuit(turnContext, c, ph);
@@ -54764,6 +65397,7 @@ function resolveDefendOrder(turnContext, c, o, ph, prov) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: prov.id
 		});
 		return;
@@ -54785,6 +65419,7 @@ function resolveDefendOrder(turnContext, c, o, ph, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	else if ((c.armies || []).length === 0) emit(turnContext, {
@@ -54794,6 +65429,7 @@ function resolveDefendOrder(turnContext, c, o, ph, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	else if (centreProv.id === prov.id) emit(turnContext, {
@@ -54803,6 +65439,7 @@ function resolveDefendOrder(turnContext, c, o, ph, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	else emit(turnContext, {
@@ -54812,6 +65449,7 @@ function resolveDefendOrder(turnContext, c, o, ph, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 }
@@ -54826,7 +65464,8 @@ function resolveBlockadeOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54838,11 +65477,14 @@ function resolveBlockadeOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
-	const adj = new Set(getNeighborsP(G.world.provinces[c.location], G.world.cols, G.world.rows, G.world.provinces).map((p) => p && p.id).filter((x) => x != null));
+	const heroProv = G.world.provinces[c.location];
+	if (!heroProv) throw new TypeError("the hero's province isn't on the map");
+	const adj = new Set(getNeighborsP(heroProv, G.world.cols, G.world.rows, G.world.provinces).map((p) => p.id));
 	if (sp.id !== c.location && !adj.has(sp.id)) {
 		emit(turnContext, {
 			type: "system",
@@ -54850,7 +65492,8 @@ function resolveBlockadeOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54861,7 +65504,8 @@ function resolveBlockadeOrder(turnContext, c, target) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54876,6 +65520,7 @@ function resolveBlockadeOrder(turnContext, c, target) {
 				realms: [c.player],
 				seen: "there"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: sp.id
 		});
 	} else emit(turnContext, {
@@ -54885,6 +65530,7 @@ function resolveBlockadeOrder(turnContext, c, target) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: sp.id
 	});
 	trySkillGain(turnContext, c, "naval", SKILLGAIN_STD);
@@ -54898,7 +65544,8 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54910,7 +65557,8 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54921,7 +65569,8 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -54933,6 +65582,7 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 				actor: c.player,
 				realms: [c.player, foe.player].filter((x) => x != null)
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			heroes: [c.id, foe.id].filter((v) => v != null),
 			province: prov.id
 		});
@@ -54954,6 +65604,7 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 			realms: [c.player, foe.player].filter((x) => x != null),
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (loser.hp <= 0) {
@@ -54967,6 +65618,7 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 					realms: [c.player].filter((x) => x != null),
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -54976,6 +65628,7 @@ function resolveChallengeOrder(turnContext, c, target, prov) {
 					realms: [c.player, foe.player].filter((x) => x != null),
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			awardKillXP(turnContext, winner, loser);
@@ -54993,7 +65646,8 @@ function resolveRampageOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55005,7 +65659,8 @@ function resolveRampageOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55016,7 +65671,8 @@ function resolveRampageOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55033,6 +65689,7 @@ function resolveRampageOrder(turnContext, c, target, prov) {
 			realms: [c.player, foe.player].filter((x) => x != null),
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	c.merits = (c.merits || 0) + 1;
@@ -55047,7 +65704,8 @@ function resolveRainOfArrowsOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55059,7 +65717,8 @@ function resolveRainOfArrowsOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55070,7 +65729,8 @@ function resolveRainOfArrowsOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55085,6 +65745,7 @@ function resolveRainOfArrowsOrder(turnContext, c, target, prov) {
 			realms: [c.player, foe.player].filter((x) => x != null),
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "archery", SKILLGAIN_STD);
@@ -55098,7 +65759,8 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55110,7 +65772,8 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55121,7 +65784,8 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55137,6 +65801,7 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 			realms: [c.player, foe.player].filter((x) => x != null),
 			seen: "battle"
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	if (foe.hp <= 0 || roll <= killChance) {
@@ -55150,6 +65815,7 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 					realms: [c.player].filter((x) => x != null),
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 		} else {
@@ -55160,6 +65826,7 @@ function resolveSnipersMarkOrder(turnContext, c, target, prov) {
 					realms: [c.player, foe.player].filter((x) => x != null),
 					seen: "battle"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: prov.id
 			});
 			awardKillXP(turnContext, c, foe);
@@ -55177,7 +65844,8 @@ function resolveFeignedRetreatOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55189,6 +65857,7 @@ function resolveFeignedRetreatOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "tactical", SKILLGAIN_STD);
@@ -55202,7 +65871,8 @@ function resolveGrandStratagemOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55214,6 +65884,7 @@ function resolveGrandStratagemOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "tactical", SKILLGAIN_STD);
@@ -55227,7 +65898,8 @@ function resolveLightningAdvanceOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55239,6 +65911,7 @@ function resolveLightningAdvanceOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "march", SKILLGAIN_STD);
@@ -55252,7 +65925,8 @@ function resolveRaidTheCoastOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55263,7 +65937,8 @@ function resolveRaidTheCoastOrder(turnContext, c, prov) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		return;
 	}
@@ -55275,6 +65950,7 @@ function resolveRaidTheCoastOrder(turnContext, c, prov) {
 			actor: c.player,
 			realms: [c.player]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: prov.id
 	});
 	trySkillGain(turnContext, c, "naval", SKILLGAIN_STD);
@@ -55333,6 +66009,7 @@ function processOrder(turnContext, c, o, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: c.location
 		});
 		action = "rest";
@@ -55350,6 +66027,7 @@ function processOrder(turnContext, c, o, ph) {
 					actor: c.player,
 					realms: [c.player]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: c.location
 			});
 			action = "rest";
@@ -55364,6 +66042,7 @@ function processOrder(turnContext, c, o, ph) {
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: c.location
 		});
 		action = "rest";
@@ -55402,7 +66081,8 @@ function processOrder(turnContext, c, o, ph) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			turnContext._logCtx = {
 				charId: null,
@@ -55420,7 +66100,8 @@ function processOrder(turnContext, c, o, ph) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			turnContext._logCtx = {
 				charId: null,
@@ -55438,7 +66119,8 @@ function processOrder(turnContext, c, o, ph) {
 				audience: {
 					actor: c.player,
 					realms: [c.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			turnContext._logCtx = {
 				charId: null,
@@ -55607,7 +66289,8 @@ function startPhaseHealingSnapshotsAndStalledBattles(turnContext, ph) {
 	emit(turnContext, {
 		type: "system",
 		text: `— ${SEASONS[ph]} —`,
-		audience: {}
+		audience: {},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	(G.characters || []).forEach((c) => {
 		if (c.alive && c.player != null && c.hp != null && c._hpAtPhaseStart != null && c.hp < c._hpAtPhaseStart && c.hp < (c.maxHp || 20) && hasDisc(turnContext, c.player, "sd29")) {
@@ -55670,7 +66353,8 @@ function startPhaseHealingSnapshotsAndStalledBattles(turnContext, ph) {
 			audience: {
 				actor: c.player,
 				realms: [c.player]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	});
 }
@@ -55907,7 +66591,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				audience: {
 					actor: back,
 					realms: [back]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 	});
@@ -55915,7 +66600,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 	emit(turnContext, {
 		type: "system",
 		text: "═ Tax collection ═",
-		audience: {}
+		audience: {},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	G.players.forEach((p) => {
 		const pi = p.id;
@@ -55925,7 +66611,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 			audience: {
 				actor: p.id,
 				realms: [p.id]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 		const _taxAcc = /* @__PURE__ */ new Map();
 		const _taxCap = taxBonusCap(realmBaseTax(G, pi));
@@ -55982,13 +66669,15 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 			audience: {
 				actor: p.id,
 				realms: [p.id]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	});
 	emit(turnContext, {
 		type: "system",
 		text: "═ Army wages & hero wages ═",
-		audience: {}
+		audience: {},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	G.players.forEach((p) => {
 		const pi = p.id;
@@ -56067,7 +66756,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 			emit(turnContext, {
 				type: "system",
 				text: `${p.name}: no wages to pay.`,
-				audience: {}
+				audience: {},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -56084,7 +66774,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				audience: {
 					actor: p.id,
 					realms: [p.id]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 		if ((p.gold || 0) >= totalWages) {
@@ -56095,7 +66786,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				audience: {
 					actor: p.id,
 					realms: [p.id]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		} else {
 			emit(turnContext, {
@@ -56104,7 +66796,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				audience: {
 					actor: p.id,
 					realms: [p.id]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			let deficit = totalWages - (p.gold || 0);
 			p.gold = 0;
@@ -56136,7 +66829,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 						audience: {
 							actor: p.id,
 							realms: [p.id]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			};
@@ -56179,7 +66873,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 						audience: {
 							actor: p.id,
 							realms: [p.id]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 					if (_sparedHulls.length) _revisitSpared();
 				}
@@ -56190,7 +66885,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				audience: {
 					actor: p.id,
 					realms: [p.id]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			if (deficit > 0) heroes.sort((a, b) => (b.pay || 0) - (a.pay || 0)).forEach((h) => {
 				if (deficit <= 0) return;
@@ -56206,7 +66902,8 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 						audience: {
 							actor: p.id,
 							realms: [p.id]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			});
@@ -56234,6 +66931,7 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				actor: pv.owner,
 				realms: [pv.owner]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: pv.id
 		});
 	});
@@ -56258,6 +66956,7 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 				actor: pv.owner,
 				realms: [pv.owner]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: pv.id
 		});
 	});
@@ -56300,6 +66999,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 					actor: pi,
 					realms: [pi]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 		});
@@ -56315,6 +67015,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 				actor: c.player,
 				realms: [c.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: p2.id
 		}));
 	});
@@ -56322,6 +67023,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 		type: "system",
 		text: txt,
 		audience: { realms: [] },
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		province: pv ? pv.id : null,
 		system: true
 	}));
@@ -56344,6 +67046,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 						realms: [pi],
 						seen: "there"
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					province: pid,
 					env: true
 				});
@@ -56369,6 +67072,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 						actor: null,
 						realms: []
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					phase: 99
 				});
 				return;
@@ -56422,6 +67126,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 						actor: null,
 						realms: [pi]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					phase: 99
 				});
 				return;
@@ -56435,6 +67140,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 					actor: pi,
 					realms: [pi]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: dest.id,
 				phase: 99
 			});
@@ -56485,7 +67191,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 		});
 	}
 	maxHpPlayers.players = G.players;
-	(G._maxHpMigration || []).forEach((r) => {
+	turnContext.whatTheSavesUpgradeFound.heroesCarriedOverToTheEarnedHpPool.forEach((r) => {
 		const ch = (G.characters || []).find((c) => c && c.id === r.charId);
 		if (!ch) return;
 		emit(turnContext, {
@@ -56499,7 +67205,6 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 			hero: ch.id
 		});
 	});
-	delete G._maxHpMigration;
 	syncAllMaxHp(turnContext);
 	(G.characters || []).forEach((c) => {
 		if (c._mercyFledTurn !== G.turn || !c.alive) return;
@@ -56583,6 +67288,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [to]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 			};
@@ -56596,6 +67302,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [a]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 				emit(turnContext, {
@@ -56605,6 +67312,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [b]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 				continue;
@@ -56617,6 +67325,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [a]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 				if (db === "treat") emit(turnContext, {
@@ -56626,6 +67335,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [b]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true
 				});
 				continue;
@@ -56646,6 +67356,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 					actor: null,
 					realms: [a]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			emit(turnContext, {
@@ -56655,6 +67366,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 					actor: null,
 					realms: [b]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			if (next === "enemy") warFrontThreats(turnContext).forEach((t) => {
@@ -56673,6 +67385,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [c.player]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true,
 					province: pv.id
 				});
@@ -56683,6 +67396,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 						actor: null,
 						realms: [foe]
 					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 					system: true,
 					province: pv.id
 				});
@@ -56699,6 +67413,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 			actor: null,
 			realms: [pi]
 		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		system: true
 	});
 	if (!G.reckoning && reckoningCalls.size > 0 && G.turn >= RECKONING_MIN_TURN) for (const pi of reckoningCalls) {
@@ -56710,6 +67425,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					actor: null,
 					realms: [pi]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			continue;
@@ -56736,6 +67452,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			break;
@@ -56746,6 +67463,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 				actor: null,
 				realms: [pi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			system: true
 		});
 		else emit(turnContext, {
@@ -56755,6 +67473,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 				actor: null,
 				realms: [pi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			system: true
 		});
 	}
@@ -56772,6 +67491,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			delete G.reckoning;
@@ -56784,6 +67504,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 			delete G.reckoning;
@@ -56812,6 +67533,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true
 			});
 		}
@@ -56855,6 +67577,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true,
 				gameEnd: true
 			});
@@ -56878,6 +67601,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 				realms: [],
 				seen: "world"
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			system: true,
 			gameEnd: true
 		});
@@ -56892,6 +67616,7 @@ function victoryTheReckoningEliminationConcessionAndTheAnnouncement(turnContext)
 					realms: [],
 					seen: "world"
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				system: true,
 				gameEnd: true
 			});
@@ -56914,7 +67639,8 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		});
 	});
@@ -56945,7 +67671,8 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			}
 			return;
@@ -57002,6 +67729,7 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 				actor: pi,
 				realms: [pi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: heirProv.id
 		});
 	});
@@ -57021,6 +67749,7 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 					actor: c.player,
 					realms: [c.player].filter((x) => x !== null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: c.location
 			});
 		}
@@ -57034,6 +67763,7 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 					actor: c.player,
 					realms: [c.player].filter((x) => x !== null)
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				province: c.location
 			});
 		}
@@ -57129,7 +67859,8 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -57147,9 +67878,19 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 			audience: {
 				actor: pi,
 				realms: [pi]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	});
+}
+//#endregion
+//#region src/engine/saves/what-the-saves-check-found-in-words.ts
+/** How many of the check's findings the GM is shown by name: the rest are counted. */
+var THE_CHECKS_FINDINGS_NAMED_AT_MOST = 10;
+/** The check's findings in words: how many, that the turn ran on the save as it was, the first ten, and how many more. */
+function whatTheSavesCheckFoundInWords(findings) {
+	const more = findings.length - THE_CHECKS_FINDINGS_NAMED_AT_MOST;
+	return `The saved game holds ${findings.length === 1 ? "1 thing" : `${String(findings.length)} things`} this build of Kingdoms Call doesn't know, and the turn ran on it as it was. Please send this list to the Kingdoms Call team: ` + findings.slice(0, THE_CHECKS_FINDINGS_NAMED_AT_MOST).join("; ") + (more > 0 ? `; and ${String(more)} more.` : ".");
 }
 //#endregion
 //#region src/engine/turn/new-turn-war-academy-informants-divine-resurrection-graves-mercenaries-wanderers-and-the-final-reconcile.ts
@@ -57177,7 +67918,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			}
 		});
@@ -57187,7 +67929,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 			audience: {
 				actor: pi,
 				realms: [pi]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	});
 	G.players.forEach((p, pi) => {
@@ -57229,7 +67972,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -57241,7 +67985,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 			audience: {
 				actor: pi,
 				realms: [pi]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	});
 	G.players.forEach((p, pi) => {
@@ -57255,6 +68000,7 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 					actor: pi,
 					realms: [pi]
 				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 				phase: 99
 			});
 			return;
@@ -57271,6 +68017,7 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 				actor: pi,
 				realms: [pi]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: _pk.id,
 			phase: 99
 		});
@@ -57293,7 +68040,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 				audience: {
 					actor: grave.player,
 					realms: [grave.player]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			return;
 		}
@@ -57323,6 +68071,7 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 				actor: grave.player,
 				realms: [grave.player]
 			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 			province: homeProv.id
 		});
 	});
@@ -57361,7 +68110,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 					audience: {
 						actor: null,
 						realms: []
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				return false;
 			}
@@ -57390,18 +68140,30 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 		audience: {
 			actor: null,
 			realms: []
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
 	G._nameRepairs = 0;
-	if (G._retiredDiscoveries > 0) emit(turnContext, {
+	const retiredSageDiscoveriesRemoved = turnContext.whatTheSavesUpgradeFound.retiredSageDiscoveriesRemoved;
+	if (retiredSageDiscoveriesRemoved > 0) emit(turnContext, {
 		type: "system",
-		text: `[Integrity] ${G._retiredDiscoveries} retired Sage discover${G._retiredDiscoveries !== 1 ? "ies were" : "y was"} removed from realm records.`,
+		text: `[Integrity] ${retiredSageDiscoveriesRemoved} retired Sage discover${retiredSageDiscoveriesRemoved !== 1 ? "ies were" : "y was"} removed from realm records.`,
 		audience: {
 			actor: null,
 			realms: []
-		}
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 	});
-	delete G._retiredDiscoveries;
+	const whereTheSaveDiffers = turnContext.whatTheSavesUpgradeFound.whereTheSaveDiffersFromThisBuildsSchema;
+	if (whereTheSaveDiffers.length > 0) emit(turnContext, {
+		type: "system",
+		text: `[Save check] ${whatTheSavesCheckFoundInWords(whereTheSaveDiffers)}`,
+		audience: {
+			actor: null,
+			realms: []
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
+	});
 	if (Array.isArray(G.heroGraveyard) && G.heroGraveyard.length) {
 		const _ghosts = G.heroGraveyard.filter((g) => {
 			const ch = (G.characters || []).find((x) => x && x.id === g.id);
@@ -57416,7 +68178,8 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 					audience: {
 						actor: null,
 						realms: []
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				(G.players || []).forEach((p) => {
 					if (p && p._resurrectableMonarchId === g.id) p._resurrectableMonarchId = null;
@@ -57513,7 +68276,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 			audience: {
 				actor: pi,
 				realms: [pi]
-			}
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 		});
 	};
 	const isNaval = (t) => SEA_TYPES.has(t);
@@ -57539,7 +68303,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			G.players.forEach((pl, i) => {
 				if (i === pi || !met(pi, i)) return;
@@ -57550,7 +68315,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			unmetLine(pi, "The Throne");
@@ -57565,7 +68331,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			G.players.forEach((pl, i) => {
 				if (i === pi || !met(pi, i)) return;
@@ -57575,7 +68342,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			unmetLine(pi, "The Vaultkeeper");
@@ -57593,7 +68361,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			}
 			G.players.forEach((pl, i) => {
@@ -57607,7 +68376,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			});
@@ -57617,7 +68387,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Grand Marshal");
 		}
@@ -57634,7 +68405,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			}
 			G.players.forEach((pl, i) => {
@@ -57648,7 +68420,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			});
@@ -57658,7 +68431,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Sea Lord");
 		}
@@ -57687,7 +68461,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			let any = false;
 			G.players.forEach((pl, i) => {
@@ -57701,7 +68476,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			});
@@ -57711,7 +68487,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Monster-Bane");
 		}
@@ -57733,7 +68510,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				} else emit(turnContext, {
 					type: "system",
@@ -57741,7 +68519,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				ds.forEach((d) => {
 					if (d.turnDiscovered === tt) fresh.push({
@@ -57756,7 +68535,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			const lp = G.players[pi];
 			if (lp && fresh.length) {
@@ -57777,7 +68557,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			}
@@ -57810,7 +68591,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 				else emit(turnContext, {
 					type: "system",
@@ -57818,7 +68600,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			unmetLine(pi, "The Archmage");
@@ -57841,7 +68624,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			else emit(turnContext, {
@@ -57850,7 +68634,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 	}
@@ -57872,7 +68657,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				}
 			});
@@ -57882,7 +68668,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 	}
@@ -57898,7 +68685,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 				});
 				const byChar = /* @__PURE__ */ new Map();
@@ -57919,7 +68707,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			} else emit(turnContext, {
 				type: "system",
@@ -57927,7 +68716,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 		}
 	}
@@ -57955,7 +68745,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			let any = false;
 			G.players.forEach((pl, i) => {
@@ -57968,7 +68759,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			});
 			if (!any) emit(turnContext, {
@@ -57977,7 +68769,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Cartographer");
 		}
@@ -58013,7 +68806,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 					return;
 				}
@@ -58023,7 +68817,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			};
 			line(pi, "Your realm");
@@ -58039,7 +68834,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Beastlord");
 		}
@@ -58075,7 +68871,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 						audience: {
 							actor: pi,
 							realms: [pi]
-						}
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 					});
 					return;
 				}
@@ -58085,7 +68882,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 					audience: {
 						actor: pi,
 						realms: [pi]
-					}
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 				});
 			};
 			line(pi, "Your realm");
@@ -58101,7 +68899,8 @@ function imperialTitleIntelEachHoldersReportOnRivalRealmsAndTheLoremastersCopy(t
 				audience: {
 					actor: pi,
 					realms: [pi]
-				}
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING
 			});
 			unmetLine(pi, "The Wildwarden");
 		}
@@ -58222,21 +69021,19 @@ function resolveTurn(G, freshPlayers, expectedTurnToRun, seed) {
 		}
 	};
 	return onTheTurnsDice(() => {
+		let whatTheSavesUpgradeFound;
 		try {
 			G = typeof G === "string" ? JSON.parse(G) : G;
 			seedUsedArmyNames(G);
 			seedUsedHeroNames(G);
-			migrateMaxHpV2(G);
-			backfillHomeRosters(G);
-			retireCorsairPools(G);
-			retireDiscoveries(G);
-			migrateLegacyUnitNames(G);
+			whatTheSavesUpgradeFound = upgradeGameState(G);
 			snapshotHeldItems(G);
 			lastTurnsBattleAndDuelSwordsClearedFromTheMap(G);
 		} catch (e) {
 			throw new Error(`Could not read the saved game: ${e && e.message || e}`);
 		}
 		const turnContext = createTurnContext(G, freshPlayers, expectedTurnToRun);
+		turnContext.whatTheSavesUpgradeFound = whatTheSavesUpgradeFound;
 		turnContext._mercIds = { n: 0 };
 		const _tel = {
 			pre: {},
@@ -58267,7 +69064,6 @@ function resolveTurn(G, freshPlayers, expectedTurnToRun, seed) {
 		});
 		turnStartRepairsAndAFreshSlateOfOrdersForEveryHero(turnContext);
 		mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turnContext);
-		migrateItemTiers(G);
 		ensureAllLairHoards(G);
 		const { turnLog } = turnContext;
 		turnContext.clairWatch = {};
@@ -58326,7 +69122,8 @@ function resolveTurn(G, freshPlayers, expectedTurnToRun, seed) {
 			state: JSON.stringify(G),
 			log: turnLog,
 			spyStealthAndInvisibilityStampedForTheReports: () => onTheTurnsDice(() => spyStealthAndInvisibilityStampedForTheReports(turnContext)),
-			whatTheReportsRead: () => whatTheReportsRead(turnContext)
+			whatTheReportsRead: () => whatTheReportsRead(turnContext),
+			whereTheSaveDiffersFromThisBuildsSchema: whatTheSavesUpgradeFound.whereTheSaveDiffersFromThisBuildsSchema
 		};
 	});
 }
@@ -60189,6 +70986,572 @@ function playerView(state, realm, itsLines) {
 	};
 }
 //#endregion
+//#region src/views/prose/the-words-of-a-battles-lines.ts
+/** The words of one fact of a battle's lines. */
+function theWordsOfABattlesLine(fact) {
+	switch (fact.kind) {
+		case "a force drawn up for battle": {
+			const { name, color, neutral, guard, role, verb, armies } = fact;
+			return "⚑FORCE⚑" + JSON.stringify({
+				name,
+				color,
+				neutral,
+				guard,
+				role,
+				verb,
+				armies
+			});
+		}
+		case "a battle's losses, tallied from its lines": throw new Error("a battle's losses tally is written from the words of the battle's lines (theTurnsLinesInWords), not on its own");
+		case "the attacker's lightning advance catches the defender unready": return `⚡ ${String(fact.atkName)}'s Lightning Advance catches ${String(fact.defName)} completely unready — no terrain advantage, no pre-battle magic and no answering volley.`;
+		case "the attacker moves into the province and a battle is initiated": return `➡️ ${fact.atkName} (${fact.attackersRealmName}) moves into ${fact.provName}, held by ${fact.heldByName} — a battle is initiated.`;
+		case "the battle for a province begins": return `⚔ **Battle for ${fact.provName}**`;
+		case "the province still cowers under a reign of fear": return `💀 Reign of Fear — ${fact.provName} still cowers under ${fact.terrorHeroName}'s Terror, and the monsters of the host fight at ×${String(fact.reignOfFearMultiplier)}.`;
+		case "the attacker is cut down before the lines join, and a captain takes command": return `⚑ With ${fact.atkName} cut down before the lines were joined, the senior captain of the host takes command — the attack goes in regardless, though without their fallen leader's guiding hand.`;
+		case "the defender is slain before his army, and a veteran takes command": return `⚑ With ${fact.defName} slain before their army, a steady-handed veteran steps into command — the defence holds its ground, leaderless but unbowed.`;
+		case "the attacker fights to win back his realm's capital": return `🏠 ${fact.atkName} fights to win back ${fact.provName}, the realm's own capital — home ground lends the assault ×1.5 strength.`;
+		case "the attacker's siegecraft wears down the defenders' fortifications": return `  🏰 ${fact.atkName}'s siegecraft wears down the defenders' fortifications (province bonus −${fact.siegecraftReduction}).`;
+		case "the defender's host defends ground held justly": return `✝ Righteous Defence — ${fact.defName}'s host defends ground held justly (+10% defence).`;
+		case "the defender's realm holds its own ground the harder": return `  🛡 ${fact.defName}'s realm holds its own ground the harder (+${String(fact.ownGroundDefencePct)}% defence).`;
+		case "the defender's banner of the realm rallies the home defence": return `  🛡 ${fact.defName}'s Banner of the Realm rallies the home defense (+25%).`;
+		case "the attacker's siege mastery halves the defenders' fortifications": return `  🏰 ${String(fact.atkName)}'s siege mastery halves the defenders' fortifications.`;
+		case "the defenders fight on home ground": return `The defenders fight on home ground, gaining ×1.5 total defensive bonus.`;
+		case "a side's skeletal legions fight with fanaticism under their undead king": return `${fact.sideName}'s skeletal legions fight with undying fanaticism under their Undead king! (+${String(fact.undeadKingFanaticismPct)}% strength)`;
+		case "a side's monsters are driven to savage fury": return `${fact.sideName}'s monsters are driven to savage fury! (+25% strength)`;
+		case "a side's skeletal legions know no fear": return `${fact.sideName}'s skeletal legions know no fear (+${String(fact.undeadHeroFanaticismPct)}% strength — undying fanaticism).`;
+		case "the attacker's forces fight with fanatical zeal": return `${fact.atkName}'s forces fight with fanatical zeal! (+30% attacking strength)`;
+		case "the defenders fight with fanatical zeal on consecrated ground": return `✨ On the consecrated ground of ${fact.provName}, ${fact.defName}'s defenders fight before the altars of their gods with fanatical zeal! (+30% defending strength)`;
+		case "the defender's forces fight with fanatical zeal": return `${fact.defName}'s forces fight with fanatical zeal! (+30% defending strength)`;
+		case "the caster casts a spell before the battle": return `✨ **Pre-battle Magic: ${fact.casterName} casts ${fact.spellName}** (${fact.schoolLabel} ${String(fact.spellLevel)}) — ${String(fact.castChance)}% [roll ${String(fact.castRoll)}${fact.castMark}]`;
+		case "the spell before the battle fizzles": return `  Spell fizzles.`;
+		case "a fireball halves the enemy's strongest units": return `  🔥 Fireball halves the enemy's ${fact.fireballTargetsWords}, ${fact.fireballHitUnitNames}.`;
+		case "a telekinetic storm scatters the enemy commander's formations": return `  🌀 Telekinetic Storm scatters ${fact.enemyCommanderName}'s formations — their Tactical command is cut to half effectiveness this battle.`;
+		case "a telekinetic storm finds no tactical command to disrupt": return `  🌀 Telekinetic Storm rages, but ${fact.enemyCommanderName} has no tactical command to disrupt here.`;
+		case "a psychic blast severs the enemy commander's bond with his beasts": return `  🧠 Psychic Blast severs ${fact.enemyCommanderName}'s bond with their beasts — their Druid skill is negated this battle.`;
+		case "a lightning bolt weakens enemy units": return `  ⚡ Lightning Bolt: ${String(fact.unitCount)} enemy unit${fact.unitsPlural} lose 20% strength.`;
+		case "a curse withers the enemy commander's skill": return `  ☠ Curse withers ${fact.enemyCommanderName}'s ${fact.cursedSkillLabel} — halved for this battle.`;
+		case "control undead turns an enemy undead unit to the caster's side": return `  ☠ Control Undead turns the ${fact.turnedUnitName} to ${fact.casterName}'s side!`;
+		case "control undead finds no enemy undead to turn": return `  ☠ Control Undead finds no enemy undead to turn.`;
+		case "a holy symbol weakens enemy undead units": return `  ✝ Holy Symbol: ${String(fact.undeadUnitCount)} enemy undead unit${fact.undeadUnitsPlural} at 75% str.`;
+		case "a holy symbol finds no enemy undead to smite": return `  ✝ Holy Symbol: no enemy undead to smite.`;
+		case "spiritwrack halves enemy missile units": return `  Spiritwrack: ${String(fact.missileUnitCount)} enemy missile unit${fact.missileUnitsPlural} at half str.`;
+		case "spiritwrack finds no enemy missile troops": return `  Spiritwrack: enemy fields no missile troops.`;
+		case "a unit's power gathers but never strikes": return `〰 ${fact.unitName} gather for **${fact.powerName}**, but the moment passes — the strike never lands (${String(fact.strikeChancePct)}% chance${fact.druidWords}).`;
+		case "a unit uses its power in battle": return `✨ ${fact.unitName} — **${fact.powerName}**: "${fact.powerFlavour}"`;
+		case "a unit's power hits all enemy units": return `  Hits all ${String(fact.enemyUnitCount)} enemy units: −${String(fact.damage)} str.`;
+		case "a unit's power hits one enemy unit": return `  Hits ${fact.struckUnitName}: −${String(fact.damage)} str.`;
+		case "the hero's archers find no target among the forest wardens": return `🌲 ${fact.heroName}'s archers can find no target — Forest Wardens hold the thickets and the volley never comes.`;
+		case "the hero's archery volley begins": return `🏹 ${fact.heroName}'s archery: ${String(fact.missileUnitCount)} unit${fact.missileUnitsPlural}${fact.wordsIfDoubleVolleys}${fact.wordsIfOneMoreShot}${fact.wordsIfPreparedGround}`;
+		case "a unit's shot glances off its target": return `  ${String(fact.shooterName)} → ${String(fact.targetUnitName)}: shot glances off the ${String(fact.whyTheShotGlances)}.`;
+		case "a unit's shot weakens its target": return `  ${fact.shooterName} → ${fact.targetUnitName}: −${String(fact.damage)} str${fact.wordsIfFlying}${fact.wordsIfThickHide}${fact.wordsIfAbilityMultiplier}${fact.wordsIfSoftenedToTheLimit}.`;
+		case "a unit's target is already softened as far as arrows allow": return `  ${String(fact.shooterName)} → ${String(fact.targetUnitName)}: already softened as far as arrows allow.`;
+		case "a side's whale cohort sinks an enemy ship": return `🌊 A ${String(fact.sideName)} whale cohort breaches beneath the ${String(fact.targetUnitName)} and rolls her over — she goes down with all hands before a shot is fired.`;
+		case "the terrain's effect on each side": return `📊 Terrain (${fact.terrain}): ${fact.terrainNotes}`;
+		case "hosts airborne over open water fight at a penalty": return `⚠ ${fact.airborneHostsWords} airborne over open water: land units carried by flyers fight at ×${String(fact.seaAirborneLandPenalty)}, and the flyers carrying them at ×${String(fact.seaAirborneFlyerPenalty)}.`;
+		case "land units fight at sea at a penalty": return `⚠ Land units fighting at sea: ×${String(fact.seaLandPenalty)} strength penalty.`;
+		case "a side's realm discoveries strengthen its army": return `${String(fact.sideName)}'s realm discoveries: +${String(fact.discoveriesBonusPct)}% army str.`;
+		case "the illusory ground of the province confuses a side's forces": return `  🌫 The ever-shifting illusory ground of ${fact.provName} throws ${fact.sideName}'s forces into confusion — every unit fights as though mired in the worst terrain for its kind (at least −15% strength).`;
+		case "the sanctuary wards of the province sap a side's attackers": return `  ✨ The sanctuary wards of ${String(fact.provName)} sap ${String(fact.sideName)}'s attackers (−25% strength).`;
+		case "the attacker unfolds a grand stratagem": return `  📜 ${fact.atkName} unfolds a Grand Stratagem — the attack lands at +20% strength.`;
+		case "the defender unfolds a grand stratagem": return `  📜 ${String(fact.defName)} unfolds a Grand Stratagem — the defence holds at +20% strength.`;
+		case "the defender's feigned retreat springs shut": return `  🏳 ${String(fact.defName)}'s Feigned Retreat springs shut — the counter-attack strikes at +25% strength.`;
+		case "the attacker storms ashore in a raid on the coast": return `  ⚓ ${String(fact.atkName)} storms ashore in a Raid the Coast — the amphibious assault hits at +25% strength.`;
+		case "the consecrated ground of the province weakens the attacker's host": return `✨ The ground of ${fact.provName} is consecrated — ${fact.atkName}'s ${fact.attackersAlignment} host falters on hallowed earth (−15% strength).`;
+		case "the battle's statistics begin": return `📊 **Battle stats:**`;
+		case "the fortune of the battle": return `  ${fact.fortuneWords}`;
+		case "the battle's outcome and its margin": return `📊 Outcome: **${fact.winnerName} wins** — ${fact.severity} (margin ${fact.marginPct}% of combined strength after fortune)`;
+		case "a side's war-horn of the plains lets its free lances ride in rough country": return `📯 ${String(fact.sideName)}'s War-Horn of the Plains sounds — the Free Lances ride the broken enemy down even in ${String(fact.terrain)} country.`;
+		case "a side's free lances find no room to ride": return `🐎 ${fact.sideName}'s Free Lances find no room to ride in ${fact.terrain} country — the broken enemy scatters into cover.`;
+		case "the loser's dwarven guard leave the manticore pride nothing to hunt": return `🛡 ${fact.loserName}'s Dwarven Guard lock shields as they give ground — ${fact.winnerName}'s Manticore Pride find no broken backs to hunt.`;
+		case "the winner's manticore pride hunt the broken companies": return `🦂 ${fact.winnerName}'s Manticore Pride hunt the broken companies down before they can get clear (+${String(fact.runThemDownPct)}% losses to ${fact.loserName}).`;
+		case "the loser's dwarven guard leave the shark shoals nothing in the water": return `🛡 ${String(fact.loserName)}'s Dwarven Guard lock shields as they give ground — ${String(fact.winnerName)}'s Shark Shoals find nothing in the water.`;
+		case "the winner's shark shoals tear into the beaten crews": return `🦈 Feeding Frenzy — ${String(fact.winnerName)}'s Shark Shoals tear into ${String(fact.loserName)}'s beaten crews as they founder (+${String(fact.runThemDownPct)}% losses to ${String(fact.loserName2)}).`;
+		case "a unit is cut down with no escape": return `— ${fact.unitName} are cut down with no escape!`;
+		case "a side's other forces survive the engagement": return `— ${fact.allOrAllOther} forces survive the engagement.`;
+		case "no units were left on the field to count": return `— No units were left on the field to count.`;
+		case "the attacker wins the battle and seizes the province": return `After ${fact.severityArticle} ${fact.severity} battle, ${fact.atkName}'s forces ${fact.winVerb} ${fact.defName}'s army and seize ${fact.provName}!`;
+		case "the attacker's casualties begin": return `⚔ **${fact.atkName}'s forces** (attacker):`;
+		case "the defender's casualties begin": return `🛡 **${fact.defName}'s forces** (defender):`;
+		case "the loser's dwarven guard leave the free lances no broken backs": return `🛡 ${fact.loserName}'s Dwarven Guard lock shields as they give ground — ${fact.winnerName}'s Free Lances find no broken backs to ride down.`;
+		case "the winner's free lances ride down the broken companies": return `🐎 ${fact.winnerName}'s Free Lances ride down the broken companies (+${String(fact.rideDownPct)}% losses to ${fact.loserName}).`;
+		case "the loser's dwarven guard leave the warg riders no broken backs": return `🛡 ${fact.loserName}'s Dwarven Guard lock shields as they give ground — ${fact.winnerName}'s Warg Riders find no broken backs to run down.`;
+		case "the winner's warg riders run down the broken companies": return `🐺 ${fact.winnerName}'s Warg Riders run down the broken companies before they can get clear (+${String(fact.runThemDownPct)}% losses to ${fact.loserName}).`;
+		case "the winner's corsairs close the sea lanes to the loser": return `⛵ ${String(fact.winnerName)}'s corsairs close the sea lanes — ${String(fact.loserName)} cannot slip away by water.`;
+		case "the loser's skeletal host stands its ground in a deathless march": return `💀 Deathless March — ${fact.loserName}'s skeletal host has no fear to exploit: none are cut down in flight, and the dead stand their ground in ${fact.provName}.`;
+		case "the loser's dwarven guard hold a shield fort with no road out": return `🛡 Shield Fort — with no road out, ${fact.loserName}'s Dwarven Guard lock shields where they stand. None are cut down in flight, and ${fact.provName} remains contested.`;
+		case "the defender has nowhere to retreat": return `${fact.defName} has nowhere to retreat — their forces take additional casualties!`;
+		case "the defender's stronger host is pushed back but stays": return `${fact.defName}'s forces are pushed back but not broken — still the stronger host (${fact.stayingHostStrength} vs ${fact.victorsStrength} on the same footing, before fortune), they hold their ground in ${fact.provName} and re-form to fight on rather than retreat.`;
+		case "the loser's force is destroyed to the last": return `📊 ${fact.loserName}'s force is destroyed to the last — commander and column both.`;
+		case "the loser's dwarven guard withdraw behind a shield fort": return `🛡 Shield Fort — ${fact.loserName}'s Dwarven Guard withdraw in good order behind locked shields.`;
+		case "the loser retreats to a province": return `${fact.loserName} retreats to ${fact.retreatToName}.`;
+		case "the loser's surviving forces": return `📊 ${fact.loserName}'s surviving forces: ${fact.survivingForces}.`;
+		case "the loser's forces are completely destroyed and he retreats alone": return `📊 ${fact.loserName}'s forces are completely destroyed — they retreat alone.`;
+		case "the attacker wins the battle but the defender's survivors hold the province": return `After ${fact.severityArticle} ${fact.severity} battle, ${fact.atkName}'s forces ${fact.winVerb} ${fact.defName}'s army — but ${fact.defName2}'s survivors do not yield ${fact.provName}.`;
+		case "the attacker's assault is repelled and driven from the province": return `${fact.atkName}'s assault is repelled! After ${fact.severityArticle} ${fact.severity} engagement, ${fact.defName} drives the attackers from ${fact.provName}.`;
+		case "the attacker has nowhere to retreat": return `${fact.atkName} has nowhere to retreat — their forces take additional casualties, ${fact.howTheyAreCutDown} with no escape!`;
+		case "the attacker's stronger host is thrown back but stays": return `${fact.atkName}'s assault is thrown back but their host is still the stronger (${fact.stayingHostStrength} vs ${fact.victorsStrength} on the same footing, before fortune) — they hold the field in ${fact.provName} and re-form to press the attack again rather than retreat.`;
+		case "the attacker's assault is repelled but not driven from the province": return `${fact.atkName}'s assault is repelled! After ${fact.severityArticle} ${fact.severity} engagement, ${fact.defName} throws the attackers back — but they are not yet driven from ${fact.provName}.`;
+		case "a commander's force is demoralised": return `\u{1F4C9} ${fact.commanderName}'s force is demoralised — ${fact.why} (−20% strength this battle).`;
+		case "a commander rides out and challenges the other to single combat": return `— ${fact.challengerName} rides out and challenges ${fact.challengedName} to single combat. —`;
+		case "the challenged commander will not answer the call": return `${fact.challengedName} will not answer the call, and the watching ranks see it.`;
+		case "a personal duel before the battle begins": return `\u2694 — Personal duel: ${fact.challengerName} vs ${fact.challengedName} —`;
+		case "the duel's loser falls at death's door but is not slain": return `\u{1FA79} ${fact.loserName} falls in the duel — at death's door, but not slain.`;
+		case "the duel's loser is slain": return `\u{1F480} ${fact.loserName} is slain in the duel!`;
+		case "the duel ends inconclusively": return `The duel ends inconclusively — both commanders live to fight on, and neither host loses heart.`;
+		case "a hero cries out his battlecry to his foe": return `📣 ${String(fact.heroName)} cries out to ${String(fact.foeName)}: “${String(fact.battlecry)}”`;
+		case "a side's Druid cannot fully command its units": return `⚠ Druid shortfall — ${fact.sideName} cannot fully command ${String(fact.unitCount)} unit${fact.unitsPlural}: ${fact.shortfallUnitsWords}.`;
+		case "the attacker moves into a province held by its defenders and a battle is initiated": return `➡️ ${fact.cName}${fact.wordsOfTheAttackersRealm} moves into ${fact.provName}, held by ${fact.heldByName} — a battle is initiated.`;
+		case "the guard is slain before his host, and a sergeant of the garrison takes up the banner": return `⚑ With ${String(fact.guardName)} slain before the host, a battle-worn sergeant of the garrison takes up the fallen banner — the defenders close ranks and fight on, leaderless but unbowed.`;
+		case "the attacker is cut down before the lines join, and the eldest captain takes command": return `⚑ With ${fact.cName} cut down before the lines were even joined, the eldest captain of the host takes command — the attack goes in regardless, though without their fallen leader's guiding hand.`;
+		case "the attacker's Tactical command does not apply at sea": return `📊 ${fact.cName}'s Tactical command does not apply in sea terrain.`;
+		case "the defenders of a province defend ground held justly": return `✝ Righteous Defence — the defenders of ${fact.provName} stand on ground they hold justly (+10% defence).`;
+		case "the defenders fight on home soil": return `The defenders fight on home soil, gaining an additional ×1.2 bonus.`;
+		case "the attacker casts a spell before the battle against the defenders": return `✨ **Pre-battle Magic: ${fact.cName} casts ${fact.spellName}** (${fact.schoolLabel} ${String(fact.spellLevel)}) — cast chance ${String(fact.castChance)}% [roll ${String(fact.castRoll)}${fact.castMark}]`;
+		case "a fireball engulfs the defenders' strongest units": return `  🔥 Fireball engulfs the enemy's ${fact.fireballTargetsWords}, ${fact.fireballHitUnitNames} — halved this battle.`;
+		case "a telekinetic storm finds no command among leaderless defenders": return `  🌀 Telekinetic Storm rages, but these leaderless defenders have no tactical command to unmake.`;
+		case "a psychic blast finds no commander among the defenders": return `  🧠 Psychic Blast reaches out, but these defenders have no commander to unmake.`;
+		case "a lightning bolt sears the defending units": return `  ⚡ Lightning Bolt sears ${String(fact.unitCount)} enemy unit${fact.unitsPlural} — each loses 20% of its strength this battle.`;
+		case "a curse finds no commander among leaderless defenders": return `  ☠ Curse seeks a commander to wither, but these defenders are leaderless.`;
+		case "control undead turns a defending undead unit to the attacker's side": return `  ☠ Control Undead turns the ${fact.turnedUnitName} — it defects to ${fact.cName}'s side!`;
+		case "control undead finds no undead among the defenders": return `  ☠ Control Undead reaches out, but the enemy fields no undead to turn.`;
+		case "a holy symbol sears the defending undead": return `  ✝ Holy Symbol sears the enemy undead — ${String(fact.undeadUnitCount)} undead unit${String(fact.undeadUnitsPlural)} fight at 75% strength.`;
+		case "a holy symbol finds no undead among the defenders": return `  ✝ Holy Symbol blazes, but no undead stand among the defenders.`;
+		case "spiritwrack halves the defenders' missile units": return `  Spiritwrack unstrings the enemy's bows — ${String(fact.missileUnitCount)} missile unit${fact.missileUnitsPlural} fight at half strength.`;
+		case "spiritwrack finds no missile troops among the defenders": return `  Spiritwrack howls, but the enemy fields no missile troops.`;
+		case "the attacker's spell before the battle fizzles": return `  The spell fizzles — no pre-battle magical effect.`;
+		case "a unit's power hits every defending unit": return `  ${fact.powerName} hits all ${String(fact.unitCount)} defending units: −${String(fact.damage)} strength each.`;
+		case "a unit's power hits one unit of the other side": return `  ${fact.powerName} hits ${fact.struckUnitName}: −${String(fact.damage)} strength this battle.`;
+		case "a whale cohort sinks a defending ship before a shot is fired": return `🌊 A whale cohort breaches beneath the ${fact.targetUnitName} and rolls her over — she goes down before a shot is fired.`;
+		case "the attacker's archery volley begins": return `🏹 **Pre-battle Archery Phase** — ${String(fact.missileUnitCount)} ranged unit${fact.missileUnitsPlural}${fact.wordsIfDoubleVolleys}${fact.wordsIfOneMoreShot}`;
+		case "a unit fires at its target and the shot glances off": return `  ${String(fact.shooterName)} fires at ${String(fact.targetUnitName)}, but the shot glances off the ${String(fact.whyTheShotGlances)}.`;
+		case "a unit fires at its target and weakens it": return `  ${fact.shooterName} fires at ${fact.targetUnitName}: −${String(fact.damage)} strength${fact.wordsIfFlying}${fact.wordsIfThickHide}${fact.wordsIfAbilityMultiplier}${fact.wordsIfSoftenedToTheLimit}.`;
+		case "an attacking unit's target is already softened as far as arrows allow": return `  ${String(fact.shooterName)} fires at ${String(fact.targetUnitName)}, but they are already softened as much as arrows can manage.`;
+		case "the attacker's archery volley's total": return `📊 Archery phase total: −${String(fact.totalDamage)} strength spread across defenders (each unit softened by at most ${String(fact.arrowSofteningCapPct)}%).`;
+		case "the defender casts a spell before the battle": return `✨ Defender Magic: ${fact.casterName} casts ${fact.spellName} (${fact.schoolLabel} ${String(fact.spellLevel)}) — ${String(fact.castChance)}% chance [roll ${String(fact.castRoll)} ${fact.castMark}]`;
+		case "a fireball halves the attackers' strongest unit": return `  🔥 Fireball halves the attackers' strongest unit, ${fact.targetUnitName} (−${String(fact.strengthLost)}).`;
+		case "a lightning bolt sears the attacking units": return `  ⚡ Lightning Bolt sears ${String(fact.unitCount)} attacking unit${fact.unitsPlural} — each loses 20% of its strength.`;
+		case "control undead finds no undead among the attackers": return `  ☠ Control Undead finds no undead among the attackers.`;
+		case "a holy symbol sears the attacking undead": return `  ✝ Holy Symbol sears the attacking undead — ${String(fact.undeadUnitCount)} unit${fact.undeadUnitsPlural} at 75% strength.`;
+		case "a holy symbol finds no undead among the attackers": return `  ✝ Holy Symbol blazes, but no undead assail this province.`;
+		case "spiritwrack halves the attackers' missile units": return `  Spiritwrack unstrings the attackers' bows — ${String(fact.missileUnitCount)} missile unit${fact.missileUnitsPlural} at half strength.`;
+		case "spiritwrack finds no missile troops among the attackers": return `  Spiritwrack howls, but the attackers field no missile troops.`;
+		case "the defender's spell before the battle fizzles": return `  The spell fizzles — no defensive magical effect.`;
+		case "the attacker's lightning advance catches the defenders unready": return `⚡ ${String(fact.cName)}'s Lightning Advance catches the defenders completely unready — they fight with no terrain advantage, no pre-battle magic and no answering volley.`;
+		case "the defenders' archers find no target among the attacker's forest wardens": return `🌲 The defenders' archers can find no target — ${fact.cName}'s Forest Wardens hold the thickets and the answering volley never comes.`;
+		case "the defenders' archery volley begins": return `🏹 **Defender Archery Phase** — ${String(fact.missileUnitCount)} ranged unit${fact.missileUnitsPlural}${fact.wordsIfPreparedGround}`;
+		case "a defending unit's target is already softened as far as arrows allow": return `  ${String(fact.unitName)} fires at ${String(fact.targetUnitName)}, but they are already as softened as arrows can manage.`;
+		case "the defenders' archery volley's total": return `📊 Defender archery total: −${String(fact.totalDamage)} strength spread across attackers (each unit softened by at most ${String(fact.arrowSofteningCapPct)}%).`;
+		case "a defending unit uses its power in battle": return `✨ ${fact.unitName} (defending) — **${fact.powerName}**: "${fact.powerFlavour}"`;
+		case "a unit's power hits every attacking unit": return `  ${fact.powerName} hits all ${String(fact.unitCount)} attacking units: −${String(fact.damage)} strength each.`;
+		case "the terrain's effect on the attacker's units": return `📊 Terrain (${fact.terrain}): ${fact.cName} — ${fact.terrainNotes}`;
+		case "hosts airborne over open water fight at a penalty against the defenders": return `⚠ Airborne over open water: land units carried by flyers fight at ×${String(fact.seaAirborneLandPenalty)}, and the flyers carrying them at ×${String(fact.seaAirborneFlyerPenalty)}.`;
+		case "land units fight at sea at a penalty against the defenders": return `⚠ Land units at sea: ×${String(fact.seaLandPenalty)} strength penalty.`;
+		case "the attacker unfolds a grand stratagem against the defenders": return `  📜 ${String(fact.cName)} unfolds a Grand Stratagem — the assault lands at +20% strength.`;
+		case "the attacker storms ashore in a raid on the coast against the defenders": return `  ⚓ ${String(fact.cName)} storms ashore in a Raid the Coast — +25% strength.`;
+		case "the attacker's monsters are driven to savage fury": return `${fact.cName}'s monsters are driven to savage fury under their Evil overlord! (+25% strength)`;
+		case "the attacker's troops fight with fanatical zeal": return `Seized by religious fervour, ${fact.cName}'s troops fight with fanatical zeal! (+30% strength)`;
+		case "the attacker's realm discoveries strengthen his army": return `Realm discoveries grant +${String(fact.discoveriesArmyBonusPct)}% army strength.`;
+		case "the attacker's free lances find no room to ride": return `🐎 ${fact.cName}'s Free Lances find no room to ride in ${fact.terrain} country.`;
+		case "the attacker sweeps into a province with no one left to stand against him": return `${fact.cName}'s forces sweep into ${fact.provName} — nothing is left to stand against them.`;
+		case "the attacker wins the battle against the defenders": return `After ${fact.severityArticle} ${fact.severity} engagement (margin ${fact.marginPct}% of total strength), ${fact.cName}'s forces ${fact.winVerb} ${fact.guardName}!`;
+		case "the attacker's warg riders halve his losses": return `🐺 The warg packs are into the defenders before they can set themselves — the business is over quickly, and ${fact.cName}'s losses are halved.`;
+		case "every defending unit was lost before the lines closed": return `— None left to fight: every defending unit was lost before the lines closed.`;
+		case "the defenders' dwarven guard leave the attacker's free lances no broken backs": return `🛡 The defenders' Dwarven Guard lock shields where they stand — ${fact.cName}'s Free Lances find no broken backs to ride down.`;
+		case "the attacker's free lances ride down the defenders' broken companies": return `🐎 ${fact.cName}'s Free Lances ride down the broken companies across open ground (+${String(fact.extraLossesPct)}% losses).`;
+		case "a defending unit is destroyed in the rout": return `— ${fact.defendingUnitName}${fact.facedClauseWords} were destroyed in the rout!`;
+		case "the defenders have nowhere to retreat and hold a shield fort": return `🛡 Shield Fort — the defenders of ${fact.provName} have nowhere to retreat, so they lock shields where they stand. None are cut down.`;
+		case "the defenders have nowhere to retreat and take further losses": return `The defenders of ${fact.provName} have nowhere to retreat — they are pinned against their own ground and take further losses!`;
+		case "the attacker is repelled by the defenders": return `${fact.cName}'s forces are repelled! After ${fact.severityArticle} ${fact.severity} engagement (margin ${fact.marginPct}%), ${fact.defName2} hold their ground — ${fact.holdWords}`;
+		case "a defending unit is destroyed in the fighting": return `— ${fact.defendingUnitName}${fact.facedClauseWords} were destroyed in the fighting.`;
+		case "the guard's host is destroyed and he is a masterless hero": return `— but every soldier of ${fact.guardName}'s band lies dead. With no host left to command, they are ${fact.provName}'s guardian no more — a masterless hero now.`;
+		case "the attacker's dwarven guard leave the defenders' free lances no broken backs": return `🛡 ${fact.cName}'s Dwarven Guard lock shields as they give ground — the defenders' Free Lances find no broken backs to ride down.`;
+		case "the defenders' free lances ride down the attacker's broken companies": return `🐎 The defenders' Free Lances range across the open ground and ride down ${fact.cName}'s broken companies (+${String(fact.extraLossesPct)}% losses).`;
+		case "the attacker's corsairs take his beaten force back to the ships": return `⛵ ${String(fact.cName)}'s corsairs stand off the shore with boats ready — the beaten force pulls back to the ships in good order rather than being cut down.`;
+		case "the attacker's shield-wall holds and the infantry stand their ground": return `${fact.cName}'s Shield-Wall holds — the infantry refuse to retreat and stand their ground, come what may.`;
+		case "the attacker has nowhere to retreat and takes further losses": return `${fact.cName}'s forces have nowhere to retreat — they rally desperately but take heavy additional losses!`;
+		case "an attacking unit is cut down in the rout with no escape": return `— ${fact.unitName} are cut down in the rout — no escape!${fact.wordsIfSkeletal}`;
+		case "the attacker's forces retreat to a province": return `${fact.cName}'s forces retreat to ${fact.retreatToName}.`;
+		case "the onlookers' summary of a battle": return `⚔ Battle at ${fact.provName}: ${fact.outcomeWords}.`;
+		case "the most seasoned captain takes command of the combined host": return `\u{1F396} ${fact.leaderName} takes command of the combined host at ${fact.provName} \u2014 the most seasoned captain on the field, and ${fact.previousCommanderName}'s troops fall in behind him.`;
+		case "the blood harvest claims offerings from the fallen enemy units": return `\u{1FA78} Blood Harvest — the old gods claim their due from ${String(fact.fallenUnitCount)} fallen enemy unit${fact.fallenUnitsPlural}: +${String(fact.offeringsGold)}g in offerings.`;
+		case "the iron throne of skulls raises the enemy's fallen as skeletons": return `\u{1F480} Iron Throne of Skulls — ${String(fact.raisedCount)} of the enemy's fallen claw their way up to serve as your skeletons.`;
+		case "terror radiates from a province after an evil victory": return `💀 Terror radiates from ${fact.provName}${fact.wordsIfTheSurroundingLands} — any army that next defends there fights demoralised (−${String(fact.terrorPctPerStack)}% per terror, stacking).`;
+		case "terror lingers in a province and its defenders fight demoralised": return `💀 Terror lingers in ${fact.provName} — defenders fight at −${String(fact.terrorPct)}% strength (${String(fact.terrorStacks)} terror stack${fact.terrorStacksPlural} from earlier Evil victories nearby).`;
+		case "a unit is cut down and rises again by its regenerating hide": return `— ${fact.unitReference} are cut down — and rise again, the Regenerating Hide knitting flesh as they stagger clear.`;
+		case "a unit dies in the battle": return `— ${fact.unitReference} ${fact.diedVerb}${fact.wordsIfSkeletal}`;
+		case "a unit is promoted after the battle": return `— ${fact.unitReferenceAtItsOldQuality} ${fact.promoteVerb} ${fact.unitQuality}!`;
+		case "a unit falls back behind the shield wall in good order": return `— ${fact.unitReference} fall back behind the shield wall in good order.`;
+		case "a unit keeps its nerve under the knightly example": return `— ${fact.unitReference} keep their nerve under the Knightly Example of the Gilded Lances and lose nothing in defeat.`;
+		case "a unit loses heart in defeat and is reduced a tier": return `— ${fact.unitReferenceAtItsOldQuality} lost heart in defeat, reduced to ${fact.unitQuality}.`;
+		case "a unit improves a tier despite defeat": return `— Despite defeat, ${fact.unitReferenceAtItsOldQuality} improved to ${fact.unitQuality}!`;
+		case "a hero not at war with the province's realm gains a host inside it": return `👁 ${fact.cName}${fact.realmTag} now leads ${String(fact.unitCount)} unit${fact.unitsPlural} inside your province of ${fact.provName}, but makes no move against it — ${fact.relationWords}. ${fact.provName2} remains yours.`;
+		case "a hero's new host is still forming up in a province": return `${fact.cName}'s new host is still forming up in ${fact.provName} — whether the province can be taken will be settled before the season's marches begin.`;
+		case "no one stands to defend a province and the hero takes control of it": return `No one stands to defend ${fact.provName} — ${fact.cName} takes control of it for ${fact.playerName}!`;
+		case "with fresh troops the hero takes control of a province": return `With fresh troops now at their back, ${fact.cName} takes control of ${fact.provName} for ${fact.playerName}!`;
+		case "the hero turns a newly gathered host on a province and a battle is initiated": return `➡️ ${fact.cName}${fact.realmTag} turns a newly-gathered host on ${fact.provName}, held by ${fact.heldByName} — a battle is initiated.`;
+		case "the defenders riding in were keeping watch and are already in the line": return `🛡 ${fact.ridersNames} ${fact.wasOrWere} keeping watch over ${fact.provName} and ${fact.isOrAre} already in the line when ${fact.cName}'s ${fact.whatTheHostDoes} — ${fact.provName2} is defended, not retaken.`;
+		case "the defender is reinforced by other heroes in the defence of a province": return `${fact.defenderName} is reinforced by ${fact.reinforcementsNames} in the defence of ${fact.provName}!`;
+		case "the province's standing troops rally to the defender": return `🛡 The standing troops of ${fact.provName} rally to ${fact.leaderName}: the garrison (${String(fact.garrisonUnitCount)} unit${fact.garrisonUnitsPlural} — ${fact.garrisonWords}) joins the defence.`;
+		case "a hero fell in the battle line beside the commander of the defence": return `⚔ ${String(fact.heroName)} stood in the battle line beside ${String(fact.leaderName)} in the defence of ${String(fact.provName)}, and fell there — the full account is under ${String(fact.leaderName2)}.`;
+		case "a hero stands in the battle line beside the commander of the defence": return `⚔ ${fact.heroName} stands in the battle line beside ${fact.leaderName} in the defence of ${fact.provName} — the full account is under ${fact.leaderName2}.`;
+		case "the province's standing troops fall back with the defender": return `The standing troops of ${String(fact.provName)} fall back to ${String(fact.fellBackToName)} with ${String(fact.defenderName)} rather than be left to the enemy.`;
+		case "the province's standing troops fall in with the defender as the battle continues": return `🛡 The standing troops of ${fact.provName} fall in with ${fact.defenderName} and fight on at their side as the battle continues.`;
+		case "the province's garrison is overwhelmed as the province falls": return `🛡 The garrison of ${fact.provName} is overwhelmed as the province falls — ${fact.overrunUnitsNames} ${fact.isOrAre} cut down defending the walls.`;
+		case "the hero has the better of the fighting but the guard still holds the field": return `⚔ ${fact.hostName} has the better of the fighting in ${fact.provName}, but ${fact.guardName} still holds the field with ${String(fact.guardUnitCount)} unit${fact.guardUnitsPlural} — the province is not yet taken.`;
+		case "the hero has the better of the fighting but leaderless defenders still hold the field": return `⚔ ${String(fact.hostName)} has the better of the fighting in ${String(fact.provName)}, but ${String(fact.leaderlessUnitCount)} leaderless defending unit${String(fact.leaderlessUnitsPlural)} still hold the field — the province is not yet taken.`;
+		case "the hero has the better of the fighting but enemy forces still hold their ground": return `⚔ ${fact.hostName} has the better of the fighting in ${fact.provName}, but enemy forces still hold their ground — the province is not yet taken.`;
+		case "the hero has the better of the fighting but the province's garrison still holds": return `⚔ ${String(fact.hostName)} has the better of the fighting in ${String(fact.provName)}, but its garrison still ${String(fact.whatTheGarrisonDoes)} — the province is not yet taken.`;
+		case "the hero overcomes the defenders and claims the province for his realm": return `${fact.hostName} overcomes the defenders and claims ${fact.provName} for ${fact.playerName}!`;
+		case "the province's owner learns his defenders still hold against the hero": return `⚔ ${fact.cName}${fact.realmTag} fought for ${fact.provName} this phase and had the better of it, but your defenders still hold the ground — ${fact.provName2} is not yet taken. ${fact.hostWords} stands there with ${String(fact.unitCount)} unit${fact.unitsPlural}.`;
+		case "the province's owner learns the hero was beaten back": return `🛡 ${fact.cName}${fact.realmTag} fought for ${fact.provName} this phase and was beaten back — ${fact.provName2} remains yours.`;
+		case "a beaten guard's surviving unit breaks ranks and flees as mercenaries": return `— ${fact.unitName} break ranks and flee${fact.wordsIfTheVictorsHost} — they now roam as mercenaries near ${fact.provName}.`;
+		case "a beaten guard's surviving unit loses heart and is reduced a tier": return `— ${fact.unitNameAtItsOldQuality} lost heart in defeat, reduced to ${fact.unitQuality} — ${fact.wordsIfTheVictorsHost}they rally around ${fact.guardName}.`;
+		case "a beaten guard's surviving unit holds its ground unbroken": return `— ${fact.unitName} hold their ground unbroken${fact.wordsIfTheVictorsHost} and rally around ${fact.guardName}.`;
+		case "a side's strength ladder begins": return `  ${fact.roleWords} (${fact.sideName}): ${fact.unitsWords} — strength **${String(fact.strength)}**`;
+		case "the strength ladder's units": return `    · Units: base ${String(fact.baseStrength)} → ${String(fact.unitsStrength)}${fact.wordsIfUnitModifiers}`;
+		case "the strength ladder's command": return `    · Command: ${String(fact.unitsStrength)} → ${String(fact.commandStrength)}${fact.wordsIfCommand}`;
+		case "the strength ladder's force-wide modifiers": return `    · Whole force: ${String(fact.commandStrength)} ${fact.forceModifiersWords} = ${String(fact.wholeForceStrength)}`;
+		case "the strength ladder has no force-wide modifiers": return `    · Whole force: no force-wide modifiers — ${String(fact.wholeForceStrength)}`;
+		case "the strength ladder's pre-battle damage": return `    · Pre-battle volleys & spells: ${String(fact.wholeForceStrength)} − ${String(fact.preBattleDamage)} = ${String(fact.afterPreBattleDamage)} (${fact.unitsHitWords} hit; taken off the finished figures)`;
+		case "the strength ladder's battle lines": return `    · Battle lines (front of ${String(fact.frontWidth)}): ${String(fact.afterPreBattleDamage)} → ${String(fact.battleLinesStrengthWords)} (${fact.gridStageWords})`;
+		case "the strength ladder's who faces whom": return `    · Who faces whom: ${String(fact.battleLinesStrength)} → **${String(fact.facingStrength)}** (${fact.facingStageWords})`;
+		case "the strength ladder's units behind the front": return `    · Battle lines: ${String(fact.afterPreBattleDamage)} → **${String(fact.battleLinesStrength)}** (${String(fact.unitsBehindTheFrontWords)} behind the ${String(fact.frontWidth)}-unit front at ${String(fact.lineMultipliersWords)})`;
+		case "the ground allows a front of a width": return `📊 Battle lines — the ${fact.groundWords} ${fact.allowsWord} a front of ${String(fact.frontWidth)}.`;
+		case "a side's front line in the battle grid": return `📊 ${fact.sideLabel} 1st │ ${fact.frontLineCells} │${fact.wordsIfFlanksAirOrReserve}`;
+		case "a side's second line in the battle grid": return `📊 ${fact.sideLabel} 2nd │ ${fact.secondLineCells} │`;
+		case "the scouting side chooses the front": return `📊 Scouting — ${fact.scoutName} ${fact.whyItScouts}: ${fact.scoutName2} ${fact.whatItDoesWithTheFront} and lines up second${fact.wordsIfAdjustments}.`;
+		case "each side shifts its battle line": return `📊 Tactics — ${fact.otherSideName} ${fact.otherSidesMoves}; ${fact.scoutName} ${fact.scoutsMoves}.`;
+		case "an unfinished battle against a province's defenders resumes": return `⚔ The unfinished battle for ${fact.provName} resumes — ${fact.attackersHostName} presses the attack on ${fact.defendersName}.`;
+		case "the guard still holds a contested province with survivors": return `💢 ${fact.guardName} still holds with survivors — ${fact.provName} remains contested and will be fought over again next phase!`;
+		case "commanderless survivors still contest a province": return `💢 Commanderless but unbroken, ${String(fact.survivingUnitCount)} surviving unit${String(fact.survivingUnitsPlural)} still contest ${String(fact.provName)} — the fight resumes next phase!`;
+		case "the attacker finally overcomes the defenders and claims a province": return `${fact.attackersHostName} finally overcomes the defenders and claims ${fact.provName}!`;
+		case "the attacker breaks off a stalled battle and retreats": return `${String(fact.attackersHostName)} breaks off and retreats to ${String(fact.retreatToName)}.`;
+		case "the attacker is pinned in a province with no way out": return `${fact.attackersHostName} is pinned in ${fact.provName} with no way out — the struggle continues next phase.`;
+		case "a contest for a province lapses as the realms are no longer at war": return `The contest for ${fact.provName} lapses — ${fact.attackersRealmName} and ${fact.defendersRealmName} are no longer at war, and the two hosts stand down.`;
+		case "war comes to a province two realms' hosts share": return `⚔ War has come to ${String(fact.provName)}: ${String(fact.attackersHostName)}${String(fact.attackersRealmTag)} and ${String(fact.defendersHostName)}${String(fact.defendersRealmTag)} have stood on the same ground since the season opened, and with ${String(fact.seasonName)}'s orders done they fall upon each other.`;
+		case "an unfinished battle between two hosts resumes": return `⚔ The unfinished battle for ${fact.provName} resumes — ${fact.attackersHostName} and ${fact.defendersHostName} clash again.`;
+		case "the winner of a stalled battle secures a province": return `${fact.winnersHostName} secures ${fact.provName}!`;
+		case "a host holds a province unopposed and secures it": return `${fact.hostName} holds ${fact.provName} unopposed and secures it.`;
+		case "the eagle riders mark the forest wardens and spoil the ambush": return `🦅 ${fact.shooterName}'s Eagle Riders mark the Forest Wardens in the thickets — the Ambush is spoiled and the volley flies.`;
+		case "the gyrocopters harry a flying unit off its line": return `  💨 Gyrocopters harry the ${fact.targetUnitName} — driven off their line (−${String(fact.strengthLost)} strength).`;
+		case "a side's gyrocopters climb to meet the enemy's flyers": return `🌀 ${fact.sideName}'s Gnomish Gyrocopters climb to meet the enemy's flyers — ${String(fact.engagedCount)} engaged.`;
+		case "a side's units fight beside their own kin": return `🤝 Kinship — ${fact.sideName}: ${fact.kinshipWords}.`;
+		case "a hero's host turns on a province it has shared with a realm at war": return `⚔ War stands between ${fact.attackersRealmName} and ${fact.ownersRealmName}, and ${fact.cName}${fact.realmTag} has held ${String(fact.unitCount)} unit${fact.unitsPlural} in ${fact.provName} since the season opened. With ${fact.seasonName}'s orders done, the host turns on the province${fact.wordsIfTheOwnersRealm}.`;
+		default: throw new Error(`a battle's line records a fact with no words: ${JSON.stringify(fact)}`);
+	}
+}
+//#endregion
+//#region src/views/prose/the-words-of-a-personal-combats-lines.ts
+/** The words of one fact of a personal combat's lines. */
+function theWordsOfAPersonalCombatsLine(fact) {
+	switch (fact.kind) {
+		case "the caster cannot cast a spell without its skill": return `  ${fact.casterName} cannot cast ${fact.spellName} (no ${fact.schoolLabel} skill).`;
+		case "the caster's spell already cast this combat": return `  ${String(fact.casterName)}: ${String(fact.spellName)} already cast this combat.`;
+		case "the caster's spell limit reached this combat": return `  ${String(fact.casterName)}: ${String(fact.schoolLabel)} spell limit reached this combat.`;
+		case "the caster calls on a school's arts, weaving a spell": return `  ${fact.casterName} calls on the ${fact.schoolWeave} arts, weaving ${fact.spellName} (${String(fact.castChance)}% to cast successfully${fact.wordsIfSw}) [roll ${String(fact.castRoll)} ${fact.castRollCastChanceMark}].`;
+		case "but the spell guts and fizzles": return `  …but the spell guts and fizzles, coming to nothing.`;
+		case "the target is open to the school's arts": return `  💥 ${fact.targetName} is open to the ${fact.schoolWeave} arts — ${fact.targetWeakName}: the weave takes hold at once and bites twice as deep.`;
+		case "the caster marks the target's weakness well": return `  📖 ${fact.casterName} marks it well: ${fact.targetWeakDesc}. Your realm will remember this of every ${fact.targetName}.`;
+		case "the caster's lightning bolt arcs into the target": return `  ⚡ ${fact.casterName}'s Lightning Bolt arcs into ${fact.targetName} for ${String(fact.dealt)} damage. (HP ${String(fact.targetHp)})`;
+		case "a fireball engulfs the target and will burn": return `  🔥 Fireball engulfs ${String(fact.targetName)} — it will burn for ${String(fact.fbPct)}% of its health each round for ${String(fact.burnRounds)} rounds${String(fact.wordsIfFbWard)}.`;
+		case "the caster raises a holy symbol": return `  ✝ ${fact.casterName} raises a Holy Symbol — ${fact.targetName} suffers −${String(fact.pen)}% to hit${fact.wordsIfHoly}.`;
+		case "the light closes the caster's hurts": return `  ✝ The light closes ${fact.casterName}'s hurts — ${String(fact.healed)} recovered. (HP ${String(fact.casterHp)})`;
+		case "the holy light's damage": return `  ✝ ${fact.wordsIfHoly} — ${String(fact.dealt)} damage. (HP ${String(fact.targetHp)})`;
+		case "the caster binds the target with spiritwrack": return `  ${String(fact.casterName)} binds ${String(fact.targetName)} with Spiritwrack — for ${String(fact.swR)} round${String(fact.swRPlural)} it cannot cast, use its powers or use archery, and its melee is halved.${String(fact.wordsIfShr)}`;
+		case "psychic blast sears the target's mind": return `  🧠 Psychic Blast sears ${fact.targetName}'s mind — for their next ${String(fact.stunN)} rounds they can do nothing at all: no blow, no arrow, no spell, and no flight.`;
+		case "a telekinetic storm rips the target": return `  🌀 Telekinetic Storm rips ${String(fact.targetName)} for ${String(fact.dealt)} damage; the strain costs ${String(fact.casterName)} ${String(fact.self)} damage. (Target HP ${String(fact.targetHp)})`;
+		case "the caster conjures a mirror image": return `  ${String(fact.casterName)} conjures a Mirror Image.`;
+		case "the caster weaves a second mirror image": return `  ${String(fact.casterName)} weaves a second Mirror Image — the competing illusions unravel and both vanish.`;
+		case "the caster conjures a phantom of the target": return `  🪞 ${fact.casterName} conjures a phantom of ${fact.targetName} — ${fact.targetName2} turns on their own mirror, and ${fact.casterName2} is left free to act.`;
+		case "the caster fades from sight": return `  ${String(fact.casterName)} fades from sight — enemies suffer \u2212${String(fact.invPct)}% to hit, +30% flee.`;
+		case "the hand of death claims part of the target's health": return `  ☠ Hand of Death claims ${String(fact.handOfDeathBitePct)}% of ${fact.targetName}'s health — ${String(fact.dealt)} damage! (HP ${String(fact.targetHp)})`;
+		case "the caster's hand of death fails": return `  ${fact.casterName}'s Hand of Death fails to take hold. [${String(fact.handOfDeathChancePct)}%]`;
+		case "the caster's curse withers the target": return `  ${String(fact.casterName)}'s Curse withers ${String(fact.targetName)}'s ${String(fact.bestAbility)} — halved to ${String(fact.bestAbilityLevel)} for the fight.`;
+		case "the caster's curse finds no ability": return `  ${String(fact.casterName)}'s Curse finds no ability in ${String(fact.targetName)} worth withering.`;
+		case "the caster seizes the undead target": return `  ${String(fact.casterName)} seizes the undead ${String(fact.targetName)} — helpless for ${String(fact.cuR)} rounds.`;
+		case "control undead has no hold over the living": return `  Control Undead has no hold over the living ${String(fact.targetName)}.`;
+		case "the caster's charm washes over a crowned will": return `  ${String(fact.casterName)}'s Charm washes over ${String(fact.targetName)} and finds nothing to grip — a crowned will cannot be swayed.`;
+		case "the caster's charm slides off a mind lately swayed": return `  ${String(fact.casterName)}'s Charm slides off ${String(fact.targetName)} — a mind so lately swayed is closed to enchantment for a season.`;
+		case "the caster's charm breaks against the target's will": return `  ${String(fact.casterName)}'s Charm breaks against ${String(fact.targetName)}'s will (${String(fact.targetRefCharmResist)}% resistance) — a mind swayed before knows the feel of it, and shuts.`;
+		case "the caster charms the target's wits": return `  ${String(fact.casterName)} charms ${String(fact.targetName)}'s wits — their next attempt to slip away will come far more easily.`;
+		case "the caster casts a spell": return `  ${String(fact.casterName)} casts ${String(fact.spellName)}.`;
+		case "a fighter uses a power": return `  ✨ ${fact.actorName} uses **${fact.spName}**!${fact.wordsIfSpFlavour}`;
+		case "a power tears into the foe": return `  ${fact.spName} tears into ${fact.foeName} for ${String(fact.dealt)} damage. (HP ${String(fact.foeHp)})`;
+		case "the guardian reaches for its own wounds again but the well is dry": return `  The ${String(fact.actorName)} reaches for its own wounds again — but that well is dry; it has already drawn on it this fight.`;
+		case "the guardian knits its wounds": return `  The ${String(fact.actorName)} knits its wounds for ${String(fact.heal)}. (HP ${String(fact.actorHp)})`;
+		case "the foe reels from the blow, losing actions": return `  ${fact.foeName} reels from the blow — ${String(fact.stun)} action${fact.stunPlural} will be lost from the next round.`;
+		case "the foe is caught helpless, losing actions": return `  ${fact.foeName} is caught helpless — ${String(fact.stun)} action${fact.stunPlural} lost.`;
+		case "the foe is thrown off balance from the next round": return `  ${fact.foeName} is thrown off balance — −${String(fact.pen)}% to hit from the next round.`;
+		case "the foe is thrown off balance": return `  ${String(fact.foeName)} is thrown off balance (−${String(fact.pen)}% to hit).`;
+		case "the foe's guard is beaten down next round": return `  ${fact.foeName}'s guard is beaten down — Melee ${String(fact.now)} next round.`;
+		case "the foe's guard is beaten down now": return `  ${String(fact.foeName)}'s guard is beaten down — Melee now ${String(fact.now)}.`;
+		case "the guardian's melee surges": return `  The ${String(fact.actorName)}'s Melee surges to ${String(fact.actorMelee)}!`;
+		case "a power festers on the foe": return `  ${fact.spName} festers on ${fact.foeName} — ${String(fact.eDmg)} a round for ${String(fact.eRounds)} round${fact.eRoundsPlural}.`;
+		case "every blow against the guardian will bite back": return `  Every blow against the ${String(fact.actorName)} will bite back for ${String(fact.actorStatusReflect)}.`;
+		case "a ward shrouds the guardian": return `  A ward shrouds the ${fact.actorName}, ready to drink ${String(fact.actorStatusAbsorb)} damage.`;
+		case "death's touch tears the foe's strength in half": return `  ☠ Death's touch takes hold — ${String(fact.foeName)}'s strength is torn in half (−${String(fact.cut)}). (HP ${String(fact.foeHp)})`;
+		case "the foe is struck down where they stand": return `  ☠ ${String(fact.foeName)} is struck down where they stand!`;
+		case "the foe cannot be gripped by it": return `  ${String(fact.foeName)} cannot be gripped by it — the terror washes over them and passes.`;
+		case "the foe must hold their nerve": return `  ${String(fact.foeName)} must hold their nerve (${String(fact.tc)}% to break) [roll ${String(fact.tr)} ${String(fact.trTcMark)}].`;
+		case "the foe is overcome with sheer terror": return `  ${String(fact.foeName)} is overcome with sheer terror and flees!`;
+		case "the foe steels their nerve": return `  ${String(fact.foeName)} steels their nerve.`;
+		case "the foe feels dragged towards the creature": return `  ${String(fact.foeName)} feels dragged towards the creature — escape will be far harder.`;
+		case "a hero bears magic items into the fight": return `  ⚜ ${fact.chName} bears ${fact.itemNames} into the fight.`;
+		case "the runner scrambles clear with a chance of dropping something": return `  ${fact.runnerName} scrambles clear — ${String(fact.chance)}% chance of dropping something in the rout [roll ${String(fact.roll)}${fact.rollChanceMark}]`;
+		case "in the rout the runner drops an item the one who stays claims": return `  💎 In the rout ${fact.runnerName} drops ${fact.itName}${fact.wordsIfIsLegendaryItemIt} — ${fact.stayerName} claims it.`;
+		case "a gained item noted": return `  ${fact.gainedItemNote}`;
+		case "the runner breaks off the duel and slips away": return `${fact.runnerName} breaks off the duel and slips away — ${fact.stayerName} holds the field.`;
+		case "the attacker meets the defender in a personal encounter": return `${fact.atkName} (${fact.atkRace}, ${fact.atkTemper}) meets ${fact.defName} (${fact.defRace}, ${fact.defRealmName}) in a personal encounter.`;
+		case "the attacker goes for the defender's purse and comes away with nothing": return `${String(fact.atkName)} goes for ${String(fact.defName)}'s purse and comes away with nothing — a master thief keeps their own coin far better hidden.`;
+		case "the attacker lifts gold from the defender's purse": return `${String(fact.atkName)} lifts ${String(fact.stolen)}g from ${String(fact.defName)}'s purse and is gone.`;
+		case "the attacker finds the defender's purse empty": return `${String(fact.atkName)} finds ${String(fact.defName)}'s purse empty.`;
+		case "the one who flees breaks away and escapes": return `${fact.resFledByName} breaks away and escapes the encounter.`;
+		case "the attacker is overwhelmed": return `${fact.atkName} is overwhelmed!`;
+		case "the defender is overcome": return `${fact.defName} is overcome!`;
+		case "the guardian has turned the hoard's magic to its own use": return `The ${fact.mName} has turned the hoard's magic to its own use — it bears ${fact.wieldedItemNames}.`;
+		case "the hero enters the feature": return `${fact.cName} ${fact.entryVerb} the ${fact.featureName} in ${fact.provName}.`;
+		case "within lurks the guardian blocking the path": return `Within lurks ${fact.monHpDesc} ${fact.mName}${fact.wordsIfMonsterCatLabelM}${fact.powerDesc}, blocking the path to the treasure.`;
+		case "the guardian is already wounded by someone before": return `It is already ${String(fact.woundDesc)} — someone has been here before ${String(fact.cName)} this year. (${String(fact.monHp)}/${String(fact.monFullHp)} HP)`;
+		case "the guardian's speed and plan": return `The ${fact.mName} is ${fact.monSpeedName}-moving${fact.wordsIfMonSpeedNameFast}${fact.wordsIfPcHasRangedMon}. Its plan: ${fact.guardianTactics}…`;
+		case "after tense negotiations the guardian agrees": return `After tense negotiations, the ${String(fact.mName)} agrees to step aside and allow passage to the treasure.`;
+		case "the hero slips away with the prize": return `${fact.cName} slips away with the prize — the ${fact.mName} never even notices.`;
+		case "the hero turns and flees from the guardian": return `${fact.cName} turns and flees from the ${fact.mName}, escaping into the surrounding terrain!`;
+		case "in the rout the hero drops an item into the hoard": return `  💎 In the rout ${fact.cName} drops ${fact.itName}${fact.wordsIfIsLegendaryItemIt} — it lies among the ${fact.mName}'s hoard now${fact.wordsIfGuardianCanUseItemMIt}.`;
+		case "with a final effort the guardian is defeated": return `With a final ${fact.blowOrBurst}, the ${fact.mName} is defeated!`;
+		case "the hero falls to their knees overwhelmed": return `${fact.cName} falls to their knees, overwhelmed by the ${fact.mName}!`;
+		case "neither the hero nor the guardian gains the upper hand": return `Neither ${String(fact.cName)} nor the ${String(fact.mName)} can gain the upper hand. ${String(fact.cName2)} withdraws to recover.`;
+		case "the guardian draws back into its lair": return `The ${fact.mName} draws back into its lair; by the time anyone dares it again, its wounds will have closed.`;
+		case "the hero seizes the opening and counterattacks": return `  ↩ ${fact.heroName} seizes the opening and counterattacks! (${fact.src})`;
+		case "the counterstroke strikes the foe": return `  ↩ The counterstroke strikes ${fact.foeName} for ${String(fact.dealt)} damage! (${fact.foeName2} HP ${String(fact.foeHp)})`;
+		case "the hero lunges to counterattack but the foe recovers": return `  ↩ ${fact.heroName} lunges to counterattack, but ${fact.foeName} recovers in time. (${fact.src})`;
+		case "a fighter's attack fails, still reeling from a crippling wound": return `  ${fact.actorName} is still reeling from a crippling wound — the attack fails. (Trueshot)`;
+		case "a fighter attacks with a roll to hit": return `  ${fact.actorName} attacks (${fact.actorMeleeSkillLabel}, ${String(fact.hitI)}% to hit [roll ${String(fact.roll)}]${fact.rollHitIMark})`;
+		case "a fighter strikes the foe": return `  ${fact.actorName} strikes ${fact.foeName} for ${String(fact.dealt)} damage! (HP ${String(fact.foeHp)})`;
+		case "a fighter drinks the wound": return `  ${fact.actorName} drinks the wound — +${String(fact.dr)} HP${fact.wordsIfSm}. (${fact.actorDrainWord}, HP ${String(fact.actorHp)})`;
+		case "the foe's shield lashes back": return `  ${String(fact.foeName)}'s shield lashes back for ${String(fact.foeStatusReflect)} damage. (${String(fact.actorName)} HP ${String(fact.actorHp)})`;
+		case "the foe's thorns bite a fighter": return `  ${fact.foeWardIcon} ${fact.wordsIfFoeKindMonster} bites ${fact.actorName} for ${String(fact.foeArmThorns)}. (${fact.actorName2} HP ${String(fact.actorHp)})`;
+		case "a fighter's blow is turned aside": return `  ${fact.actorName}'s blow is turned aside.`;
+		case "but a fighter is too dazed to punish it": return `  …but ${fact.actorName} is too dazed to punish it.`;
+		case "but a fighter is still reeling and the chance is lost": return `  …but ${String(fact.actorName)} is still reeling and the chance is lost. (Trueshot)`;
+		case "a fighter takes a free strike at the foe's back": return `  ⚔ ${fact.actorName} takes a free strike at ${fact.foeName}'s back (${fact.actorMeleeSkillLabel}, ${String(fact.hitI)}% to hit [roll ${String(fact.roll)}]${fact.rollHitIMark})`;
+		case "a fighter lands the free strike": return `  ${fact.actorName} lands it for ${String(fact.dealt)} damage! (${fact.foeName} HP ${String(fact.foeHp)})`;
+		case "the foe bursts into ash then blazes back to life": return `  🔥 ${String(fact.foeName)} bursts into ash — then blazes back to life! (HP ${String(fact.foeHp)})`;
+		case "the free strike misses": return `  The free strike misses.`;
+		case "a fighter tries to flee": return `  🏃 ${fact.lead} (${String(fact.chance)}% [roll ${String(fact.roll)}]${fact.rollChanceMark})`;
+		case "a fighter escapes the fight": return `  ${fact.actorName} escapes the fight!`;
+		case "a fighter fails to get clear": return `  ${fact.actorName} fails to get clear.`;
+		case "a fighter advances and the combatants close": return `  ${fact.actorName} ${fact.advanceWords} — the combatants close to ${fact.stateRange} range.`;
+		case "the foe looses a parting shot as a fighter comes on": return `  🏹 ${fact.foeName} looses an arrow as ${fact.actorName} comes on. (parting shot)`;
+		case "a fighter draws as they come and looses a snap shot": return `  ${fact.actorName} draws as they come and looses a snap shot.`;
+		case "a fighter's shot fails, still reeling from a crippling wound": return `  ${fact.actorName} is still reeling from a crippling wound — the shot fails. (Trueshot)`;
+		case "a fighter draws and looses a volley": return `  ${fact.actorName} draws and looses a volley of ${String(fact.volley)} arrows (${fact.actorArcherySkillLabel}).`;
+		case "a fighter shoots with a roll to hit": return `  ${fact.actorName} shoots (${fact.actorArcherySkillLabel}, ${String(fact.hit)}% to hit [roll ${String(fact.roll)}]${fact.rollHitMark})`;
+		case "a fighter's shot hits the foe": return `  ${fact.actorName}'s shot hits ${fact.foeName} for ${String(fact.dealt)} damage. (HP ${String(fact.foeHp)})`;
+		case "a fighter's arrow impales the foe": return `  🩸 ${fact.actorName}'s arrow impales ${fact.foeName} — it will bleed ${String(fact.impDmg)} a round for ${String(fact.impRounds)} rounds. (Impalement)`;
+		case "a fighter's shot strikes a vital point": return `  🎯 ${fact.actorName}'s shot strikes a vital point — ${fact.foeName}'s next attack will fail. (Trueshot)`;
+		case "a fighter's shot flies wide": return `  ${fact.actorName}'s shot flies wide.`;
+		case "a guardian's perk is named": return `  🜏 ${fact.meName} — ${fact.pName}: ${fact.pDesc}.`;
+		case "a druid has hunted this kind of beast before": return `  🍃 ${fact.aName} has hunted this kind before — the beast's blows will land at half force (Druid ${String(fact.aDruidBeastWard)}).`;
+		case "one fighter has the initiative": return `  ${fact.firstName} has the initiative. The fight opens at spell range.`;
+		case "the victim fights their own mirror image": return `  🪞 ${fact.victimName} fights their own mirror image while ${fact.casterName} concentrates.`;
+		case "but there is no escaping one's own reflection": return `    …but there is no escaping one's own reflection — the phantom is on ${fact.victimName} again at once.`;
+		case "but an illusion cast upon an illusion": return `    …but an illusion cast upon an illusion finds no purchase, and fades.`;
+		case "the victim shatters the phantom": return `  🪞 ${fact.victimName} shatters the phantom — the illusion ends.`;
+		case "the phantom of the victim thins to nothing": return `  🪞 The phantom of ${fact.victimName} thins to nothing of its own accord.`;
+		case "the victim is struck down by their own mirror image": return `  ${fact.victimName} is struck down by their own mirror image!`;
+		case "a guardian's aura sears the foe": return `  🜏 ${fact.meBurnWord} sears ${fact.foeName} for ${String(fact.meBurn)}. (HP ${String(fact.foeHp)})`;
+		case "the victim sees through the illusion": return `  ✨ ${fact.victimName} sees through the illusion (${fact.disbeliefPct}% disbelief) — the phantom dissolves and the real fight resumes.`;
+		case "a fighter takes a free strike at the foe": return `  ⚔ ${String(fact.actorName)} takes a free strike at ${String(fact.foeName)}!`;
+		case "a fighter's free strike lands": return `  ${String(fact.actorName)}'s free strike lands for ${String(fact.dealt)} damage! (${String(fact.foeName)} HP ${String(fact.foeHp)})`;
+		case "a fighter finds their second wind and fights on": return `  💪 ${fact.cbtName} (${fact.cbtTemper}) finds their second wind and fights on — ${String(fact.back)} HP recovered. (HP ${String(fact.cbtHp)})`;
+		case "as their strength fails a fighter begs the foe for mercy": return `  🙏 As their strength fails and death closes in, ${fact.who} begs ${fact.foeWho} for mercy!${fact.odds}`;
+		case "as the foe draws for the killing shot a fighter begs for their life": return `  🙏 As ${fact.foeWho} draws for the killing shot, ${fact.who} throws down their weapon and begs for their life!${fact.odds}`;
+		case "pinned and bleeding a fighter cries out for mercy": return `  🙏 Pinned and bleeding, ${fact.who} cries out for mercy before the last arrow can fly!${fact.odds}`;
+		case "as the foe readies a power for the killing stroke a fighter begs": return `  🙏 As ${fact.foeWho} readies ${fact.pow} for the killing stroke, ${fact.who} falls to their knees and begs to be spared!${fact.odds}`;
+		case "beaten and bleeding a fighter sees the killing blow coming": return `  🙏 Beaten and bleeding, ${fact.who} sees the killing blow coming — they throw down their weapon and beg ${fact.foeWho} for their life!${fact.odds}`;
+		case "as the foe closes for the kill a fighter cries out for mercy": return `  🙏 As ${fact.foeWho} closes for the kill, ${fact.who} flings up their hands and cries out for mercy!${fact.odds}`;
+		case "a fighter drops to their knees before the final stroke": return `  🙏 ${fact.who} drops to their knees before the final stroke can fall, pleading to be spared!${fact.odds}`;
+		case "the guardian pauses over its prey and lets a fighter crawl away": return `  ${fact.foeWho} pauses over its prey — and, for reasons of its own, lets ${fact.who} crawl away. ${fact.who2} flees the field with their life. (HP 1)`;
+		case "the foe lets a fighter go": return `  ${String(fact.foeWho)} lets them go — ${String(fact.who)} staggers from the field with their life. (HP 1)`;
+		case "the foe lowers their bow and lets a fighter go": return `  ${fact.foeWho} lowers their bow. "Go, while you still can." ${fact.who} flees the field with their life. (HP 1)`;
+		case "the foe lets a power die unspent": return `  ${fact.foeWho} lets ${fact.pow} die unspent and waves ${fact.who} away. ${fact.who2} flees the field with their life. (HP 1)`;
+		case "the foe stays the blow and lets a fighter go": return `  ${fact.foeWho} stays the blow. "Go — and never let me see your face again." ${fact.who} scrambles away and flees the field with their life. (HP 1)`;
+		case "the foe lowers their weapon in disgust and lets a fighter go": return `  ${fact.foeWho} lowers their weapon in disgust and lets ${fact.who} go. ${fact.who2} flees the field, alive but broken. (HP 1)`;
+		case "the stroke never falls and the foe spares a fighter": return `  The stroke never falls — ${fact.foeWho} spares them. ${fact.who} stumbles from the field with their life. (HP 1)`;
+		case "a fighter surrenders an item to the foe as the price of mercy": return `  🎒 ${fact.cbtName} surrenders ${fact.lostName} to ${fact.foeName} as the price of mercy.`;
+		case "the foe knows nothing of mercy": return `  ${fact.foeWho} knows nothing of mercy.${fact.wordsIfABlowFalls}`;
+		case "the foe laughs at the plea": return `  ${fact.foeWho} laughs at the plea.${fact.wordsIfABlowFalls}`;
+		case "the foe is deaf to the plea": return `  ${fact.foeWho} is deaf to the plea.${fact.wordsIfABlowFalls}`;
+		case "there is no pity in the foe": return `  There is no pity in ${fact.foeWho} today.${fact.wordsIfABlowFalls}`;
+		case "a combat item strikes the foe": return `  ${fact.nm} strikes ${fact.foeName} for ${String(fact.dealt)} damage. (HP ${String(fact.foeHp)})`;
+		case "a fighter uses a combat item": return `  🧪 ${fact.who} uses the ${fact.nm}!`;
+		case "a fighter recovers hit points": return `  ${String(fact.who)} recovers ${String(fact.healed)} HP. (HP ${String(fact.actorHp)})`;
+		case "warmth spreads through a fighter each round": return `  Warmth spreads through ${String(fact.actorName)} — ${String(fact.eAmt)} HP a round for ${String(fact.eRounds)} rounds.`;
+		case "a fighter recovers hit points and every lingering affliction lifts": return `  ${String(fact.who)} recovers ${String(fact.healed)} HP and every lingering affliction lifts. (HP ${String(fact.actorHp)})`;
+		case "a combat item blazes twice as bright against the foe": return `  The ${String(fact.nm)} blazes twice as bright against ${String(fact.foeName)}!`;
+		case "a combat item keeps burning on the foe": return `  ${String(fact.nm)} keeps burning on ${String(fact.foeName)} — ${String(fact.deDmg)} a round for ${String(fact.deRounds)} round${String(fact.deRoundsPlural)}.`;
+		case "the foe is thrown off from the next round": return `  ${fact.foeName} is thrown off (−${String(fact.eHitPen)}% to hit from the next round).`;
+		case "the foe reels losing actions from the next round": return `  ${String(fact.foeName)} reels — ${String(fact.eStun)} action${String(fact.eStunPlural)} lost from the next round.`;
+		case "a fighter drinks the stolen vigour": return `  ${String(fact.who)} drinks the stolen vigour — +${String(fact.healed)} HP. (HP ${String(fact.actorHp)})`;
+		case "the foe is held fast, losing actions": return `  ${fact.foeName} is held fast — ${String(fact.eStun)} action${fact.eStunPlural} lost.`;
+		case "the foe can barely see to strike": return `  ${fact.foeName} can barely see to strike (−${String(fact.eHitPen)}% to hit for the rest of the fight).`;
+		case "the foe can barely see to strike for now": return `  ${fact.foeName} can barely see to strike (−${String(fact.eHitPen)}% to hit).`;
+		case "the foe is sapped for the rest of the fight": return `  ${String(fact.foeName)} is sapped — Melee ${String(fact.foeMelee)}${String(fact.wordsIfEArchery)} for the rest of the fight.`;
+		case "the foe is overcome with dread and flees": return `  ${String(fact.foeName)} is overcome with dread and flees!`;
+		case "the foe holds their ground badly shaken": return `  ${String(fact.foeName)} holds their ground, badly shaken (−${String(fact.eHitPen)}% to hit).`;
+		case "the foe's magic and powers are bound": return `  ${String(fact.foeName)}'s magic and powers are bound for ${String(fact.eRounds)} rounds.`;
+		case "a fighter surges with strength": return `  ${fact.who} surges with strength — Melee ${String(fact.actorMelee)}${fact.wordsIfEArchery}.`;
+		case "a fighter's eye sharpens": return `  ${String(fact.who)}'s eye sharpens (+${String(fact.eHitBonus)}% to hit).`;
+		case "a ward settles over a fighter": return `  A ward settles over ${fact.actorName}, ready to drink ${String(fact.stAbsorb)} damage${fact.wordsIfEReflect}.`;
+		case "shimmering doubles step out of a fighter": return `  ${String(fact.eImages)} shimmering doubles step out of ${String(fact.actorName)}.`;
+		case "a fighter is ready to break away": return `  ${String(fact.who)} is ready to break away (+${String(fact.eFleeBonus)}% to flee${String(fact.wordsIfEToHitReduce)}).`;
+		case "a fighter fades from sight the foe": return `  ${fact.who} fades from sight — ${fact.foeName} strikes at shadows (−${String(fact.eToHitReduce)}% to hit).`;
+		case "every poison burn and blinding on a fighter lifts": return `  Every poison, burn and blinding on ${fact.actorName} lifts.`;
+		case "but nothing happens": return `  …but nothing happens.`;
+		case "a fighter is stunned and cannot act": return `  ${fact.actorName} is stunned and cannot act. (${String(fact.actorStatusStun)} left)`;
+		case "a fighter bound by spiritwrack cannot shoot and closes in": return `  ${String(fact.actorName)} cannot shoot (bound by Spiritwrack) — they close in instead.`;
+		case "a fighter has no ranged attack and presses forward": return `  ${fact.actorName} has no ranged attack — they press forward instead.`;
+		case "a fighter gives ground and gets to firing range first": return `  ${fact.actorName} gives ground and gets to firing range before anything can reach them. (${fact.actorTemper} — opening shot)`;
+		case "a fighter moves up to firing range": return `  ${fact.actorName} moves up to firing range (${String(fact.rangeChance)}% [roll ${String(fact.roll)}]${fact.rollChMark})`;
+		case "a fighter cannot close the distance in time": return `  ${fact.actorName} cannot close the distance in time — no shot.`;
+		case "a fighter tries to break away to firing range": return `  ${fact.actorName} tries to break away to firing range (${String(fact.rangeChance)}% [roll ${String(fact.roll)}]${fact.rollChMark})`;
+		case "the foe stays right on top of a fighter": return `  ${fact.foeName} stays right on top of ${fact.actorName} — no room to draw.`;
+		case "a fighter disengages to bow range": return `  ${fact.actorName} disengages to bow range.`;
+		case "a fighter's power is bound and it attacks with tooth and claw": return `  ${String(fact.actorName)}'s power is bound and will not answer — it falls on ${String(fact.foeName)} with tooth and claw instead.`;
+		case "a fighter gathers itself for a power but the moment slips away": return `  ${fact.actorName} gathers itself for ${fact.spName} but the moment slips away — it attacks instead. [${String(fact.castChancePct)}%]`;
+		case "a fighter is silenced and cannot cast": return `  ${String(fact.actorName)} is silenced and cannot cast — they attack instead.`;
+		case "a fighter knows nothing of retreat": return `  ${fact.actorName} knows nothing of retreat.`;
+		case "a fighter calls for parley with a druid's roll": return `  ${String(fact.actorName)} calls for parley (Druid ${String(fact.dr)}, ${String(fact.chance)}%${String(fact.chanceMark)})`;
+		case "the foe lowers its guard and stands aside": return `  ${String(fact.foeName)} lowers its guard and stands aside.`;
+		case "the foe answers with a roar": return `  ${String(fact.foeName)} answers with a roar.`;
+		case "a fighter calls for parley but blades are already drawn": return `  ${String(fact.actorName)} calls for parley, but blades are already drawn.`;
+		case "a fighter has no thief skill and cannot steal": return `  ${String(fact.actorName)} has no Thief skill and cannot attempt a steal — they press forward instead.`;
+		case "a fighter slips past the guardian and seizes the prize": return `  ${fact.actorName} slips past the ${fact.tierWord} guardian and seizes the prize! [${String(fact.chance)}%${fact.wordsIfTierPen}]`;
+		case "a fighter's theft is noticed": return `  ${fact.actorName}'s theft is noticed. [${String(fact.chance)}%${fact.wordsIfTierPen}]`;
+		case "a fighter scouts the feature and its guardian": return `  🔍 ${String(fact.actorName)} scouts the ${String(fact.featName)}: ${String(fact.foeName)}${String(fact.wordsIfPower)} stands guard at ${String(fact.curHp)}/${String(fact.fullHp)} HP.${String(fact.descClause)}${String(fact.abilityClause)}${String(fact.vulnClause)} Defeating it will yield exactly ${String(fact.clearGold)}g${String(fact.itemOut)}.`;
+		case "a fighter scouts the ground but there is nothing to guard": return `  ${String(fact.actorName)} scouts the ground, but there is nothing here to guard.`;
+		case "a fighter reads the ground and steadies their aim": return `  ${String(fact.actorName)} reads the ground and steadies — ${String(fact.cut)}% of their to-hit penalty is shaken off (Explorer ${String(fact.ex)}).`;
+		case "the target cannot be held": return `  ${fact.targetWardIcon} ${fact.targetName} cannot be held (${fact.why}${fact.wordsIfW}) — ${fact.what} finds no hold.`;
+		case "a fighter's harm strikes a mirror image": return `  ${String(fact.srcName)}'s ${String(fact.harmKind)} strikes a Mirror Image of ${String(fact.targetName)}! (${String(fact.targetStatusMirrorImages)} image${String(fact.targetStatusMirrorImagesPlural)} left)`;
+		case "the first harm to reach the target is drunk by their armour": return `  🛡 The first ${String(fact.harmArrowOrBlow)} to reach ${String(fact.targetName)} is drunk by their armour — no damage. (${String(fact.armourNames)})`;
+		case "the target's shield takes the blow square on": return `  🛡 ${String(fact.targetName)}'s shield takes the ${String(fact.arrowOrBlow)} square on — blocked outright. (${String(fact.armBlock)}%)`;
+		case "the arrow glances off the target's shield": return `  🛡 The arrow glances off ${fact.targetName}'s shield. (${String(fact.armArrowBlock)}%)`;
+		case "the target's shield turns the harm away": return `  🛡 ${fact.targetName}'s shield turns the ${fact.harmKind} away harmlessly. (${String(fact.armSpellBlock)}%)`;
+		case "the ward on the target's shield soaks some of the harm": return `  🛡 The ward on ${fact.targetName}'s shield soaks ${String(fact.rw)}.`;
+		case "the target's mithril armour turns aside some of the harm": return `  🛡 ${fact.targetName}'s Mithril Armour turns aside ${String(fact.damageTurnedAside)} of the ${fact.arrowOrBlow}.`;
+		case "the hunter finds the target's weakness": return `  💥 The ${fact.wword} finds ${fact.targetName}'s weakness — ${fact.targetWeakName}: ${String(fact.wb)} becomes ${String(fact.damage)}.`;
+		case "the hunter sees the target's weakness plainly now": return `  📖 ${fact.wsrcName} sees it plainly now: ${fact.targetWeakDesc}. Your realm will remember this of every ${fact.targetName}.`;
+		case "the target reads the beast's every move": return `  🍃 ${fact.targetName} reads the beast's every move — ${String(fact.damageTurnedAside)} of the ${fact.strikeOrBlow} turned aside (Druid ${String(fact.targetDruidBeastWard)}).`;
+		case "the target rolls with the blow and takes less": return `  ${fact.targetName} rolls with the blow and takes ${String(fact.damageRolledWith)} less. (${fact.targetTemper} guard)`;
+		case "the target takes the harm on raw fury": return `  ${fact.targetName} takes the ${fact.harmKind} on raw fury and shrugs off ${String(fact.damageShruggedOff)} of it. (Rage −${String(fact.soakPct)}%)`;
+		case "a ward around the target drinks some of the blow": return `  A ward around ${fact.targetName} drinks ${String(fact.soak)} of the blow.`;
+		case "the target parries turning aside some of the blow": return `  ⚔ ${fact.targetName} parries, turning aside ${String(fact.damageTurnedAside)} of the blow. (Parry)`;
+		case "the target's elemental armour absorbs some of the harm": return `  🜂 ${fact.targetName}'s Elemental Armour absorbs ${String(fact.damageAbsorbed)} of the ${fact.harmKind}. (Elemental Armour)`;
+		case "the target's armour turns aside some of the harm": return `  ${fact.targetWardIcon} ${fact.targetArmourWord} turns aside ${String(fact.damageTurnedAside)} of the ${fact.harmArrowOrBlow}.${fact.wordsIfTargetKindMonster}`;
+		case "the target turns aside all they can but the harm still lands": return `  ${fact.targetName} turns aside all they can, but the ${fact.harmArrowOrBlow} still lands for ${String(fact.floor)}. (no ward may take a hit below half)`;
+		case "the target's armour will not let any single hit bite deeper": return `  ${fact.targetWardIcon} ${fact.targetCapWord} will not let any single hit bite deeper than ${String(fact.capAt)}.`;
+		case "the target will not go down and restores hit points": return `  ${fact.targetWardIcon} ${fact.targetName} will not go down — ${fact.wordsIfTargetKindMonster} restores ${String(fact.back)} HP. (HP ${String(fact.targetHp)})`;
+		case "a fighter ignores the daze": return `  ${String(fact.cbtWardIcon)} ${String(fact.wordsIfCbtKindMonster)} — the daze is ignored.`;
+		case "a fighter's armour sloughs off every burn poison and bleeding": return `  ${fact.cbtWardIcon} ${fact.cbtDotWardWord} sloughs off every burn, poison and bleeding.`;
+		case "a guardian's regeneration knits its flesh": return `  ${fact.cbtWardIcon} ${fact.cbtRegenWord} knits flesh for ${String(fact.healed)}${fact.wordsIfSm}. (HP ${String(fact.cbtHp)})`;
+		case "a fighter has nothing left to knit": return `  🜏 ${fact.cbtName} has nothing left to knit with — its wounds stay open.`;
+		case "a fighter shrugs off the daze, held steady by their armour": return `  🛡 ${String(fact.cbtName)} shrugs off the daze — their armour holds them steady.`;
+		case "a lingering harm afflicts a fighter": return `  ${fact.harmName} afflicts ${fact.cbtName} for ${String(fact.harmDealt)} damage${fact.wordsIfDw}. (HP ${String(fact.cbtHp)})`;
+		case "a healing knits a fighter": return `  ${String(fact.healingName)} knits ${String(fact.cbtName)} for ${String(fact.healed)}. (HP ${String(fact.cbtHp)})`;
+		case "a fighter tears free of the spiritwrack": return `  ⛓ ${String(fact.cbtName)} tears free of the Spiritwrack binding! (${String(fact.rollShown)} to shrug it off)`;
+		case "a hero's hit points rise in a fight, for his realm alone":
+		case "the surgeons reach a fallen duellist too late, for his realm alone": return fact.words;
+		default: throw new Error(`a personal combat's line records a fact with no words: ${JSON.stringify(fact)}`);
+	}
+}
+//#endregion
+//#region src/views/prose/the-words-of-each-line.ts
+/** The words of a fact, of any area: each area's module writes its own kinds'. */
+function theWordsOf(fact) {
+	return isAPersonalCombatsLine(fact) ? theWordsOfAPersonalCombatsLine(fact) : theWordsOfABattlesLine(fact);
+}
+/** A line as the GM's log stores it: its words in place of its fact, and its tier when it is a battle's. */
+function asStored(line, text, tier) {
+	const stored = {
+		...line,
+		text
+	};
+	if (tier !== void 0) stored.bTier = tier;
+	delete stored.fact;
+	return stored;
+}
+/** Every line of the turn with its words, in order; a battle's lines with their tiers, and its losses tally where its
+*  casualty lists begin (else after its lines, or nowhere when there is none to tally). */
+function theTurnsLinesInWords(turnLog) {
+	const gmLog = [];
+	const wordsOfEachLine = turnLog.map(() => null);
+	const wordsOfLine = (line) => line.fact === void 0 ? line.text : theWordsOf(line.fact);
+	let battlesLines = [];
+	const theBattlesLinesWritten = (tallysPlace) => {
+		if (!battlesLines.length && !tallysPlace) return;
+		const texts = battlesLines.map(({ line }) => wordsOfLine(line));
+		const { t: tiers, casIdx } = battleLineTiers(texts);
+		const tierOf = (k) => {
+			const tier = tiers[k];
+			return typeof tier === "string" && tier !== "" ? tier : "k";
+		};
+		let tally = null;
+		if (tallysPlace) try {
+			tally = battleTallyLine(texts);
+		} catch {
+			tally = null;
+		}
+		let tallyWritten = false;
+		const theTally = () => {
+			if (!tallysPlace || !tally || tallyWritten) return;
+			gmLog.push(asStored(tallysPlace.line, tally, "t"));
+			wordsOfEachLine[tallysPlace.at] = tally;
+			tallyWritten = true;
+		};
+		battlesLines.forEach(({ at, line }, k) => {
+			if (k === casIdx) theTally();
+			const words = texts[k] ?? null;
+			gmLog.push(asStored(line, words, tierOf(k)));
+			wordsOfEachLine[at] = words;
+		});
+		theTally();
+		battlesLines = [];
+	};
+	turnLog.forEach((line, at) => {
+		const ofTheSameBattle = battlesLines[0]?.line.battleId === line.battleId;
+		if (line.bTier === A_TIER_WORKED_OUT_FROM_THE_WORDS_OF_THE_BATTLES_LINES) {
+			if (!ofTheSameBattle) theBattlesLinesWritten(null);
+			battlesLines.push({
+				at,
+				line
+			});
+			return;
+		}
+		if (line.fact?.kind === "a battle's losses, tallied from its lines") {
+			if (!ofTheSameBattle) theBattlesLinesWritten(null);
+			theBattlesLinesWritten({
+				at,
+				line
+			});
+			return;
+		}
+		theBattlesLinesWritten(null);
+		if (line.fact === void 0) {
+			gmLog.push(line);
+			wordsOfEachLine[at] = line.text;
+			return;
+		}
+		const words = theWordsOf(line.fact);
+		gmLog.push(asStored(line, words));
+		wordsOfEachLine[at] = words;
+	});
+	theBattlesLinesWritten(null);
+	return {
+		gmLog,
+		wordsOfEachLine
+	};
+}
+//#endregion
 //#region src/views/every-realms-report-and-the-lines-each-realm-reads.ts
 function playerEvents(turnLog, G, pi, sight) {
 	const { presenceByPhase, battleCommanders, clairWatch } = sight;
@@ -60403,7 +71766,8 @@ function playerEvents(turnLog, G, pi, sight) {
 	};
 }
 function buildReports(whatTheReportsRead) {
-	const { freshPlayers, G, turnLog, sight, _tel } = whatTheReportsRead;
+	const { freshPlayers, G, sight, _tel } = whatTheReportsRead;
+	const { gmLog: turnLog } = theTurnsLinesInWords(whatTheReportsRead.turnLog);
 	const activePlayers = freshPlayers.filter((p) => p.user_id);
 	const reports = [];
 	for (const gp of activePlayers) {
@@ -60420,7 +71784,8 @@ function buildReports(whatTheReportsRead) {
 		tel: {
 			gs: G,
 			collected: _tel
-		}
+		},
+		gmLog: turnLog
 	};
 }
 //#endregion
@@ -60459,6 +71824,7 @@ async function runTurn(opts) {
 	let _turnCommitted = false;
 	let G;
 	let seed = null;
+	let theSavesCheck = "";
 	try {
 		const { data: freshGame, error: gErr } = await sb.from("games").select("*").eq("id", gameRow.id).single();
 		const { data: freshPlayers, error: pErr } = await sb.from("game_players").select("*").eq("game_id", gameRow.id);
@@ -60526,7 +71892,7 @@ async function runTurn(opts) {
 		_turnCommitted = true;
 		msg.innerHTML = kcHtml`<div class="msg-info">⏳ Generating turn reports…</div>`;
 		resolved.spyStealthAndInvisibilityStampedForTheReports();
-		const { reports, tel } = buildReports(resolved.whatTheReportsRead());
+		const { reports, tel, gmLog } = buildReports(resolved.whatTheReportsRead());
 		let reportErrors = [];
 		for (const { gp, report } of reports) {
 			report.engineStamp = typeof runningBuildStamp === "function" ? runningBuildStamp() : null;
@@ -60545,7 +71911,7 @@ async function runTurn(opts) {
 			game_id: gameRow.id,
 			player_index: -1,
 			turn: G.turn - 1,
-			entries: resolved.log
+			entries: gmLog
 		});
 		try {
 			await writeTurnTelemetry(tel.gs, gameRow, freshPlayers, tel.collected, G.turn - 1);
@@ -60553,12 +71919,13 @@ async function runTurn(opts) {
 			_kcTelLastErr = _te && _te.message || String(_te);
 			console.warn("telemetry:", _te);
 		}
-		if (reportErrors.length > 0) msg.innerHTML = kcHtml`<div class="msg-error">Turn resolved but some reports failed: ${reportErrors.join("; ")}</div>`;
+		theSavesCheck = resolved.whereTheSaveDiffersFromThisBuildsSchema.length ? kcHtml`<div class="msg-error">⚠ ${whatTheSavesCheckFoundInWords(resolved.whereTheSaveDiffersFromThisBuildsSchema)}</div>` : "";
+		if (reportErrors.length > 0) msg.innerHTML = kcHtml`<div class="msg-error">Turn resolved but some reports failed: ${reportErrors.join("; ")}</div>${theSavesCheck}`;
 		else msg.innerHTML = kcHtml`<div class="msg-success">
       ✅ Turn ${G.turn - 1} resolved! New turn reports pushed to ${reports.length} players.<br>
       <strong>Turn ${G.turn} is now open for orders.</strong> 
       ${G.gameOver ? kcHtml`<strong>Game is complete!</strong>` : ""}
-    </div>`;
+    </div>${theSavesCheck}`;
 	} catch (e) {
 		console.error("runTurn error:", e);
 		let _savedAnyway = false, _saveUnknown = false;
@@ -60596,7 +71963,10 @@ async function runTurn(opts) {
 	if (viewing) {
 		currentGame.turn = G.turn;
 		currentGame.status = G.gameOver ? "complete" : "active";
-		setTimeout(() => openGame(currentGame.id), 2e3);
+		setTimeout(() => openGame(currentGame.id).then(() => {
+			const shown = document.getElementById("detail-msg");
+			if (theSavesCheck && shown && !shown.innerHTML) shown.innerHTML = theSavesCheck;
+		}), 2e3);
 	} else if (auto && document.getElementById("sec-games")?.classList.contains("section-active")) loadGames();
 	return {
 		ok: true,
@@ -62098,6 +73468,7 @@ Object.assign(window, {
 	SAGE_DISCOVERIES_P,
 	sb,
 	shieldFortHolds,
+	theWordsOf,
 	unitAbilityMult,
 	unitRef,
 	unitTypeOf,
