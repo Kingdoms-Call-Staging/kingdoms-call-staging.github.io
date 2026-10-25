@@ -961,6 +961,56 @@ var KC_GRAND_DESIGNS = {
 		desc: "Your monsters and creatures cost half their wages and muster as Veterans."
 	}
 };
+KC_UNIT_CLASS.garrison;
+var UNIT_ABILITIES = {
+	"Shieldwall Levies": "Spear Hedge — cavalry facing them in the line fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Shieldwall — ×1.25 when an archer stands in the second line behind them.",
+	"Men-at-Arms": "Halberds — ×1.25 facing cavalry. Sergeants — Levies beside them in the front line fight ×1.1.",
+	"Free Lances": "Harriers — ×1.15 in a flank duel. Ride Them Down — in plains and desert only, each adds +6% to enemy losses when your side wins (max +18%). Works the same against neutral defenders — and theirs works the same against you.",
+	"Yeoman Longbows": "Bodkin Points — no penalty shooting cavalry from the second line (other archers fire at ×0.75). Prepared Ground — defending, they loose two pre-battle volleys.",
+	"Gilded Lances": "Lance Charge — ×1.15 facing foot, where cavalry is usually ×0.85 (a Spear Hedge still stops it). Knightly Example — while a Gilded Lances unit is in the army, your Levies and Men-at-Arms never lose a tier in defeat.",
+	"Noble Griffons": "Dive on the Bowmen — the enemy’s strongest second-line archer fights ×0.75. Screech Dive — a diving pre-battle strike scatters one enemy unit (2–4), one chance in two whatever the commander’s Druid.",
+	"Human Garrison": "Hold the Gate — defending, never hit from the side when the enemy line wraps its end. Town Watch — counts as Levies for Shieldwall and for anchoring the line.",
+	"Galleon Fleet": "Broadside — fires in the pre-battle archery phase during sea battles.",
+	"Forest Wardens": "Woodland Skirmish — ×1.15 in forest and jungle, whatever they face. Ambush — in forest or jungle, the side facing them gets no archery phase at all (unless Eagle Riders fly with it). Works attacking or defending, and against province defenders as well as another realm.",
+	"Elven Bowmen": "Volley at the Charge — ×1.25 shooting cavalry from the second line. Woodland Volley — double volley damage in forest and jungle.",
+	"Shadow Archers": "Marksmen — ×1.25 shooting archers from the second line, and they pick the best target anywhere along the enemy front. Loosed From Cover — cannot be targeted by enemy volleys (unless Eagle Riders fly with the shooters).",
+	"Stag Riders": "Through the Trees — the one cavalry that takes a flank in forest and jungle. Forest Runners — ×1.1 in forest and no penalty in jungle (see the roster).",
+	"Eagle Riders": "Stoop on the Horses — on open ground they may hold a flank slot no rider fills, and fight cavalry at ×1.25. Eyes of the Forest — while they fly with your shooters, an enemy Ambush is spoiled and Shadow Archers can be shot at.",
+	"Elven Garrison": "Thorn Hedge — cavalry facing it in forest or jungle ×0.85. Tree Watch — in forest or jungle it shoots in the archery step like an archer unit.",
+	"Elven Galleys": "Sea Archers — your ranged units ignore the land-unit penalty at sea.",
+	"Dwarven Guard": "Unbreakable — foot facing them in the line ×0.85, and they are never hit from the side. Shield Fort — when at least half the front line is Guard (a Dwarf Garrison counts), a beaten force never routs: with a retreat open it withdraws in good order (immune to pursuit losses and to demotion in retreat); trapped, it locks shields and holds the province contested with no flight casualties. In every battle, and for a province's own Guard defenders too.",
+	"Ironwood Crossbows": "Armour-Piercing — ×1.25 shooting a unit of base strength 6 or more from the second line. Punch Through — can soften a target to 55% instead of the usual 40% limit (90% instead of 80% against a winged rider).",
+	"Mountain Guns": "Bombard — ×1.15 from the second line, whatever they shoot. Bombardment — fire before all other ranged units, and +50% volley damage against garrisons.",
+	"Ironhoof Rams": "Battering Horns — a Ram riding free turns the enemy flank even when infantry anchor both ends of its line. Crag Charge — the one cavalry that takes a flank in the mountains.",
+	"Gnomish Gyrocopters": "Flak Gunners — ×1.25 when the enemy has flyers. Flak Screen — each engages one enemy flying unit before the battle (−30% strength). No two gyrocopters engage the same flyer.",
+	"Dwarf Garrison": "Stone Halls — foot facing it in the mountains ×0.9. Deep Halls — counts as Guard for Shield Fort.",
+	"Dwarf Ironclads": "Armoured Hulls — immune to pre-battle volleys.",
+	"Goblin Horde": "Arrow Fodder — second-line archers shooting them fire at ×0.75. Sheer Numbers — +10% strength per other orc foot unit in the force (Goblin Hordes, Berserkers, the Orc Garrison), max +30%.",
+	"Orc Berserkers": "Frenzy — ×1.15 facing foot. Driven Before Them — +10% for each Goblin Horde beside them in the front line.",
+	"Black Arrows": "Brawling Archers — full strength when forced into the front line, where other archers fight ×0.75. Raiders’ Volley — their pre-battle volley does ×1.5 when attacking.",
+	"Warg Riders": "Wolves Panic Horses — ×1.25 facing cavalry. Run Them Down — if at least half your winning force are Wargs, they run the beaten army down on the field: every beaten unit is 15% more likely to be destroyed in the rout, on any ground (not against a Dwarven Shield Fort). There is no chase afterwards. Against neutral guards, who never flee, they end the fight fast instead: half casualties for you on a win.",
+	"Wyvern Riders": "Terror From Above — the enemy’s strongest front-line unit fights ×0.85. Acid Spit — a pre-battle strike on one enemy unit (2–5), one chance in two whatever the commander’s Druid.",
+	"Orc Garrison": "Bloodthirsty — defending, ×1.15 facing foot. Raiders’ Muster — an orcish province that sees an orc realm win there gains a Goblin Horde in its garrison at turn’s end, for nothing.",
+	"Orcish Longships": "Reaver Crews — the whole force fights at +25% in any battle the phase it lands from these ships, even if another hero takes command of the combined host.",
+	"Whale Cohort": "Breach and Swamp — 25% chance each to sink one enemy fleet outright before the battle is fought.",
+	Thunderbirds: "Storm Wings — every enemy unit in the air fights ×0.85. Lightning Strike: a pre-battle strike on one enemy unit (4–8). Storm-birds of the high crags that fight from the air, taking no place in the line.",
+	"Forest Ents": "Rooted — never hit from the side when the enemy line wraps their end. Choking Spores: a pre-battle strike across the whole enemy line (2–4 each). At home in forest and jungle (terrain ×1.15), withering in the desert.",
+	"Stone Giants": "Boulder Wall — cavalry facing them fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Boulder Barrage: a pre-battle strike that shatters one enemy unit (4–7). At home in the mountains (terrain ×1.15); slow.",
+	"Cave Trolls": "Regenerating Hide — after a lost battle, a 30% chance to shrug off a death roll. Hurled Rubble: a pre-battle strike on one enemy unit (4–7). At home in the mountains and the forest (terrain ×1.15 and ×1.1).",
+	"Manticore Pride": "Relentless Hunt — ×1.25 strength when their side is the attacker, and when at least half the winning force are Manticores the beaten foe takes +15% rout losses. Spine Volley: a pre-battle strike across every enemy unit (2–4 each). Fights from the air.",
+	"Basilisk Brood": "Stone Deterrent — ×1.25 strength when their side is defending. Petrifying Gaze: a pre-battle strike across the whole enemy line (2–4 each).",
+	"Crimson Rocs": "Air Superiority — ×1.3 strength when the enemy fields ranged troops. Thunderous Stoop: a pre-battle strike scatters one enemy unit (5–9). Fights from the air, taking no place in the line.",
+	"Elder Dragons": "Wyrmscale — ×1.25 strength in every battle. Dragonfire Breath: a pre-battle strike that washes every enemy unit in fire (3–6 each). Fights from the air, taking no place in the line.",
+	"Titan Warbeasts": "Colossal Bulk — fights from the second line at full strength. World-Shaking Charge: a pre-battle strike that unbalances every enemy unit (3–6 each). At home on the plain and in the desert (terrain ×1.1).",
+	"Sea Giants": "Tidal Might — ×1.2 strength in a coastal land province (one bordering the sea). Tidal Surge: a pre-battle strike on one enemy unit (4–8).",
+	"Eldritch Kraken": "Deepwater Grasp — ×1.35 strength at sea. Crushing Coils: a pre-battle strike that drags one enemy unit under (5–9).",
+	"Dread Hydras": "Many Heads — ×1.25 facing foot. Venom Breath: a pre-battle strike across the whole enemy line (3–6 each). The greatest of the Monsters, at home in jungle and forest (terrain ×1.1 and ×1.05).",
+	"Shark Shoals": "Shoal Swarm — +10% strength per other Shark Shoals in the force, to +30%. Feeding Frenzy — when at least half the winning force are shoals, a foe beaten at sea takes +15% rout losses. A shoal is no hull: it carries nothing.",
+	"Great Bears": "Maul — ×1.15 facing foot. Thick Hide — pre-battle volleys against them do half. At home in forest and mountain (terrain ×1.1), poor in the desert; move 3.",
+	"Unicorn Herd": "Purity — ×1.25 facing Monsters and skeletons, and it breaks a Spear Hedge or a Boulder Wall (no ×0.75 cap). Through the Glades — the one cavalry, with the Stag Riders, that takes a flank in forest and jungle. At home on the plain and in the forest (terrain ×1.1).",
+	"Mammoth Host": "Trample — ×1.15 facing foot. Stampede: a pre-battle strike across the whole enemy line (2–4 each). At home on the open plain (terrain ×1.1), ill at ease under trees; slow.",
+	"Great Turtles": "Island Back — carries two land units a hull, where a fleet carries one. Shell Wall — immune to pre-battle volleys, as the Ironclads. Island-backed turtles of the prosperous seas that swim under their own power; slow."
+};
 //#endregion
 //#region src/ui/player/startup.ts
 var KC_DB_MIN = "20261015062128";
@@ -1136,6 +1186,106 @@ function heroHireWage(kingdomAlign, heroAlign, waiveBan, hero) {
 	return 2 + Math.floor(Math.min(d, 6) / 2) + (hero ? heroSkillWage(hero) : 0);
 }
 //#endregion
+//#region src/engine/rules-on-plain-values/units-that-fly-sail-or-can-be-carried-through-the-air.ts
+var FLYING_TYPES = new Set(KC_UNIT_CLASS.flying);
+var AERIAL_TYPES = new Set(KC_UNIT_CLASS.aerial);
+var CREATURE_ARMIES = new Set(KC_UNIT_CLASS.creature);
+var MONSTER_ARMIES = new Set(KC_UNIT_CLASS.monster);
+var CARRIER_TYPES = new Set(KC_UNIT_CLASS.carrier);
+var PRIMAL_SEA_TYPES = new Set(KC_UNIT_CLASS.primalSea);
+var SEA_TYPES = /* @__PURE__ */ new Set([...CARRIER_TYPES, ...PRIMAL_SEA_TYPES]);
+var CAVALRY_TYPES = new Set(KC_UNIT_CLASS.cavalry);
+function isAirCarriable(a) {
+	if (!a) return false;
+	const t = a.type;
+	if (AERIAL_TYPES.has(t) || SEA_TYPES.has(t)) return false;
+	if (CREATURE_ARMIES.has(t) || MONSTER_ARMIES.has(t)) return false;
+	if (CAVALRY_TYPES.has(t)) return false;
+	return true;
+}
+function getFlyCapability(armies) {
+	armies = (armies || []).filter((a) => a && !a._phantom);
+	if (armies.length === 0) return false;
+	let carriers = 0, carried = 0, sawSelfFlier = false;
+	for (const a of armies) {
+		if (!a) continue;
+		if (FLYING_TYPES.has(a.type)) {
+			carriers++;
+			sawSelfFlier = true;
+			continue;
+		}
+		if (AERIAL_TYPES.has(a.type)) {
+			sawSelfFlier = true;
+			continue;
+		}
+		if (isAirCarriable(a)) {
+			carried++;
+			continue;
+		}
+		return false;
+	}
+	return sawSelfFlier && carriers >= carried;
+}
+//#endregion
+//#region src/engine/rules-on-plain-values/beasts-a-hero-may-lead-and-the-druid-each-unit-needs.ts
+var BEAST_CMD_TYPES = /* @__PURE__ */ new Set([...KC_UNIT_CLASS.creature, ...KC_UNIT_CLASS.monster]);
+/** Whether the unit counts against its hero's beast command: a living Creature or Monster that stays. */
+function countsAgainstBeastCommand(a) {
+	return !!a && BEAST_CMD_TYPES.has(a.type) && !a.skeletal && !a.temporary && !a.wildHunt && !a.phantom;
+}
+var DRUID_ARMY_LEVELS_P = Object.fromEntries(Object.entries(KC_DRUID_LEVELS).map(([lvl, types]) => [lvl, new Set(types)]));
+function getDruidLevel(armyType) {
+	for (const [lvl, armies] of Object.entries(DRUID_ARMY_LEVELS_P)) if (armies.has(armyType)) return parseInt(lvl);
+	return 0;
+}
+var TAMED_FLYER_TYPES_D = new Set(KC_UNIT_CLASS.tamedFlyer);
+/** Whether a unit of this type follows its leader whatever his Druid, for his realm's alignment or his own.
+*  Druidic alignment: no Druid penalty for Creature armies (they follow willingly). Keyed on the KINGDOM's alignment —
+*  NOT the commander's personal alignment — so EVERY character of a Druidic realm (king and heroes alike) leads
+*  Creatures freely, even though a Druidic king's heroes are seeded with a randomised personal alignment near his own
+*  (Good/Druidic/Neutral) and so are usually NOT personally Druidic. A personally-Druidic wandering hero (no realm, so
+*  no realm alignment) also qualifies by his own. Evil alignment (2026-10-13, Toby, Creatures and Monsters I): the
+*  mirror — no Druid penalty for Monster armies under an Evil realm (or a personally Evil wandering commander). They
+*  are driven, not led. (sd40 Dragon Taming's winged beasts are waived too: the caller knows the realm's discoveries,
+*  so it passes that on its own, to druidLevelALeaderNeeds.) */
+function druidNeedWaivedByAlignment(unitType, realmAlignment, leaderAlignment) {
+	return CREATURE_ARMIES.has(unitType) && (realmAlignment === "Druidic" || leaderAlignment === "Druidic") || MONSTER_ARMIES.has(unitType) && (realmAlignment === "Evil" || leaderAlignment === "Evil");
+}
+/** The Druid a leader needs to lead a unit of this type at full strength, the waivers counted: none where his realm's
+*  alignment or his own waives it, or where the unit is a winged beast his realm has tamed (`tamed`: sd40 Dragon
+*  Taming); else the unit's level in the table. (A skeleton needs none either: each caller leaves it out first.) */
+function druidLevelALeaderNeeds(unitType, realmAlignment, leaderAlignment, tamed) {
+	if (druidNeedWaivedByAlignment(unitType, realmAlignment, leaderAlignment)) return 0;
+	if (tamed) return 0;
+	return getDruidLevel(unitType);
+}
+/** The Druid a leader brings to a unit: his own, or at least 1 for a unit of his own race. */
+function druidALeaderBringsToAUnit(druidLevel, unitOfHisOwnRace) {
+	return unitOfHisOwnRace ? Math.max(1, druidLevel) : druidLevel;
+}
+/** The levels of Druid a leader is short of a unit's need (0: none). */
+function druidShortfall(levelNeeded, levelBrought) {
+	return Math.max(0, levelNeeded - levelBrought);
+}
+/** The share of its strength a unit keeps in battle when its leader is `shortfall` levels of Druid short of its need:
+*  20% less a level, never below a tenth. */
+function strengthLeftByADruidShortfall(shortfall) {
+	if (shortfall === 0) return 1;
+	return Math.max(.1, 1 - shortfall * .2);
+}
+var DRUID_MASTERY_PER_LVL = .2;
+var DRUID_MASTERY_CAP = 1;
+var DRUID_MASTERY_MAX_LVL = 9;
+/** A leader's Druid as the mastery counts it: from 0 to 9. */
+function druidLevelTheMasteryCounts(druidLevel) {
+	return Math.max(0, Math.min(DRUID_MASTERY_MAX_LVL, druidLevel));
+}
+/** The Druid mastery's gain on a Creature or Monster unit (0 to 1: +20% a level the leader holds over the unit's need,
+*  to +100%), from the level the mastery counts (druidLevelTheMasteryCounts) and the unit's need (0 where waived). */
+function druidMasteryGainOver(levelCounted, levelNeeded) {
+	return Math.min(DRUID_MASTERY_CAP, DRUID_MASTERY_PER_LVL * Math.max(0, levelCounted - levelNeeded));
+}
+//#endregion
 //#region src/engine/rules-on-plain-values/items-slots-races-and-who-may-use-them.ts
 function isLegendaryItem(it) {
 	return !!it && it.tier === 4;
@@ -1191,7 +1341,8 @@ function itemSlot(it) {
 	if (it.effect && it.effect.stat === "combatUse") return "combat";
 	if (it.effect && it.effect.stat === "mithrilArmour") return "armour";
 	if (it.slot !== void 0) return it.slot || null;
-	return ITEM_SLOT_OF[it.name] || ITEM_SLOT_OF[_ITEM_ALT_BASE[it.name]] || null;
+	const altBase = _ITEM_ALT_BASE[it.name];
+	return ITEM_SLOT_OF[it.name] || (altBase === void 0 ? void 0 : ITEM_SLOT_OF[altBase]) || null;
 }
 var _ITEM_RACE_ALIAS = { ...KC_ITEM_RACE_ALIAS };
 function itemRaceOf(it) {
@@ -1203,6 +1354,66 @@ function itemUsableBy(it, c) {
 	if (it.race && (!c || c.race !== itemRaceOf(it))) return false;
 	if (it.alignment && (!c || c.alignment !== it.alignment)) return false;
 	return true;
+}
+//#endregion
+//#region src/engine/rules-on-plain-values/ships-and-flyers-that-carry-a-column-across-the-sea.ts
+/** The berths each carrier offers where it isn't one (2026-10-13, Creatures and Monsters VI: the Great Turtles). */
+var BERTHS_OF_A_CARRIER = KC_CARRIER_BERTHS;
+function carrierBerths(a) {
+	return a && CARRIER_TYPES.has(a.type) ? BERTHS_OF_A_CARRIER[a.type] ?? 1 : 0;
+}
+var LIGHT_ARMIES = new Set(KC_UNIT_CLASS.lightFoot);
+/** Whether a unit takes half a hull aboard ship (light foot), not a whole one. */
+function takesHalfAHullAboard(a) {
+	return LIGHT_ARMIES.has(a.type);
+}
+/** Whether `column` can put to sea, and why: its hulls (doubled when `hullsCarryDouble`, the leader's Naval 8) and its
+*  humanoid flyers pool their lift. `takesHalfAHull` says which units take half a hull (light foot; the player
+*  portal adds the units it can't type in advance). */
+function seaLiftOfAColumn(column, hullsCarryDouble, takesHalfAHull = takesHalfAHullAboard) {
+	const armies = (column ?? []).filter((a) => !!a && !a._phantom);
+	const landArmies = armies.filter((a) => !AERIAL_TYPES.has(a.type) && !SEA_TYPES.has(a.type));
+	const seaCount = armies.reduce((s, a) => s + carrierBerths(a), 0);
+	let hullCap = seaCount;
+	if (hullsCarryDouble) hullCap *= 2;
+	const flyerLift = armies.filter((a) => FLYING_TYPES.has(a.type)).length;
+	const lifted = getFlyCapability(armies);
+	const lift = (answer, room, mustSail, leftAshore) => ({
+		answer,
+		berths: seaCount,
+		berthsUnderItsLeader: hullCap,
+		landUnits: landArmies.length,
+		unitsThatMustSail: mustSail,
+		humanoidFlyers: flyerLift,
+		flyersLiftTheWholeColumn: lifted,
+		roomLeft: room,
+		unitsLeftAshore: leftAshore
+	});
+	if (armies.length === 0) return lift("all", hullCap, 0, []);
+	if (landArmies.length === 0) return lift("all", hullCap, 0, []);
+	if (lifted) return lift("sea", hullCap, 0, []);
+	const _capOf = (a) => takesHalfAHull(a) ? .5 : 1;
+	const _mustSail = landArmies.filter((a) => !isAirCarriable(a));
+	const _liftable = landArmies.filter((a) => isAirCarriable(a));
+	let _room = hullCap - _mustSail.reduce((s, a) => s + _capOf(a), 0);
+	if (_room < 0) {
+		const _ashore = [];
+		let _over = -_room;
+		for (const a of _mustSail.slice().sort((a, b) => _capOf(b) - _capOf(a))) {
+			if (_over <= 0) break;
+			_ashore.push(a);
+			_over -= _capOf(a);
+		}
+		return lift("land", _room, _mustSail.length, _ashore);
+	}
+	const _byAir = [];
+	_liftable.slice().sort((a, b) => _capOf(a) - _capOf(b)).forEach((a) => {
+		const _c = _capOf(a);
+		if (_room >= _c) _room -= _c;
+		else _byAir.push(a);
+	});
+	if (_byAir.length <= flyerLift) return lift("sea", _room, _mustSail.length, []);
+	return lift("land", _room, _mustSail.length, _byAir.slice(flyerLift));
 }
 //#endregion
 //#region src/engine/rules-on-plain-values/skills-in-order-and-a-heros-fame-in-words.ts
@@ -1217,7 +1428,9 @@ function topSkillOf(char) {
 	const maxLevel = Math.max(...skills.map(([, v]) => v));
 	const tied = skills.filter(([, v]) => v === maxLevel);
 	tied.sort((a, b) => ALL_SKILLS.indexOf(a[0]) - ALL_SKILLS.indexOf(b[0]));
-	const [sk, lv] = tied[0];
+	const top = tied[0];
+	if (!top) return null;
+	const [sk, lv] = top;
 	return {
 		skill: sk,
 		level: lv
@@ -1237,54 +1450,14 @@ function combatSpellsAllowedPerSchoolEachFight(level) {
 }
 //#endregion
 //#region src/engine/rules-on-plain-values/unit-types-and-base-strength.ts
+var UNIT_TYPE_WORD_OF = KC_UNIT_TYPE;
 function unitTypeOf(armyType) {
-	return typeof KC_UNIT_TYPE !== "undefined" && KC_UNIT_TYPE[armyType] || "infantry";
+	return typeof KC_UNIT_TYPE !== "undefined" && UNIT_TYPE_WORD_OF[armyType] || "infantry";
 }
 var UNIT_BASE_STR = { ...KC_UNIT_BASE_STR };
 var UNIT_Q_MULT = { ...KC_UNIT_Q_MULT };
 function unitBaseStrength(army) {
 	return (UNIT_BASE_STR[army.type] || 4) * (UNIT_Q_MULT[army.quality || "Average"] || 2);
-}
-//#endregion
-//#region src/engine/rules-on-plain-values/units-that-fly-sail-or-can-be-carried-through-the-air.ts
-var FLYING_TYPES = new Set(KC_UNIT_CLASS.flying);
-var AERIAL_TYPES = new Set(KC_UNIT_CLASS.aerial);
-var CREATURE_ARMIES = new Set(KC_UNIT_CLASS.creature);
-var MONSTER_ARMIES = new Set(KC_UNIT_CLASS.monster);
-var CARRIER_TYPES = new Set(KC_UNIT_CLASS.carrier);
-var PRIMAL_SEA_TYPES = new Set(KC_UNIT_CLASS.primalSea);
-var SEA_TYPES = /* @__PURE__ */ new Set([...CARRIER_TYPES, ...PRIMAL_SEA_TYPES]);
-var CAVALRY_TYPES = new Set(KC_UNIT_CLASS.cavalry);
-function isAirCarriable(a) {
-	if (!a) return false;
-	const t = a.type;
-	if (AERIAL_TYPES.has(t) || SEA_TYPES.has(t)) return false;
-	if (CREATURE_ARMIES.has(t) || MONSTER_ARMIES.has(t)) return false;
-	if (CAVALRY_TYPES.has(t)) return false;
-	return true;
-}
-function getFlyCapability(armies) {
-	armies = (armies || []).filter((a) => a && !a._phantom);
-	if (armies.length === 0) return false;
-	let carriers = 0, carried = 0, sawSelfFlier = false;
-	for (const a of armies) {
-		if (!a) continue;
-		if (FLYING_TYPES.has(a.type)) {
-			carriers++;
-			sawSelfFlier = true;
-			continue;
-		}
-		if (AERIAL_TYPES.has(a.type)) {
-			sawSelfFlier = true;
-			continue;
-		}
-		if (isAirCarriable(a)) {
-			carried++;
-			continue;
-		}
-		return false;
-	}
-	return sawSelfFlier && carriers >= carried;
 }
 //#endregion
 //#region src/ui/player/dispatches.ts
@@ -5045,9 +5218,9 @@ function renderReportView(report) {
 				const shortfall = _dn.shortfall;
 				if (shortfall > 0) {
 					druidShort++;
-					bs = Math.max(1, Math.round(bs * Math.max(.1, 1 - shortfall * .2)));
+					bs = Math.max(1, Math.round(bs * strengthLeftByADruidShortfall(shortfall)));
 				}
-				const mastery = !a.skeletal && (creature || monster) ? Math.min(100, 20 * Math.max(0, Math.min(9, druLevel) - req)) : 0;
+				const mastery = !a.skeletal && (creature || monster) ? Math.round(druidMasteryGainOver(druidLevelTheMasteryCounts(druLevel), req) * 100) : 0;
 				if (mastery > 0) bs = Math.round(bs * (1 + mastery / 100));
 				totalStr += bs;
 				totalCost += a.cost != null ? a.cost : 2;
@@ -5091,7 +5264,7 @@ function renderReportView(report) {
 			const _paceBits = [kcHtml`🏃 Land <strong>${effSpd2}</strong>`];
 			if (_airSpd > 0) _paceBits.push(kcHtml`🦅 Flying <strong>${_airSpd}</strong>`);
 			if (_seaSpd > 0) _paceBits.push(kcHtml`⚓ Sea <strong>${_seaSpd}</strong>`);
-			const _bLed = arr.filter(beastCommandCountP).length;
+			const _bLed = arr.filter(countsAgainstBeastCommand).length;
 			const _bNote = _bLed > 0 ? kcHtml` · <span style="color:${_bLed > druLevel ? "var(--crimson)" : "#1d5a1d"}" title="A hero may lead only as many Creature and Monster units as his Druid level">🐾 beasts ${_bLed}/${druLevel}${_bLed > druLevel ? " — over his Druid, he takes on no more" : ""}</span>` : "";
 			return kcHtml`${head}${kcHtml`<div style="font-size:.74rem;line-height:1.5;display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap">
               <span style="flex:1;min-width:0">⚔ <strong>${arr.length}</strong> unit${arr.length !== 1 ? "s" : ""} · strength <strong>${totalStr}</strong>${druidShort > 0 ? kcHtml` <span style="color:var(--crimson);font-size:.66rem">(${druidShort} under-led)</span>` : ""}${_bNote} · ${_typeLine} · ${kcJoinP(_paceBits, " · ")}</span>
@@ -6252,55 +6425,6 @@ function updateAlignmentDesc() {
 		Undead: "💀 **Undead:** The deathless. King starts with Necromancy +1 and a free skeletal unit. Skeletal armies cost just 1g, need no Druid skill, **always** fight fanatically (+50% under the king, +30% under a hero), and never lose men fleeing a lost battle. **Harvest the Field** raises a grave as a soldier for 2g with no magic at all. Will not hire Divine heroes. One Undead realm per game."
 	}[sel.value] || "");
 }
-var UNIT_ABILITIES = {
-	"Shieldwall Levies": "Spear Hedge — cavalry facing them in the line fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Shieldwall — ×1.25 when an archer stands in the second line behind them.",
-	"Men-at-Arms": "Halberds — ×1.25 facing cavalry. Sergeants — Levies beside them in the front line fight ×1.1.",
-	"Free Lances": "Harriers — ×1.15 in a flank duel. Ride Them Down — in plains and desert only, each adds +6% to enemy losses when your side wins (max +18%). Works the same against neutral defenders — and theirs works the same against you.",
-	"Yeoman Longbows": "Bodkin Points — no penalty shooting cavalry from the second line (other archers fire at ×0.75). Prepared Ground — defending, they loose two pre-battle volleys.",
-	"Gilded Lances": "Lance Charge — ×1.15 facing foot, where cavalry is usually ×0.85 (a Spear Hedge still stops it). Knightly Example — while a Gilded Lances unit is in the army, your Levies and Men-at-Arms never lose a tier in defeat.",
-	"Noble Griffons": "Dive on the Bowmen — the enemy’s strongest second-line archer fights ×0.75. Screech Dive — a diving pre-battle strike scatters one enemy unit (2–4), one chance in two whatever the commander’s Druid.",
-	"Human Garrison": "Hold the Gate — defending, never hit from the side when the enemy line wraps its end. Town Watch — counts as Levies for Shieldwall and for anchoring the line.",
-	"Galleon Fleet": "Broadside — fires in the pre-battle archery phase during sea battles.",
-	"Forest Wardens": "Woodland Skirmish — ×1.15 in forest and jungle, whatever they face. Ambush — in forest or jungle, the side facing them gets no archery phase at all (unless Eagle Riders fly with it). Works attacking or defending, and against province defenders as well as another realm.",
-	"Elven Bowmen": "Volley at the Charge — ×1.25 shooting cavalry from the second line. Woodland Volley — double volley damage in forest and jungle.",
-	"Shadow Archers": "Marksmen — ×1.25 shooting archers from the second line, and they pick the best target anywhere along the enemy front. Loosed From Cover — cannot be targeted by enemy volleys (unless Eagle Riders fly with the shooters).",
-	"Stag Riders": "Through the Trees — the one cavalry that takes a flank in forest and jungle. Forest Runners — ×1.1 in forest and no penalty in jungle (see the roster).",
-	"Eagle Riders": "Stoop on the Horses — on open ground they may hold a flank slot no rider fills, and fight cavalry at ×1.25. Eyes of the Forest — while they fly with your shooters, an enemy Ambush is spoiled and Shadow Archers can be shot at.",
-	"Elven Garrison": "Thorn Hedge — cavalry facing it in forest or jungle ×0.85. Tree Watch — in forest or jungle it shoots in the archery step like an archer unit.",
-	"Elven Galleys": "Sea Archers — your ranged units ignore the land-unit penalty at sea.",
-	"Dwarven Guard": "Unbreakable — foot facing them in the line ×0.85, and they are never hit from the side. Shield Fort — when at least half the front line is Guard (a Dwarf Garrison counts), a beaten force never routs: with a retreat open it withdraws in good order (immune to pursuit losses and to demotion in retreat); trapped, it locks shields and holds the province contested with no flight casualties. In every battle, and for a province's own Guard defenders too.",
-	"Ironwood Crossbows": "Armour-Piercing — ×1.25 shooting a unit of base strength 6 or more from the second line. Punch Through — can soften a target to 55% instead of the usual 40% limit (90% instead of 80% against a winged rider).",
-	"Mountain Guns": "Bombard — ×1.15 from the second line, whatever they shoot. Bombardment — fire before all other ranged units, and +50% volley damage against garrisons.",
-	"Ironhoof Rams": "Battering Horns — a Ram riding free turns the enemy flank even when infantry anchor both ends of its line. Crag Charge — the one cavalry that takes a flank in the mountains.",
-	"Gnomish Gyrocopters": "Flak Gunners — ×1.25 when the enemy has flyers. Flak Screen — each engages one enemy flying unit before the battle (−30% strength). No two gyrocopters engage the same flyer.",
-	"Dwarf Garrison": "Stone Halls — foot facing it in the mountains ×0.9. Deep Halls — counts as Guard for Shield Fort.",
-	"Dwarf Ironclads": "Armoured Hulls — immune to pre-battle volleys.",
-	"Goblin Horde": "Arrow Fodder — second-line archers shooting them fire at ×0.75. Sheer Numbers — +10% strength per other orc foot unit in the force (Goblin Hordes, Berserkers, the Orc Garrison), max +30%.",
-	"Orc Berserkers": "Frenzy — ×1.15 facing foot. Driven Before Them — +10% for each Goblin Horde beside them in the front line.",
-	"Black Arrows": "Brawling Archers — full strength when forced into the front line, where other archers fight ×0.75. Raiders’ Volley — their pre-battle volley does ×1.5 when attacking.",
-	"Warg Riders": "Wolves Panic Horses — ×1.25 facing cavalry. Run Them Down — if at least half your winning force are Wargs, they run the beaten army down on the field: every beaten unit is 15% more likely to be destroyed in the rout, on any ground (not against a Dwarven Shield Fort). There is no chase afterwards. Against neutral guards, who never flee, they end the fight fast instead: half casualties for you on a win.",
-	"Wyvern Riders": "Terror From Above — the enemy’s strongest front-line unit fights ×0.85. Acid Spit — a pre-battle strike on one enemy unit (2–5), one chance in two whatever the commander’s Druid.",
-	"Orc Garrison": "Bloodthirsty — defending, ×1.15 facing foot. Raiders’ Muster — an orcish province that sees an orc realm win there gains a Goblin Horde in its garrison at turn’s end, for nothing.",
-	"Orcish Longships": "Reaver Crews — the whole force fights at +25% in any battle the phase it lands from these ships, even if another hero takes command of the combined host.",
-	"Whale Cohort": "Breach and Swamp — 25% chance each to sink one enemy fleet outright before the battle is fought.",
-	Thunderbirds: "Storm Wings — every enemy unit in the air fights ×0.85. Lightning Strike: a pre-battle strike on one enemy unit (4–8). Storm-birds of the high crags that fight from the air, taking no place in the line.",
-	"Forest Ents": "Rooted — never hit from the side when the enemy line wraps their end. Choking Spores: a pre-battle strike across the whole enemy line (2–4 each). At home in forest and jungle (terrain ×1.15), withering in the desert.",
-	"Stone Giants": "Boulder Wall — cavalry facing them fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Boulder Barrage: a pre-battle strike that shatters one enemy unit (4–7). At home in the mountains (terrain ×1.15); slow.",
-	"Cave Trolls": "Regenerating Hide — after a lost battle, a 30% chance to shrug off a death roll. Hurled Rubble: a pre-battle strike on one enemy unit (4–7). At home in the mountains and the forest (terrain ×1.15 and ×1.1).",
-	"Manticore Pride": "Relentless Hunt — ×1.25 strength when their side is the attacker, and when at least half the winning force are Manticores the beaten foe takes +15% rout losses. Spine Volley: a pre-battle strike across every enemy unit (2–4 each). Fights from the air.",
-	"Basilisk Brood": "Stone Deterrent — ×1.25 strength when their side is defending. Petrifying Gaze: a pre-battle strike across the whole enemy line (2–4 each).",
-	"Crimson Rocs": "Air Superiority — ×1.3 strength when the enemy fields ranged troops. Thunderous Stoop: a pre-battle strike scatters one enemy unit (5–9). Fights from the air, taking no place in the line.",
-	"Elder Dragons": "Wyrmscale — ×1.25 strength in every battle. Dragonfire Breath: a pre-battle strike that washes every enemy unit in fire (3–6 each). Fights from the air, taking no place in the line.",
-	"Titan Warbeasts": "Colossal Bulk — fights from the second line at full strength. World-Shaking Charge: a pre-battle strike that unbalances every enemy unit (3–6 each). At home on the plain and in the desert (terrain ×1.1).",
-	"Sea Giants": "Tidal Might — ×1.2 strength in a coastal land province (one bordering the sea). Tidal Surge: a pre-battle strike on one enemy unit (4–8).",
-	"Eldritch Kraken": "Deepwater Grasp — ×1.35 strength at sea. Crushing Coils: a pre-battle strike that drags one enemy unit under (5–9).",
-	"Dread Hydras": "Many Heads — ×1.25 facing foot. Venom Breath: a pre-battle strike across the whole enemy line (3–6 each). The greatest of the Monsters, at home in jungle and forest (terrain ×1.1 and ×1.05).",
-	"Shark Shoals": "Shoal Swarm — +10% strength per other Shark Shoals in the force, to +30%. Feeding Frenzy — when at least half the winning force are shoals, a foe beaten at sea takes +15% rout losses. A shoal is no hull: it carries nothing.",
-	"Great Bears": "Maul — ×1.15 facing foot. Thick Hide — pre-battle volleys against them do half. At home in forest and mountain (terrain ×1.1), poor in the desert; move 3.",
-	"Unicorn Herd": "Purity — ×1.25 facing Monsters and skeletons, and it breaks a Spear Hedge or a Boulder Wall (no ×0.75 cap). Through the Glades — the one cavalry, with the Stag Riders, that takes a flank in forest and jungle. At home on the plain and in the forest (terrain ×1.1).",
-	"Mammoth Host": "Trample — ×1.15 facing foot. Stampede: a pre-battle strike across the whole enemy line (2–4 each). At home on the open plain (terrain ×1.1), ill at ease under trees; slow.",
-	"Great Turtles": "Island Back — carries two land units a hull, where a fleet carries one. Shell Wall — immune to pre-battle volleys, as the Ironclads. Island-backed turtles of the prosperous seas that swim under their own power; slow."
-};
 function unitAbilityText(type) {
 	return UNIT_ABILITIES[type] || "";
 }
@@ -6787,14 +6911,6 @@ function capitalise(s) {
 var HUMANOID_RACES_UI = new Set(KC_HUMANOID_RACES);
 var CREATURE_ARMIES_UI = new Set(KC_UNIT_CLASS.creature);
 var MONSTER_ARMIES_UI = new Set(KC_UNIT_CLASS.monster);
-var DRUID_LEVEL_OF_P = (() => {
-	const m = {};
-	Object.entries(KC_DRUID_LEVELS).forEach(([lvl, types]) => types.forEach((t) => {
-		m[t] = +lvl;
-	}));
-	return m;
-})();
-var TAMED_FLYERS_P = new Set(KC_UNIT_CLASS.tamedFlyer);
 function druidNeedP(a, c, report) {
 	const rep = report || currentReport || {};
 	if (!a || a.skeletal || a._isSkeletal) return {
@@ -6803,18 +6919,16 @@ function druidNeedP(a, c, report) {
 		shortfall: 0,
 		counts: false
 	};
-	let req = DRUID_LEVEL_OF_P[a.type] || 0;
 	const realmAlign = rep.kingdom && rep.kingdom.alignment || null;
-	if (req > 0 && CREATURE_ARMIES_UI.has(a.type) && (realmAlign === "Druidic" || c && c.alignment === "Druidic")) req = 0;
-	if (req > 0 && MONSTER_ARMIES_UI.has(a.type) && (realmAlign === "Evil" || c && c.alignment === "Evil")) req = 0;
-	if (req > 0 && TAMED_FLYERS_P.has(a.type) && (rep.discoveries || []).some((d) => d && d.id === "sd40")) req = 0;
+	const tamed = TAMED_FLYER_TYPES_D.has(a.type) && (rep.discoveries || []).some((d) => d && d.id === "sd40");
+	const req = druidLevelALeaderNeeds(a.type, realmAlign, c && c.alignment, tamed);
 	const druLevel = effSkillP(c, "druid");
 	const sameRace = !!(a.race && c && a.race === c.race);
-	const effDru = sameRace ? Math.max(1, druLevel) : druLevel;
+	const effDru = druidALeaderBringsToAUnit(druLevel, sameRace);
 	return {
 		req,
 		effDru,
-		shortfall: Math.max(0, req - effDru),
+		shortfall: druidShortfall(req, effDru),
 		counts: req > 0 && !(sameRace && req <= 1)
 	};
 }
@@ -8966,75 +9080,29 @@ function returnToCurrentReport() {
 var PO_SEA_TYPES = new Set(KC_UNIT_CLASS.sea);
 var PO_CARRIER_TYPES = new Set(KC_UNIT_CLASS.carrier);
 var PO_AERIAL_TYPES = new Set(KC_UNIT_CLASS.aerial);
-var PO_FLYING_TYPES = new Set(KC_UNIT_CLASS.flying);
-var PO_LIGHT_TYPES = /* @__PURE__ */ new Set([...KC_UNIT_CLASS.lightFoot, "__projected foot__"]);
 var PO_PROJECTED_FOOT = "__projected foot__";
+var takesHalfAHullAboardOrIsYetToBeRaised = (a) => a.type === PO_PROJECTED_FOOT || takesHalfAHullAboard(a);
 function poSeaAnalysis(armies, navalRaw) {
 	const A = (armies || []).filter(Boolean);
-	const hulls = A.reduce((s, a) => s + (PO_CARRIER_TYPES.has(a.type) ? KC_CARRIER_BERTHS && KC_CARRIER_BERTHS[a.type] || 1 : 0), 0);
-	const seaBeasts = A.filter((a) => PO_SEA_TYPES.has(a.type) && !PO_CARRIER_TYPES.has(a.type)).length;
-	const flyers = A.filter((a) => PO_FLYING_TYPES.has(a.type)).length;
-	const aerial = A.filter((a) => PO_AERIAL_TYPES.has(a.type)).length;
-	const land = A.filter((a) => !PO_AERIAL_TYPES.has(a.type) && !PO_SEA_TYPES.has(a.type));
 	const navalL8 = (navalRaw || 0) >= 8;
-	const hullCap = hulls * (navalL8 ? 2 : 1);
-	const out = {
-		cap: "all",
-		hulls,
-		seaBeasts,
-		flyers,
-		aerial,
-		landCount: land.length,
-		hullCap,
+	const lift = seaLiftOfAColumn(A, navalL8, takesHalfAHullAboardOrIsYetToBeRaised);
+	return {
+		cap: lift.answer,
+		hulls: lift.berths,
+		seaBeasts: A.filter((a) => PO_SEA_TYPES.has(a.type) && !PO_CARRIER_TYPES.has(a.type)).length,
+		flyers: lift.humanoidFlyers,
+		aerial: A.filter((a) => PO_AERIAL_TYPES.has(a.type)).length,
+		landCount: lift.landUnits,
+		hullCap: lift.berthsUnderItsLeader,
 		navalL8,
-		lifted: getFlyCapability(A),
+		lifted: lift.flyersLiftTheWholeColumn,
 		allAerial: A.length > 0 && A.every((a) => PO_AERIAL_TYPES.has(a.type)),
 		allSea: A.length > 0 && A.every((a) => PO_SEA_TYPES.has(a.type)),
 		total: A.length,
-		mustSail: 0,
-		short: 0,
-		shortNames: []
+		mustSail: lift.unitsThatMustSail,
+		short: lift.unitsLeftAshore.length,
+		shortNames: lift.unitsLeftAshore.map((a) => a.unitName || a.type)
 	};
-	if (!A.length || !land.length) return out;
-	if (out.lifted) {
-		out.cap = "sea";
-		return out;
-	}
-	const capOf = (a) => PO_LIGHT_TYPES.has(a.type) ? .5 : 1;
-	const mustSail = land.filter((a) => !isAirCarriable(a));
-	const liftable = land.filter((a) => isAirCarriable(a));
-	out.mustSail = mustSail.length;
-	let room = hullCap - mustSail.reduce((s, a) => s + capOf(a), 0);
-	if (room < 0) {
-		out.cap = "land";
-		let over = -room, i = 0;
-		const order = mustSail.slice().sort((a, b) => capOf(b) - capOf(a));
-		while (over > 0 && i < order.length) {
-			out.shortNames.push(order[i].unitName || order[i].type);
-			over -= capOf(order[i]);
-			i++;
-		}
-		out.short = out.shortNames.length;
-		return out;
-	}
-	let byAir = 0;
-	const airQueue = [];
-	liftable.slice().sort((a, b) => capOf(a) - capOf(b)).forEach((a) => {
-		const c2 = capOf(a);
-		if (room >= c2) room -= c2;
-		else {
-			byAir++;
-			airQueue.push(a);
-		}
-	});
-	if (byAir <= flyers) {
-		out.cap = "sea";
-		return out;
-	}
-	out.cap = "land";
-	out.short = byAir - flyers;
-	out.shortNames = airQueue.slice(flyers).map((a) => a.unitName || a.type);
-	return out;
 }
 var PO_UNCOUNTABLE_ACTIONS = /* @__PURE__ */ new Set(["Awaken Grove", "Wild Calling"]);
 var PO_UNCOUNTABLE_SPELLS = /* @__PURE__ */ new Set([
@@ -10197,10 +10265,6 @@ function _lairName(f) {
 	const col = GUARD_POWER_COLORS_P[f.monsterPower || f.power] || null;
 	return col ? kcHtml`<span style="color:${col}">${f.name}</span>` : f.name || "";
 }
-function beastCommandCountP(a) {
-	const C = /* @__PURE__ */ new Set([...KC_UNIT_CLASS.creature, ...KC_UNIT_CLASS.monster]);
-	return !!a && C.has(a.type) && !a.skeletal && !a._isSkeletal && !a.temporary && !a._temporary && !a.wildHunt && a._wildHuntUntilTurn == null && !a.phantom;
-}
 function terrorNoteP(pd, light) {
 	const t = pd && pd.terror;
 	if (!t || !(t.pct > 0)) return "";
@@ -10904,8 +10968,8 @@ Object.assign(window, {
 	buildOrdersForm,
 	buildTargetField,
 	computeOrderLedgerP,
-	DRUID_LEVEL_OF_P,
 	druidNeedP,
+	getDruidLevel,
 	initMessaging,
 	loadMessageRoster,
 	loadMyGames,
