@@ -513,6 +513,298 @@ var _ITEM_NAME_ALTS = {
 	"Shield of the Ward-Saints": ["Icon Shield", "Shield of the Painted Martyrs"],
 	"Dragonbone Shield": ["Wyrmbone Shield", "Shield of the Unshaken Arm"]
 };
+var SPELL_DEFS_P = {
+	Resurrect: {
+		school: "white",
+		target: "character",
+		encounter: false,
+		phase: true,
+		desc: "Action: bring a slain hero back to life at full health — without their possessions. The body must lie in your province and must not already have been raised this turn. Your own most recently fallen KING may be recalled this way (his body is borne home), and reclaims the throne; a rival's king never can.",
+		fn: "white_resurrect"
+	},
+	"Part Sea": {
+		school: "white",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: any sea OR land province you are in or adjacent to. A sea province (including a land province flooded to sea earlier this turn) becomes plains for the rest of this turn; fleets cannot enter or leave it from the next phase onward. Cast on still-dry land it finds no sea to part. Cancels Flood.",
+		fn: "white_part_sea"
+	},
+	"Bless Province": {
+		school: "white",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: a province you are in or adjacent to gains +60% tax base this turn (+80% for Divine realms; +100% when the Divine KING casts it in person). The blessed ground is also WARDED: a 50% + 5% per White level chance (counted to level 5, so 50–75%) to turn aside each enemy Flood, Earthquake, Plague or Part Sea cast there this turn. Only one Bless can affect a province at a time (does not stack).",
+		fn: "white_bless_province"
+	},
+	"Holy Symbol": {
+		school: "white",
+		target: "none",
+		encounter: true,
+		phase: true,
+		desc: "Action: cleanses the province the caster stands in of all its battlefield dead — every grave there is laid to rest and can no longer be raised by any necromancer. Combat: the opponent suffers −8% per caster level to hit and is seared for 6% of its health (both ×1.5 against undead and fiends), and the caster recovers 10% of their own. Battle magic: all enemy undead units fight at 75% base strength.",
+		fn: "white_holy_symbol"
+	},
+	Spiritwrack: {
+		school: "white",
+		target: "none",
+		encounter: true,
+		phase: false,
+		desc: "Combat: for 1 round, plus 1 per two White levels (at most 3), the target cannot cast spells, use its powers or use archery (reaching for one, it attacks instead), and its melee damage is halved. Battle magic: all missile units fight at half base strength.",
+		fn: "white_spiritwrack"
+	},
+	Charm: {
+		school: "psychic",
+		target: "character",
+		encounter: true,
+		phase: true,
+		desc: "Action: hire a wandering hero in your province for free (you still pay upkeep), or seize a general's command of an armyless enemy hero for the rest of the turn (reverts to its owner at end of turn). Combat: doubles the chance of a later successful Flee.",
+		fn: "psychic_charm"
+	},
+	Oratory: {
+		school: "psychic",
+		target: "character",
+		encounter: false,
+		phase: true,
+		desc: "Action: every army travelling with the target (self or an ally in your province) gains +1 quality level for the rest of the turn. Not cumulative.",
+		fn: "psychic_oratory"
+	},
+	Clairvoyance: {
+		school: "psychic",
+		target: "character",
+		encounter: false,
+		phase: true,
+		desc: "Action: everything that happens to the target enemy character becomes known to you for the rest of the turn, reported in your Realm Events. Cannot be cast on a neutral or wandering hero. Only one Clairvoyance may be active at a time — a new casting replaces the old.",
+		fn: "psychic_clairvoyance"
+	},
+	"Psychic Blast": {
+		school: "psychic",
+		target: "character",
+		encounter: true,
+		phase: true,
+		desc: "Action: the target loses 2 skill levels, each drawn from a random owned skill (the two picks may be the same skill). Combat: the opponent can do nothing at all for 1 round, plus 1 per two Psychic levels (3 at Psychic 5), unless a stun ward turns it. Battle magic: negates the enemy commander's Druid skill for the battle.",
+		fn: "psychic_blast"
+	},
+	"Telekinetic Storm": {
+		school: "psychic",
+		target: "character",
+		encounter: true,
+		phase: true,
+		desc: "Action: a number of the target's units equal to your skill level are struck — Green units are destroyed outright, and every other struck unit PERMANENTLY drops one experience level; a skeletal unit struck by it shatters outright. Combat: deals 12% of the target's max HP, plus 3% per Psychic level (15% at 1, 27% at 5), as damage; the caster takes a quarter of that. Battle magic: negates the enemy commander's Tactical bonus.",
+		fn: "psychic_storm"
+	},
+	"Illusory Terrain": {
+		school: "illusory",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: a province you are in or adjacent to shows enemies a false, ever-shifting terrain on their maps. Any enemy who fights there is disoriented — each of their units fights as if caught in the worst terrain for its kind, always at least a 15% strength reduction. An enemy hero who enters dispels it at the end of that turn; otherwise 20% chance to fade each turn.",
+		fn: "illusory_terrain"
+	},
+	"Phantasmal Armies": {
+		school: "illusory",
+		target: "character",
+		encounter: false,
+		phase: true,
+		desc: "Action: phantasmal duplicates of 10% per caster level (counted to level 5, minimum 1) of the humanoid armies led by you or an allied hero in your province join that force for the rest of the turn — they fight but never appear in the roster, and melt away if their originals fall or the force is beaten.",
+		fn: "illusory_phantasmal"
+	},
+	"Hide Lairs": {
+		school: "illusory",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: veil an entire province you are in or adjacent to — every lair within becomes invisible to all other players, who cannot discover any lair there (though any they already found remains theirs). 20% chance to fade each turn.",
+		fn: "illusory_hide_feature"
+	},
+	Invisibility: {
+		school: "illusory",
+		target: "none",
+		encounter: true,
+		phase: true,
+		desc: "Combat: enemies suffer −10%, and a further −4% per Illusory level (−14% at 1, −30% at 5), to hit the caster for the fight, and the caster gains +30% to Flee. Action: cast on yourself — 80% chance that no enemy player sees you (sightings, spies, encounter targeting, the map) for the rest of the turn, and every enemy order and ambush aimed at you misses you.",
+		fn: "illusory_invisibility"
+	},
+	"Mirror Image": {
+		school: "illusory",
+		target: "none",
+		encounter: true,
+		phase: false,
+		desc: "Combat: conjures a phantom duplicate of your opponent that they must fight while you concentrate (taking no other actions). Each round they may disbelieve it (4% per total skill level); casting it again dissipates both images.",
+		fn: "illusory_mirror_image"
+	},
+	"Lightning Bolt": {
+		school: "elemental",
+		target: "none",
+		encounter: true,
+		phase: false,
+		desc: "Combat: deals 1–3 damage per caster level (counted to level 5) to the opponent. Battle magic: the bolt leaps from army to army — a number of enemy armies equal to your level each lose 20% of their strength for the battle.",
+		fn: "elemental_lightning"
+	},
+	Fireball: {
+		school: "elemental",
+		target: "none",
+		encounter: true,
+		phase: false,
+		desc: "Combat: burns the target for 10% of its health each round, plus 2% per Elemental level (12% at 1, 20% at 5), for three rounds. Battle magic: the strongest enemy army unit has its base strength halved for the battle.",
+		fn: "elemental_fireball"
+	},
+	Earthquake: {
+		school: "elemental",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: a province you are in or adjacent to yields no tax revenue at the end of this turn.",
+		fn: "elemental_earthquake"
+	},
+	Flood: {
+		school: "elemental",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: a land province you are in or adjacent to acts as a sea province for the rest of the turn (cancels Part Sea).",
+		fn: "elemental_flood"
+	},
+	"Elemental Summon": {
+		school: "elemental",
+		target: "none",
+		encounter: false,
+		phase: true,
+		desc: "Action: summon a random elemental (Air, Fire, Earth, Water or Darkness) to fight under your command for the rest of the turn, then it dissolves. Roughly as strong as a powerful primal unit.",
+		fn: "elemental_summon"
+	},
+	"Control Undead": {
+		school: "necromancy",
+		target: "character",
+		encounter: true,
+		phase: true,
+		desc: "Action: seize one random undead army unit from a neutral/enemy character in your province — or cast it on your own province to sense the battlefield dead lying there, unit by unit, and to learn which of the SURROUNDING provinces hold graves of their own (that they do, never how many or what). Combat: an undead foe cannot act for a number of rounds equal to your Necromancy level (counted to 5), unless a stun ward turns it. Battle magic: one random enemy undead unit defects to your side.",
+		fn: "necromancy_control"
+	},
+	"Skeletal Armies": {
+		school: "necromancy",
+		target: "none",
+		encounter: false,
+		phase: true,
+		desc: "Action: raise the most experienced dead army units lying in your province as skeletal versions under your command — 1 unit at Necromancy 1–2, 2 at Necromancy 3–4, 3 at Necromancy 5+.",
+		fn: "necromancy_skeletal"
+	},
+	Curse: {
+		school: "necromancy",
+		target: "character",
+		encounter: true,
+		phase: true,
+		desc: "Action: EVERY skill the target has is halved (rounded down) for the rest of the turn. Combat: the target's best combat ability is halved for the fight. Battle magic: the enemy commander's best combat-affecting skill (Tactical, Druid or Naval) is halved for the battle.",
+		fn: "necromancy_curse"
+	},
+	"Hand of Death": {
+		school: "necromancy",
+		target: "none",
+		encounter: true,
+		phase: false,
+		desc: "Combat: 10% per Necromancy level (at most 60%) to strike for 40% of the enemy's maximum health (×1.1 with Death's Finger Ring).",
+		fn: "necromancy_hand"
+	},
+	Plague: {
+		school: "necromancy",
+		target: "province",
+		encounter: false,
+		phase: true,
+		desc: "Action: in your province or an adjacent one, each humanoid army unit has a (10% + 5%/level) chance to drop an experience level; survivors are immunised (half chance thereafter). The plague then spreads to adjacent provinces (15% each per phase) until turn's end. Not cumulative.",
+		fn: "necromancy_plague"
+	},
+	Sanctuary: {
+		school: "white",
+		target: "province",
+		encounter: false,
+		phase: true,
+		reqLevel: 7,
+		desc: "Action (White 7): ward a province you are in or adjacent to. Enemy armies fighting there this turn do so at −25% strength.",
+		fn: "white_sanctuary"
+	},
+	"Divine Judgment": {
+		school: "white",
+		target: "character",
+		encounter: false,
+		phase: true,
+		reqLevel: 9,
+		desc: "Action (White 9): smite an enemy hero in your province — heavy holy damage to them, and several of the units they lead are destroyed.",
+		fn: "white_judgment"
+	},
+	"Mass Confusion": {
+		school: "psychic",
+		target: "character",
+		encounter: false,
+		phase: true,
+		reqLevel: 7,
+		desc: "Action (Psychic 7): an enemy hero in your province loses all Tactical command in their next battle this turn.",
+		fn: "psychic_massconfusion"
+	},
+	Dominate: {
+		school: "psychic",
+		target: "character",
+		encounter: false,
+		phase: true,
+		reqLevel: 9,
+		desc: "Action (Psychic 9): seize the mind of an enemy hero in your province — up to half the armies they lead defect to you.",
+		fn: "psychic_dominate"
+	},
+	"Phantom Host": {
+		school: "illusory",
+		target: "none",
+		encounter: false,
+		phase: true,
+		reqLevel: 7,
+		desc: "Action (Illusory 7): phantasmal duplicates of 15% per caster level (min 1) of the monsters/creatures you lead join your force for the rest of the turn — they fight but never appear in your roster, and melt away if their originals fall or the force is beaten.",
+		fn: "illusory_phantomhost"
+	},
+	Veil: {
+		school: "illusory",
+		target: "none",
+		encounter: false,
+		phase: true,
+		reqLevel: 9,
+		desc: "Action (Illusory 9): for this phase and the next, you and the armies you lead vanish from enemy sight and cannot be targeted or affected by any hostile spell.",
+		fn: "illusory_veil"
+	},
+	"Chain Lightning": {
+		school: "elemental",
+		target: "character",
+		encounter: false,
+		phase: true,
+		reqLevel: 7,
+		desc: "Action (Elemental 7): arcing lightning tears through an enemy hero in your province — 30% of the units they lead are caught, and each caught unit has a 50% chance to be destroyed.",
+		fn: "elemental_chainlightning"
+	},
+	Cataclysm: {
+		school: "elemental",
+		target: "province",
+		encounter: false,
+		phase: true,
+		reqLevel: 9,
+		desc: "Action (Elemental 9): devastate a province you are in or adjacent to — every enemy force there loses units, and the province tax base is permanently reduced to 0.",
+		fn: "elemental_cataclysm"
+	},
+	"Raise Wraiths": {
+		school: "necromancy",
+		target: "none",
+		encounter: false,
+		phase: true,
+		reqLevel: 7,
+		desc: "Action (Necromancy 7): raise the strongest of your province's battlefield dead as an elite Wraith — whose Wraith's Touch permanently withers a highest-experience enemy unit each battle it fights.",
+		fn: "necromancy_wraiths"
+	},
+	"Death's Dominion": {
+		school: "necromancy",
+		target: "none",
+		encounter: false,
+		phase: true,
+		reqLevel: 9,
+		desc: "Action (Necromancy 9): the fallen of your province rise en masse — raise several skeletal units at once from its battlefield graves, each risen one experience level higher.",
+		fn: "necromancy_dominion"
+	}
+};
 var KC_UNIT_CLASS = {
 	flying: [
 		"Eagle Riders",
@@ -961,6 +1253,56 @@ var KC_GRAND_DESIGNS = {
 		desc: "Your monsters and creatures cost half their wages and muster as Veterans."
 	}
 };
+KC_UNIT_CLASS.garrison;
+var UNIT_ABILITIES = {
+	"Shieldwall Levies": "Spear Hedge — cavalry facing them in the line fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Shieldwall — ×1.25 when an archer stands in the second line behind them.",
+	"Men-at-Arms": "Halberds — ×1.25 facing cavalry. Sergeants — Levies beside them in the front line fight ×1.1.",
+	"Free Lances": "Harriers — ×1.15 in a flank duel. Ride Them Down — in plains and desert only, each adds +6% to enemy losses when your side wins (max +18%). Works the same against neutral defenders — and theirs works the same against you.",
+	"Yeoman Longbows": "Bodkin Points — no penalty shooting cavalry from the second line (other archers fire at ×0.75). Prepared Ground — defending, they loose two pre-battle volleys.",
+	"Gilded Lances": "Lance Charge — ×1.15 facing foot, where cavalry is usually ×0.85 (a Spear Hedge still stops it). Knightly Example — while a Gilded Lances unit is in the army, your Levies and Men-at-Arms never lose a tier in defeat.",
+	"Noble Griffons": "Dive on the Bowmen — the enemy’s strongest second-line archer fights ×0.75. Screech Dive — a diving pre-battle strike scatters one enemy unit (2–4), one chance in two whatever the commander’s Druid.",
+	"Human Garrison": "Hold the Gate — defending, never hit from the side when the enemy line wraps its end. Town Watch — counts as Levies for Shieldwall and for anchoring the line.",
+	"Galleon Fleet": "Broadside — fires in the pre-battle archery phase during sea battles.",
+	"Forest Wardens": "Woodland Skirmish — ×1.15 in forest and jungle, whatever they face. Ambush — in forest or jungle, the side facing them gets no archery phase at all (unless Eagle Riders fly with it). Works attacking or defending, and against province defenders as well as another realm.",
+	"Elven Bowmen": "Volley at the Charge — ×1.25 shooting cavalry from the second line. Woodland Volley — double volley damage in forest and jungle.",
+	"Shadow Archers": "Marksmen — ×1.25 shooting archers from the second line, and they pick the best target anywhere along the enemy front. Loosed From Cover — cannot be targeted by enemy volleys (unless Eagle Riders fly with the shooters).",
+	"Stag Riders": "Through the Trees — the one cavalry that takes a flank in forest and jungle. Forest Runners — ×1.1 in forest and no penalty in jungle (see the roster).",
+	"Eagle Riders": "Stoop on the Horses — on open ground they may hold a flank slot no rider fills, and fight cavalry at ×1.25. Eyes of the Forest — while they fly with your shooters, an enemy Ambush is spoiled and Shadow Archers can be shot at.",
+	"Elven Garrison": "Thorn Hedge — cavalry facing it in forest or jungle ×0.85. Tree Watch — in forest or jungle it shoots in the archery step like an archer unit.",
+	"Elven Galleys": "Sea Archers — your ranged units ignore the land-unit penalty at sea.",
+	"Dwarven Guard": "Unbreakable — foot facing them in the line ×0.85, and they are never hit from the side. Shield Fort — when at least half the front line is Guard (a Dwarf Garrison counts), a beaten force never routs: with a retreat open it withdraws in good order (immune to pursuit losses and to demotion in retreat); trapped, it locks shields and holds the province contested with no flight casualties. In every battle, and for a province's own Guard defenders too.",
+	"Ironwood Crossbows": "Armour-Piercing — ×1.25 shooting a unit of base strength 6 or more from the second line. Punch Through — can soften a target to 55% instead of the usual 40% limit (90% instead of 80% against a winged rider).",
+	"Mountain Guns": "Bombard — ×1.15 from the second line, whatever they shoot. Bombardment — fire before all other ranged units, and +50% volley damage against garrisons.",
+	"Ironhoof Rams": "Battering Horns — a Ram riding free turns the enemy flank even when infantry anchor both ends of its line. Crag Charge — the one cavalry that takes a flank in the mountains.",
+	"Gnomish Gyrocopters": "Flak Gunners — ×1.25 when the enemy has flyers. Flak Screen — each engages one enemy flying unit before the battle (−30% strength). No two gyrocopters engage the same flyer.",
+	"Dwarf Garrison": "Stone Halls — foot facing it in the mountains ×0.9. Deep Halls — counts as Guard for Shield Fort.",
+	"Dwarf Ironclads": "Armoured Hulls — immune to pre-battle volleys.",
+	"Goblin Horde": "Arrow Fodder — second-line archers shooting them fire at ×0.75. Sheer Numbers — +10% strength per other orc foot unit in the force (Goblin Hordes, Berserkers, the Orc Garrison), max +30%.",
+	"Orc Berserkers": "Frenzy — ×1.15 facing foot. Driven Before Them — +10% for each Goblin Horde beside them in the front line.",
+	"Black Arrows": "Brawling Archers — full strength when forced into the front line, where other archers fight ×0.75. Raiders’ Volley — their pre-battle volley does ×1.5 when attacking.",
+	"Warg Riders": "Wolves Panic Horses — ×1.25 facing cavalry. Run Them Down — if at least half your winning force are Wargs, they run the beaten army down on the field: every beaten unit is 15% more likely to be destroyed in the rout, on any ground (not against a Dwarven Shield Fort). There is no chase afterwards. Against neutral guards, who never flee, they end the fight fast instead: half casualties for you on a win.",
+	"Wyvern Riders": "Terror From Above — the enemy’s strongest front-line unit fights ×0.85. Acid Spit — a pre-battle strike on one enemy unit (2–5), one chance in two whatever the commander’s Druid.",
+	"Orc Garrison": "Bloodthirsty — defending, ×1.15 facing foot. Raiders’ Muster — an orcish province that sees an orc realm win there gains a Goblin Horde in its garrison at turn’s end, for nothing.",
+	"Orcish Longships": "Reaver Crews — the whole force fights at +25% in any battle the phase it lands from these ships, even if another hero takes command of the combined host.",
+	"Whale Cohort": "Breach and Swamp — 25% chance each to sink one enemy fleet outright before the battle is fought.",
+	Thunderbirds: "Storm Wings — every enemy unit in the air fights ×0.85. Lightning Strike: a pre-battle strike on one enemy unit (4–8). Storm-birds of the high crags that fight from the air, taking no place in the line.",
+	"Forest Ents": "Rooted — never hit from the side when the enemy line wraps their end. Choking Spores: a pre-battle strike across the whole enemy line (2–4 each). At home in forest and jungle (terrain ×1.15), withering in the desert.",
+	"Stone Giants": "Boulder Wall — cavalry facing them fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Boulder Barrage: a pre-battle strike that shatters one enemy unit (4–7). At home in the mountains (terrain ×1.15); slow.",
+	"Cave Trolls": "Regenerating Hide — after a lost battle, a 30% chance to shrug off a death roll. Hurled Rubble: a pre-battle strike on one enemy unit (4–7). At home in the mountains and the forest (terrain ×1.15 and ×1.1).",
+	"Manticore Pride": "Relentless Hunt — ×1.25 strength when their side is the attacker, and when at least half the winning force are Manticores the beaten foe takes +15% rout losses. Spine Volley: a pre-battle strike across every enemy unit (2–4 each). Fights from the air.",
+	"Basilisk Brood": "Stone Deterrent — ×1.25 strength when their side is defending. Petrifying Gaze: a pre-battle strike across the whole enemy line (2–4 each).",
+	"Crimson Rocs": "Air Superiority — ×1.3 strength when the enemy fields ranged troops. Thunderous Stoop: a pre-battle strike scatters one enemy unit (5–9). Fights from the air, taking no place in the line.",
+	"Elder Dragons": "Wyrmscale — ×1.25 strength in every battle. Dragonfire Breath: a pre-battle strike that washes every enemy unit in fire (3–6 each). Fights from the air, taking no place in the line.",
+	"Titan Warbeasts": "Colossal Bulk — fights from the second line at full strength. World-Shaking Charge: a pre-battle strike that unbalances every enemy unit (3–6 each). At home on the plain and in the desert (terrain ×1.1).",
+	"Sea Giants": "Tidal Might — ×1.2 strength in a coastal land province (one bordering the sea). Tidal Surge: a pre-battle strike on one enemy unit (4–8).",
+	"Eldritch Kraken": "Deepwater Grasp — ×1.35 strength at sea. Crushing Coils: a pre-battle strike that drags one enemy unit under (5–9).",
+	"Dread Hydras": "Many Heads — ×1.25 facing foot. Venom Breath: a pre-battle strike across the whole enemy line (3–6 each). The greatest of the Monsters, at home in jungle and forest (terrain ×1.1 and ×1.05).",
+	"Shark Shoals": "Shoal Swarm — +10% strength per other Shark Shoals in the force, to +30%. Feeding Frenzy — when at least half the winning force are shoals, a foe beaten at sea takes +15% rout losses. A shoal is no hull: it carries nothing.",
+	"Great Bears": "Maul — ×1.15 facing foot. Thick Hide — pre-battle volleys against them do half. At home in forest and mountain (terrain ×1.1), poor in the desert; move 3.",
+	"Unicorn Herd": "Purity — ×1.25 facing Monsters and skeletons, and it breaks a Spear Hedge or a Boulder Wall (no ×0.75 cap). Through the Glades — the one cavalry, with the Stag Riders, that takes a flank in forest and jungle. At home on the plain and in the forest (terrain ×1.1).",
+	"Mammoth Host": "Trample — ×1.15 facing foot. Stampede: a pre-battle strike across the whole enemy line (2–4 each). At home on the open plain (terrain ×1.1), ill at ease under trees; slow.",
+	"Great Turtles": "Island Back — carries two land units a hull, where a fleet carries one. Shell Wall — immune to pre-battle volleys, as the Ironclads. Island-backed turtles of the prosperous seas that swim under their own power; slow."
+};
 //#endregion
 //#region src/ui/player/startup.ts
 var KC_DB_MIN = "20261015062128";
@@ -1236,7 +1578,723 @@ function druidMasteryGainOver(levelCounted, levelNeeded) {
 	return Math.min(DRUID_MASTERY_CAP, DRUID_MASTERY_PER_LVL * Math.max(0, levelCounted - levelNeeded));
 }
 //#endregion
+//#region src/content/magic-item-effects-their-names-numbers-and-words.ts
+/** The `effect.stat` of a combat item: a potion, scroll or device carried into a personal combat, used once a fight
+*  (its `effect.use` says how), which a hero brings from his active items and a guardian from the hoard it wields. */
+var THE_STAT_OF_A_COMBAT_ITEM = "combatUse";
+/** The `effect.stat` of an item worn as armour: its effect is a ward (`effect.ward`, with its amount, percentage or
+*  hits), which personal combat merges into the wards its bearer wears. */
+var THE_STAT_OF_AN_ITEM_WORN_AS_ARMOUR = "armour";
+var THE_CAVALRY_THE_LANCERS_ITEMS_REACH = [
+	"Free Lances",
+	"Gilded Lances",
+	"Warg Riders",
+	"Eagle Riders",
+	"Noble Griffons",
+	"Stag Riders",
+	"Ironhoof Rams"
+];
+var THE_INFANTRY_THE_LEGIONS_ITEMS_REACH = [
+	"Shieldwall Levies",
+	"Dwarven Guard",
+	"Orc Berserkers",
+	"Men-at-Arms"
+];
+var THE_ARCHERS_THE_BOWMANS_ITEMS_REACH = [
+	"Yeoman Longbows",
+	"Elven Bowmen",
+	"Shadow Archers",
+	"Ironwood Crossbows",
+	"Black Arrows"
+];
+var THE_HEAVY_ENGINES_THE_ENGINEERS_ITEMS_REACH = ["Mountain Guns", "Dwarf Ironclads"];
+var THE_WORTH_OF_A_WARD_OF_AN_AMOUNT = { aPointIsWorth: 1.2 };
+var THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE = { percentagePointsForAPoint: 7 };
+var THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT = 10;
+var THE_WORTH_OF_A_BLOW = {
+	damageForAPoint: 3,
+	lingeringHarmForAPoint: 2,
+	aRoundStunnedIsWorth: 2,
+	toHitPenaltyForAPoint: 6
+};
+//#endregion
 //#region src/engine/rules-on-plain-values/items-slots-races-and-who-may-use-them.ts
+/** The stat the Mithril suit carries its effect by (its row's: plan P1-19t). */
+var THE_STAT_OF_THE_MITHRIL_SUIT = {
+	"army-bonus": {
+		name: "Battle Standard",
+		carriedAs: { stat: "armyBonus" },
+		numbers: { strengthAdded: {
+			value: 2,
+			theTextsWriteIt: "strength added"
+		} }
+	},
+	"cavalry-bonus": {
+		name: "Golden Spur",
+		carriedAs: { stat: "cavBonus" },
+		numbers: { multiplier: {
+			value: 1.25,
+			theTextsWriteIt: "a multiplier, as the share it adds"
+		} },
+		reaches: THE_CAVALRY_THE_LANCERS_ITEMS_REACH
+	},
+	"infantry-bonus": {
+		name: "Legionnaire's Mark",
+		carriedAs: { stat: "infBonus" },
+		numbers: { multiplier: {
+			value: 1.2,
+			theTextsWriteIt: "a multiplier, as the share it adds"
+		} },
+		reaches: THE_INFANTRY_THE_LEGIONS_ITEMS_REACH
+	},
+	"archer-bonus": {
+		name: "Eagle-Eye Pendant",
+		carriedAs: { stat: "archerStr" },
+		numbers: { multiplier: {
+			value: 1.3,
+			theTextsWriteIt: "a multiplier, as the share it adds"
+		} },
+		reaches: THE_ARCHERS_THE_BOWMANS_ITEMS_REACH
+	},
+	"heavy-bonus": {
+		name: "Engineer's Blueprint",
+		carriedAs: { stat: "heavyBonus" },
+		numbers: { strengthAdded: {
+			value: 4,
+			theTextsWriteIt: "strength added"
+		} },
+		reaches: THE_HEAVY_ENGINES_THE_ENGINEERS_ITEMS_REACH
+	},
+	"naval-bonus": {
+		name: "Kraken Figurehead",
+		carriedAs: { stat: "navalBonus" },
+		numbers: {},
+		reaches: KC_UNIT_CLASS.carrier
+	},
+	"fleet-strength": {
+		name: "Sea Chart of the Deep",
+		carriedAs: { field: "fleetStr" },
+		numbers: { strengthAdded: {
+			value: 1,
+			theTextsWriteIt: "strength added"
+		} },
+		reaches: KC_UNIT_CLASS.carrier
+	},
+	"admirals-spyglass": {
+		name: "Admiral's Spyglass",
+		carriedAs: { itemName: "Admiral's Spyglass" },
+		numbers: { strengthAdded: {
+			value: 2,
+			theTextsWriteIt: "strength added"
+		} },
+		reaches: KC_UNIT_CLASS.carrier
+	},
+	"chalice-of-dawn": {
+		name: "Chalice of Dawn",
+		carriedAs: { itemName: "Chalice of Dawn" },
+		numbers: { multiplier: {
+			value: 1.15,
+			theTextsWriteIt: "a multiplier, as the share it adds"
+		} },
+		forARealmThatIs: "Divine"
+	},
+	"undead-bonus": {
+		name: "Black Sceptre",
+		carriedAs: { stat: "undeadBonus" },
+		numbers: { strengthAdded: {
+			value: 4,
+			theTextsWriteIt: "strength added"
+		} },
+		reaches: "the skeletal units"
+	},
+	"fireball-strikes-two": {
+		name: "Ember Rune",
+		carriedAs: { field: "emberTwo" },
+		numbers: { theStrongestUnitsStruck: {
+			value: 2,
+			theTextsWriteIt: "the strongest units, in words"
+		} }
+	},
+	"strike-chance-bonus": {
+		name: "Totem of the Thunderhead",
+		carriedAs: { stat: "primalStrike" },
+		numbers: {}
+	},
+	"strike-chance-field": {
+		name: "Beastcaller's Warhorn",
+		carriedAs: { field: "primalStrike" },
+		numbers: {}
+	},
+	"land-units-at-full-strength-at-sea": {
+		name: "Tide-Caller's Horn",
+		carriedAs: { field: "landFullAtSea" },
+		numbers: {}
+	},
+	"home-defence-bonus": {
+		name: "Banner of the Realm",
+		carriedAs: { stat: "homeDefBonus" },
+		numbers: { multiplier: {
+			value: 1.25,
+			theTextsWriteIt: "a multiplier, as the share it adds"
+		} }
+	},
+	"siege-bonus": {
+		name: "Siege Master's Ring",
+		carriedAs: { stat: "siegeBonus" },
+		numbers: { theShareOfTheFortificationsLeft: {
+			value: .5,
+			theTextsWriteIt: "a share, in words"
+		} }
+	},
+	"quiver-of-the-hawk": {
+		name: "Quiver of the Hawk",
+		carriedAs: { itemName: "Quiver of the Hawk" },
+		numbers: { volleys: {
+			value: 2,
+			theTextsWriteIt: "volleys, in words"
+		} }
+	},
+	"quiver-of-many-arrows": {
+		name: "Quiver of Many Arrows",
+		carriedAs: { itemName: "Quiver of Many Arrows" },
+		numbers: { extraShots: {
+			value: 1,
+			theTextsWriteIt: "extra shots, in words"
+		} }
+	},
+	"war-horn-of-the-plains": {
+		name: "War-Horn of the Plains",
+		carriedAs: { itemName: "War-Horn of the Plains" },
+		numbers: {}
+	},
+	"shield-wall-rune": {
+		name: "Shield-Wall Rune",
+		carriedAs: { stat: "infStay" },
+		numbers: {}
+	},
+	"tax-bonus": {
+		name: "Ring of Wealth",
+		carriedAs: { stat: "taxBonus" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aGoldIsWorth: 1.2 }
+	},
+	"tax-per-province": {
+		name: "Merchant's Ledger",
+		carriedAs: { stat: "taxPerProv" },
+		numbers: { goldForEachProvince: {
+			value: 1,
+			theTextsWriteIt: "gold, for each province"
+		} }
+	},
+	"crystal-orb": {
+		name: "Crystal Orb",
+		carriedAs: { stat: "oracle" },
+		numbers: {}
+	},
+	"philosophers-lens": {
+		name: "Philosopher's Lens",
+		carriedAs: { itemName: "Philosopher's Lens" },
+		numbers: {}
+	},
+	"iron-heart-talisman": {
+		name: "Iron Heart Talisman",
+		carriedAs: { itemName: "Iron Heart Talisman" },
+		numbers: { theShareOfMaximumHpHealed: {
+			value: .1,
+			theTextsWriteIt: "a share, as a percentage"
+		} }
+	},
+	"travellers-cloak": {
+		name: "Traveller's Cloak",
+		carriedAs: { field: "exploreMove" },
+		numbers: {}
+	},
+	"philosophers-stone": {
+		name: "Philosopher's Stone",
+		carriedAs: { stat: "massPromote" },
+		numbers: {}
+	},
+	"wailing-phylactery": {
+		name: "Wailing Phylactery",
+		carriedAs: { stat: "necroAuto" },
+		numbers: {}
+	},
+	"maximum-hp": {
+		name: "Amulet of Fortitude",
+		carriedAs: { stat: "maxHp" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aHitPointIsWorth: .7 }
+	},
+	temper: {
+		name: "Warmask of the Red Rage",
+		carriedAs: { stat: "temper" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { worth: 3 }
+	},
+	"crown-of-command": {
+		name: "Crown of Command",
+		carriedAs: { stat: "aura" },
+		numbers: { theLevelsItAddsToEverySkill: {
+			value: 1,
+			theTextsWriteIt: "skill levels added"
+		} }
+	},
+	"melee-damage-turned-aside": {
+		name: "Dwarf-Forged Hauberk",
+		carriedAs: { ward: "meleeDR" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	"arrow-damage-turned-aside": {
+		name: "Arrow-Turning Brigandine",
+		carriedAs: { ward: "arrowDR" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	"nature-damage-turned-aside": {
+		name: "Serpent-Scale Coat",
+		carriedAs: { ward: "natureDR" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	"dark-damage-turned-aside": {
+		name: "Grave-Iron Plate",
+		carriedAs: { ward: "darkDR" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	thorns: {
+		name: "Thornwood Cuirass",
+		carriedAs: { ward: "thorns" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	regeneration: {
+		name: "Troll-Hide Jerkin",
+		carriedAs: { ward: "regen" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	"spell-damage-cut": {
+		name: "Spellwarded Robe",
+		carriedAs: { ward: "spellPct" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	dodge: {
+		name: "Quicksilver Mail",
+		carriedAs: { ward: "dodge" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	block: {
+		name: "Tower Shield of the Wall",
+		carriedAs: { ward: "block" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"a-hits-damage-capped": {
+		name: "Bulwark Breastplate",
+		carriedAs: { ward: "cap" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"second-wind": {
+		name: "Last-Stand Plate",
+		carriedAs: { ward: "secondWind" },
+		numbers: { belowThisShareOfHisMaximumHp: {
+			value: .3,
+			theTextsWriteIt: "a share, as a percentage"
+		} },
+		theWorthOfItInTheTreasury: {
+			worth: 4,
+			percentagePointsForAPoint: THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT
+		}
+	},
+	"damage-cut-at-low-hp": {
+		name: "Warden's Scale",
+		carriedAs: { ward: "lowHp" },
+		numbers: { belowThisShareOfHisMaximumHp: {
+			value: .5,
+			theTextsWriteIt: "a share, in words"
+		} },
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"the-first-hit-drunk": {
+		name: "Blood-Bound Cuirass",
+		carriedAs: { ward: "firstHit" },
+		numbers: {},
+		theWorthOfItInTheTreasury: {
+			worth: 2.5,
+			percentagePointsForAPoint: THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT
+		}
+	},
+	"lingering-harm-turned-aside": {
+		name: "Ashen Plate",
+		carriedAs: { ward: "dotImmune" },
+		numbers: {},
+		theWorthOfItInTheTreasury: {
+			worth: 3,
+			percentagePointsForAPoint: THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT
+		}
+	},
+	resist: {
+		name: "Steadfast Harness",
+		carriedAs: { ward: "resist" },
+		numbers: { theChanceToShrugOffADaze: {
+			value: .5,
+			theTextsWriteIt: "a share, in words"
+		} },
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"arrow-block": {
+		name: "Kite Shield of the Marches",
+		carriedAs: { ward: "arrowBlock" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	buckler: {
+		name: "Bronze Buckler",
+		carriedAs: { ward: "buckler" },
+		numbers: {
+			meleeDamageTurnedAside: {
+				value: 1,
+				theTextsWriteIt: "damage turned aside"
+			},
+			dodge: {
+				value: 5,
+				theTextsWriteIt: "a chance, in percentage points"
+			}
+		},
+		theWorthOfItInTheTreasury: {
+			worth: 2.5,
+			percentagePointsForAPoint: THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT
+		}
+	},
+	"open-guard": {
+		name: "Oaken Roundshield",
+		carriedAs: { ward: "openGuard" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			hits: 2,
+			pct: 50
+		},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"spell-block": {
+		name: "Mirror-Bright Shield",
+		carriedAs: { ward: "spellBlock" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_A_PERCENTAGE
+	},
+	"round-ward": {
+		name: "Shield of the Ward-Saints",
+		carriedAs: { ward: "roundWard" },
+		numbers: {},
+		theWorthOfItInTheTreasury: THE_WORTH_OF_A_WARD_OF_AN_AMOUNT
+	},
+	"stun-immunity": {
+		name: "Dragonbone Shield",
+		carriedAs: { ward: "stunImmune" },
+		numbers: {},
+		theWorthOfItInTheTreasury: {
+			worth: 3,
+			percentagePointsForAPoint: THE_PERCENTAGE_POINTS_A_FLAG_WARD_CARRIES_FOR_A_POINT
+		}
+	},
+	"aura-rider": {
+		name: "Oathkeeper's Blade",
+		carriedAs: { rider: "aura" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { pointsForAPoint: 4 }
+	},
+	"burn-rider": {
+		name: "Brand of the Salamander",
+		carriedAs: { rider: "burn" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointIsWorth: 1.5 }
+	},
+	"drain-rider": {
+		name: "Grave-Cold Blade",
+		carriedAs: { rider: "drain" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointIsWorth: 5 }
+	},
+	"hit-bonus-rider": {
+		name: "Warden's Poleaxe",
+		carriedAs: { rider: "hitBonus" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { pointsForAPoint: 4 }
+	},
+	"damage-bonus-rider": {
+		name: "Kingsteel Longsword",
+		carriedAs: { rider: "dmgBonus" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointIsWorth: 1.2 }
+	},
+	"mithril-armour": {
+		name: "Mithril Armour",
+		carriedAs: { stat: "mithrilArmour" },
+		numbers: { damageTurnedAside: {
+			value: 2,
+			theTextsWriteIt: "damage turned aside"
+		} },
+		theWorthOfItInTheTreasury: { aPointOfItsBonusIsWorth: 3 }
+	},
+	"combat-item-heals": {
+		name: "Potion of Healing",
+		carriedAs: { use: "heal" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .5,
+			amt: 5
+		},
+		theWorthOfItInTheTreasury: { hitPointsHealedForAPoint: 2.5 }
+	},
+	"combat-item-second-wind": {
+		name: "Elixir of Second Wind",
+		carriedAs: { use: "secondwind" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .6,
+			amt: 10
+		},
+		theNumbersAFighterWeighsItBy: {
+			aPenaltyWorthLifting: 10,
+			belowThisShareOfHisMaximumHpWhateverLingers: .4
+		},
+		theWorthOfItInTheTreasury: {
+			hitPointsHealedForAPoint: 2.5,
+			whatLiftsIsWorth: 1
+		}
+	},
+	"combat-item-heals-over-time": {
+		name: "Potion of Regeneration",
+		carriedAs: { use: "hot" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .7,
+			amt: 3,
+			rounds: 3
+		},
+		theWorthOfItInTheTreasury: { hitPointsHealedForAPoint: 3 }
+	},
+	"combat-item-wards": {
+		name: "Potion of Iron Skin",
+		carriedAs: { use: "absorb" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { absorb: 10 },
+		theWorthOfItInTheTreasury: { damageSoakedForAPoint: 3 }
+	},
+	"combat-item-hides": {
+		name: "Potion of Invisibility",
+		carriedAs: { use: "invis" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .5,
+			toHitReduce: 25
+		},
+		theWorthOfItInTheTreasury: { toHitReducedForAPoint: 6 }
+	},
+	"combat-item-mirror-images": {
+		name: "Potion of Mirrors",
+		carriedAs: { use: "mirror" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .7,
+			images: 2
+		},
+		theWorthOfItInTheTreasury: { anImageIsWorth: 1.5 }
+	},
+	"combat-item-flight": {
+		name: "Smoke Bomb",
+		carriedAs: { use: "flee" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			below: .35,
+			fleeBonus: 25
+		},
+		theWorthOfItInTheTreasury: {
+			fleeBonusForAPoint: 12,
+			toHitReducedForAPoint: 8
+		}
+	},
+	"combat-item-dispels": {
+		name: "Scroll of Dispel",
+		carriedAs: { use: "dispel" },
+		numbers: {},
+		theNumbersAFighterWeighsItBy: { aPenaltyWorthLifting: 15 },
+		theWorthOfItInTheTreasury: { worth: 3 }
+	},
+	"combat-item-bane": {
+		name: "Flask of Holy Water",
+		carriedAs: { use: "bane" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { times: 1 },
+		theWorthOfItInTheTreasury: {
+			...THE_WORTH_OF_A_BLOW,
+			forStrikingItsKindsAlone: -1
+		}
+	},
+	"combat-item-bane-stun": {
+		name: "Beastbane Snare",
+		carriedAs: { use: "banestun" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: {
+			stun: 1,
+			times: 1
+		},
+		theWorthOfItInTheTreasury: {
+			...THE_WORTH_OF_A_BLOW,
+			forStrikingItsKindsAlone: -1
+		}
+	},
+	"combat-item-strengthens": {
+		name: "Potion of Strength",
+		carriedAs: { use: "buff" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointAddedIsWorth: 3 }
+	},
+	"combat-item-focuses": {
+		name: "Elixir of Focus",
+		carriedAs: { use: "focus" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { hitBonus: 10 },
+		theWorthOfItInTheTreasury: { toHitBonusForAPoint: 4 }
+	},
+	"combat-item-silences": {
+		name: "Scroll of Silence",
+		carriedAs: { use: "silence" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { rounds: 3 },
+		theWorthOfItInTheTreasury: { aRoundSilencedIsWorth: 1.2 }
+	},
+	"combat-item-stuns": {
+		name: "Scroll of Paralysis",
+		carriedAs: { use: "stun" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { stun: 1 },
+		theWorthOfItInTheTreasury: { aRoundStunnedIsWorth: 2.5 }
+	},
+	"combat-item-blinds": {
+		name: "Scroll of Blindness",
+		carriedAs: { use: "pen" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { hitPen: 15 },
+		theWorthOfItInTheTreasury: { toHitPenaltyForAPoint: 6 }
+	},
+	"combat-item-weakens": {
+		name: "Scroll of Weakness",
+		carriedAs: { use: "weak" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointTakenIsWorth: 2.5 }
+	},
+	"combat-item-terrifies": {
+		name: "Scroll of Terror",
+		carriedAs: { use: "terror" },
+		numbers: { theChanceTheFoeFlees: {
+			value: .5,
+			theTextsWriteIt: "a share, in words"
+		} },
+		theNumbersOfACopyThatCarriesNone: { hitPen: 15 },
+		theWorthOfItInTheTreasury: {
+			worth: 3,
+			toHitPenaltyForAPoint: 10
+		}
+	},
+	"combat-item-damages": {
+		name: "Scroll of Fire",
+		carriedAs: { use: "dmg" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { times: 1 },
+		theWorthOfItInTheTreasury: {
+			...THE_WORTH_OF_A_BLOW,
+			forStrikingItsKindsAlone: 0
+		}
+	},
+	"combat-item-drains": {
+		name: "Scroll of Life Drain",
+		carriedAs: { use: "drain" },
+		numbers: {},
+		theNumbersOfACopyThatCarriesNone: { below: .75 },
+		theWorthOfItInTheTreasury: { damageForAPoint: 2.2 }
+	},
+	"combat-item-doubled-against-its-kinds": {
+		name: "Scroll of Sunburst",
+		carriedAs: { effectField: "doubleVs" },
+		numbers: { multiplier: {
+			value: 2,
+			theTextsWriteIt: "a multiplier, in words"
+		} }
+	},
+	"lock-pick-of-legends": {
+		name: "Lock-Pick of Legends",
+		carriedAs: { itemName: "Lock-Pick of Legends" },
+		numbers: { stealChance: {
+			value: 20,
+			theTextsWriteIt: "a chance, in percentage points"
+		} }
+	},
+	"warbringer-gauntlets": {
+		name: "Warbringer Gauntlets",
+		carriedAs: { itemName: "Warbringer Gauntlets" },
+		numbers: { damageAdded: {
+			value: 2,
+			theTextsWriteIt: "damage added"
+		} }
+	},
+	dreamstone: {
+		name: "Dreamstone",
+		carriedAs: { itemName: "Dreamstone" },
+		numbers: { theRoundsAdded: {
+			value: 1,
+			theTextsWriteIt: "rounds added, in words"
+		} }
+	},
+	"deaths-finger-ring": {
+		name: "Death's Finger Ring",
+		carriedAs: { itemName: "Death's Finger Ring" },
+		numbers: { multiplier: {
+			value: 1.1,
+			theTextsWriteIt: "a multiplier, as the share more"
+		} }
+	},
+	"mirror-shard": {
+		name: "Mirror Shard",
+		carriedAs: { itemName: "Mirror Shard" },
+		numbers: { multiplier: {
+			value: .5,
+			theTextsWriteIt: "a share, in words"
+		} }
+	},
+	"an-item-worn-as-armour": {
+		name: "Padded Gambeson",
+		carriedAs: { stat: THE_STAT_OF_AN_ITEM_WORN_AS_ARMOUR },
+		numbers: {},
+		theWorthOfItInTheTreasury: { aPointOfItsBonusIsWorth: 3 }
+	},
+	"a-combat-item": {
+		name: "Elixir of Vigour",
+		carriedAs: { stat: THE_STAT_OF_A_COMBAT_ITEM },
+		numbers: {}
+	},
+	"an-item-of-riders-alone": {
+		name: "Serpent-Fang Dagger",
+		carriedAs: { stat: "pc" },
+		numbers: {},
+		theWorthOfItInTheTreasury: { worth: 0 }
+	},
+	"a-spell-charm": {
+		name: "Phial of the Dawn",
+		carriedAs: { stat: "castSpell" },
+		numbers: {},
+		theWorthOfItInTheTreasury: {
+			worth: 3,
+			aLevelOfItsSpellIsWorth: 1.2,
+			theLevelOfASpellThatStatesNone: 2
+		}
+	}
+}["mithril-armour"].carriedAs.stat;
 function isLegendaryItem(it) {
 	return !!it && it.tier === 4;
 }
@@ -1288,10 +2346,11 @@ var _SHIELD_BASES = /* @__PURE__ */ new Set([
 function itemSlot(it) {
 	if (!it) return null;
 	if (_SHIELD_BASES.has(_ITEM_ALT_BASE[it.name] || it.name)) return "shield";
-	if (it.effect && it.effect.stat === "combatUse") return "combat";
-	if (it.effect && it.effect.stat === "mithrilArmour") return "armour";
+	if (it.effect && it.effect.stat === THE_STAT_OF_A_COMBAT_ITEM) return "combat";
+	if (it.effect && it.effect.stat === THE_STAT_OF_THE_MITHRIL_SUIT) return "armour";
 	if (it.slot !== void 0) return it.slot || null;
-	return ITEM_SLOT_OF[it.name] || ITEM_SLOT_OF[_ITEM_ALT_BASE[it.name]] || null;
+	const altBase = _ITEM_ALT_BASE[it.name];
+	return ITEM_SLOT_OF[it.name] || (altBase === void 0 ? void 0 : ITEM_SLOT_OF[altBase]) || null;
 }
 var _ITEM_RACE_ALIAS = { ...KC_ITEM_RACE_ALIAS };
 function itemRaceOf(it) {
@@ -1377,7 +2436,9 @@ function topSkillOf(char) {
 	const maxLevel = Math.max(...skills.map(([, v]) => v));
 	const tied = skills.filter(([, v]) => v === maxLevel);
 	tied.sort((a, b) => ALL_SKILLS.indexOf(a[0]) - ALL_SKILLS.indexOf(b[0]));
-	const [sk, lv] = tied[0];
+	const top = tied[0];
+	if (!top) return null;
+	const [sk, lv] = top;
 	return {
 		skill: sk,
 		level: lv
@@ -1396,9 +2457,440 @@ function combatSpellsAllowedPerSchoolEachFight(level) {
 	return level >= 2 ? 2 : 1;
 }
 //#endregion
+//#region src/engine/rules-on-plain-values/spells-the-order-form-offers-each-school-aim-and-mastery-level.ts
+/** Every spell, by its name, in the content's order. */
+function everySpell() {
+	return Object.entries(SPELL_DEFS_P);
+}
+/** The names of the spells the content writes as `keep` says, in its order. */
+function theSpellsThat(keep) {
+	return everySpell().filter(([, spell]) => keep(spell)).map(([name]) => name);
+}
+/** The spells named, by school: each school in the order its first spell comes, its spells in the order named. */
+function bySchool(names) {
+	const spells = everySpell();
+	const schools = {};
+	for (const name of names) {
+		const school = spells.find(([n]) => n === name)?.[1].school;
+		if (school !== void 0) (schools[school] ??= []).push(name);
+	}
+	return schools;
+}
+/** Every spell by school (white, psychic, illusory, elemental, necromancy), each school's in the content's order. */
+function everySpellBySchool() {
+	return bySchool(theSpellsThat(() => true));
+}
+/** The school of each spell, by its name, school by school as everySpellBySchool lists them. */
+function theSchoolOfEachSpell() {
+	return Object.fromEntries(Object.entries(everySpellBySchool()).flatMap(([school, spells]) => spells.map((name) => [name, school])));
+}
+/** The raw level in its school each mastery spell needs (7 or 9), by its name: past level 5 comes from experience
+*  only. A spell not here needs none. */
+function theLevelEachMasterySpellNeeds() {
+	return Object.fromEntries(everySpell().flatMap(([name, spell]) => spell.reqLevel ? [[name, spell.reqLevel]] : []));
+}
+/** The action spells (a Cast Spell order may name them), in the content's order. */
+function theActionSpells() {
+	return new Set(theSpellsThat((spell) => spell.phase));
+}
+/** The action spells no mastery level gates, in the content's order: the ones the form offers a hero whose levels his
+*  realm can't see (hired, raised or charmed this turn). */
+function theActionSpellsNoMasteryLevelGates() {
+	return new Set(theSpellsThat((spell) => spell.phase && !spell.reqLevel));
+}
+/** The order an Encounter plan lists the combat spells in. It is the content's but in three schools (Psychic Blast and
+*  Telekinetic Storm before Charm, Mirror Image before Invisibility, Curse and Hand of Death before Control Undead), and
+*  the content writes no other, so it is written here, once. Which spells are combat spells is the content's to say
+*  (`encounter`); each is named here (tests/unit/spells-the-order-form-offers-and-where-their-marks-must-stand.test.ts
+*  lists them). */
+var THE_ORDER_AN_ENCOUNTER_PLAN_LISTS_THE_COMBAT_SPELLS = [
+	"Holy Symbol",
+	"Spiritwrack",
+	"Psychic Blast",
+	"Telekinetic Storm",
+	"Charm",
+	"Mirror Image",
+	"Invisibility",
+	"Lightning Bolt",
+	"Fireball",
+	"Curse",
+	"Hand of Death",
+	"Control Undead"
+];
+/** The combat spells (an Encounter plan may name them) by school, as an Encounter plan lists them. */
+function theCombatSpellsBySchool() {
+	return bySchool(theSpellsThat((spell) => spell.encounter).sort((a, b) => THE_ORDER_AN_ENCOUNTER_PLAN_LISTS_THE_COMBAT_SPELLS.indexOf(a) - THE_ORDER_AN_ENCOUNTER_PLAN_LISTS_THE_COMBAT_SPELLS.indexOf(b)));
+}
+/** The action spells aimed at a province (the order names the province), in the content's order. */
+function theActionSpellsAimedAtAProvince() {
+	return new Set(theSpellsThat((spell) => spell.phase && spell.target === "province"));
+}
+/** The action spells aimed at a hero (the order names the hero), in the content's order. */
+function theActionSpellsAimedAtAHero() {
+	return new Set(theSpellsThat((spell) => spell.phase && spell.target === "character"));
+}
+//#endregion
+//#region src/engine/rules-on-plain-values/the-strength-a-units-kin-and-a-rival-kins-leader-leave-it.ts
+/** HUMANOID RACE AFFINITY and RACIAL ANIMOSITY. Two independent, stacking ×1.2 boosts: a unit of its realm's king's
+*  race, and a unit led by a character (king or hero) of its race (a king leading his own race's troops: ×1.44). Then
+*  ×0.8 for a unit led by a commander of its rival kin. Each is rounded as it is taken. A unit, king or leader with no
+*  race is no one's kin: Creatures, Monsters and skeletons never match, since a character's race is always humanoid. */
+function theStrengthAUnitsKinAndARivalKinsLeaderLeaveIt(strength, theUnitsRace, theKingsRace, theLeadersRace) {
+	const rivalKin = { ...KC_RIVAL_RACE };
+	const itsKingIsOfItsKin = !!theUnitsRace && !!theKingsRace && theUnitsRace === theKingsRace;
+	const itsLeaderIsOfItsKin = !!theUnitsRace && !!theLeadersRace && theUnitsRace === theLeadersRace;
+	const aLeaderOfItsRivalKinLeadsIt = !!theUnitsRace && !!theLeadersRace && rivalKin[theUnitsRace] === theLeadersRace;
+	let str = strength;
+	if (itsKingIsOfItsKin) str = Math.round(str * 1.2);
+	if (itsLeaderIsOfItsKin) str = Math.round(str * 1.2);
+	if (aLeaderOfItsRivalKinLeadsIt) str = Math.round(str * .8);
+	return {
+		strength: str,
+		itsKingIsOfItsKin,
+		itsLeaderIsOfItsKin,
+		aLeaderOfItsRivalKinLeadsIt
+	};
+}
+//#endregion
+//#region src/content/spell-effects-their-names-numbers-and-words.ts
+var SPELL_EFFECTS_THE_REGISTRY_HOLDS = {
+	fireball: {
+		name: "Fireball",
+		fn: "elemental_fireball",
+		battleMagic: {
+			theShareOfBaseStrengthLost: {
+				value: .5,
+				theTextsWriteIt: "a share lost, in words"
+			},
+			theStrongestUnitsStruck: {
+				value: 1,
+				theTextsWriteIt: "the strongest units, in words"
+			}
+		},
+		combat: {
+			theShareOfMaximumHpItBurnsARound: {
+				value: 10,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareMoreALevel: {
+				value: 2,
+				theTextsWriteIt: "a percentage"
+			},
+			theRoundsItBurns: {
+				value: 3,
+				theTextsWriteIt: "rounds"
+			}
+		}
+	},
+	"lightning-bolt": {
+		name: "Lightning Bolt",
+		fn: "elemental_lightning",
+		battleMagic: {
+			theShareOfBaseStrengthLost: {
+				value: .2,
+				theTextsWriteIt: "a share lost, as a percentage"
+			},
+			theLevelItCountsTo: {
+				value: 5,
+				theTextsWriteIt: "the level it counts to"
+			}
+		},
+		combat: {
+			theLeastDamageALevel: {
+				value: 1,
+				theTextsWriteIt: "the least of a range"
+			},
+			theMostDamageALevel: {
+				value: 3,
+				theTextsWriteIt: "the most of a range"
+			}
+		}
+	},
+	"telekinetic-storm": {
+		name: "Telekinetic Storm",
+		fn: "psychic_storm",
+		battleMagic: { theTacticalMultiplier: {
+			value: .5,
+			theTextsWriteIt: "a multiplier, in words"
+		} },
+		combat: {
+			theShareOfMaximumHpItDeals: {
+				value: 12,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareMoreALevel: {
+				value: 3,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareTheCasterTakesBack: {
+				value: .25,
+				theTextsWriteIt: "a share, in words"
+			}
+		},
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true
+		}
+	},
+	"psychic-blast": {
+		name: "Psychic Blast",
+		fn: "psychic_blast",
+		battleMagic: {},
+		combat: {
+			theRoundsItStuns: {
+				value: 1,
+				theTextsWriteIt: "rounds"
+			},
+			theLevelsForEachRoundMore: {
+				value: 2,
+				theTextsWriteIt: "the levels for each round more, in words"
+			}
+		},
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true,
+			aCloakedMarkIsShieldedFromIt: true
+		}
+	},
+	curse: {
+		name: "Curse",
+		fn: "necromancy_curse",
+		battleMagic: {},
+		combat: { theDivisorOfHisBestSkill: {
+			value: 2,
+			theTextsWriteIt: "a divisor, in words"
+		} },
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true,
+			aCloakedMarkIsShieldedFromIt: true
+		}
+	},
+	"control-undead": {
+		name: "Control Undead",
+		fn: "necromancy_control",
+		battleMagic: {},
+		combat: {},
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true
+		}
+	},
+	"holy-symbol": {
+		name: "Holy Symbol",
+		fn: "white_holy_symbol",
+		battleMagic: { theShareOfBaseStrengthLost: {
+			value: .25,
+			theTextsWriteIt: "a share lost, as the share kept"
+		} },
+		combat: {
+			theCutToTheTargetsAimALevel: {
+				value: 8,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareOfMaximumHpItSears: {
+				value: 6,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareOfHisOwnMaximumHpTheCasterRecovers: {
+				value: 10,
+				theTextsWriteIt: "a percentage"
+			},
+			theMultiplierAgainstTheUndeadAndFiends: {
+				value: 1.5,
+				theTextsWriteIt: "a multiplier, as a figure"
+			}
+		}
+	},
+	spiritwrack: {
+		name: "Spiritwrack",
+		fn: "white_spiritwrack",
+		battleMagic: { theShareOfBaseStrengthLost: {
+			value: .5,
+			theTextsWriteIt: "a share lost, in words"
+		} },
+		combat: {
+			theRoundsItSilences: {
+				value: 1,
+				theTextsWriteIt: "rounds"
+			},
+			theLevelsForEachRoundMore: {
+				value: 2,
+				theTextsWriteIt: "the levels for each round more, in words"
+			},
+			theMostRounds: {
+				value: 3,
+				theTextsWriteIt: "the most rounds"
+			},
+			theRoundsLongerAgainstAGuardianWeakToWhite: {
+				value: 1,
+				theTextsWriteIt: "rounds longer"
+			},
+			theChanceAPowerfulGuardianShrugsItOff: {
+				value: 25,
+				theTextsWriteIt: "a percentage"
+			},
+			theChanceALegendaryGuardianShrugsItOff: {
+				value: 40,
+				theTextsWriteIt: "a percentage"
+			}
+		}
+	},
+	"hand-of-death": {
+		name: "Hand of Death",
+		fn: "necromancy_hand",
+		combat: {
+			theChanceALevel: {
+				value: 10,
+				theTextsWriteIt: "a percentage"
+			},
+			theMostChance: {
+				value: 60,
+				theTextsWriteIt: "a percentage"
+			},
+			theShareOfMaximumHpItStrikesFor: {
+				value: 40,
+				theTextsWriteIt: "a percentage"
+			}
+		}
+	},
+	"mirror-image": {
+		name: "Mirror Image",
+		fn: "illusory_mirror_image",
+		combat: {
+			theShareOfHisHealthTheImageCarries: {
+				value: 40,
+				theTextsWriteIt: "a percentage"
+			},
+			theRoundsItLasts: {
+				value: 3,
+				theTextsWriteIt: "rounds"
+			},
+			theChanceAHeroSeesThroughItForEachSkillLevel: {
+				value: 4,
+				theTextsWriteIt: "a percentage"
+			},
+			theChanceAGuardianSeesThroughIt: {
+				value: 5,
+				theTextsWriteIt: "a percentage"
+			},
+			theChanceMoreForEachLevelOfAGuardiansMelee: {
+				value: 3,
+				theTextsWriteIt: "a percentage"
+			},
+			theLeastChanceItIsSeenThrough: {
+				value: 2,
+				theTextsWriteIt: "a percentage"
+			},
+			theMostChanceItIsSeenThrough: {
+				value: 90,
+				theTextsWriteIt: "a percentage"
+			}
+		}
+	},
+	invisibility: {
+		name: "Invisibility",
+		fn: "illusory_invisibility",
+		combat: {
+			theCutToHisFoesAim: {
+				value: 10,
+				theTextsWriteIt: "a percentage"
+			},
+			theCutMoreALevel: {
+				value: 4,
+				theTextsWriteIt: "a percentage"
+			},
+			theFlightAdded: {
+				value: 30,
+				theTextsWriteIt: "a percentage"
+			},
+			theStealAdded: {
+				value: 15,
+				theTextsWriteIt: "a percentage"
+			}
+		}
+	},
+	charm: {
+		name: "Charm",
+		fn: "psychic_charm",
+		combat: {},
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true
+		}
+	},
+	"part-sea": {
+		name: "Part Sea",
+		fn: "white_part_sea",
+		asAnOrder: { aBlessWardMayTurnItAside: true }
+	},
+	"bless-province": {
+		name: "Bless Province",
+		fn: "white_bless_province",
+		asAnOrder: { aGrandCathedralFreesItsSlot: true }
+	},
+	oratory: {
+		name: "Oratory",
+		fn: "psychic_oratory",
+		asAnOrder: { itsMarkMustStandInTheProvince: true }
+	},
+	"phantasmal-armies": {
+		name: "Phantasmal Armies",
+		fn: "illusory_phantasmal",
+		asAnOrder: { itsMarkMustStandInTheProvince: true }
+	},
+	earthquake: {
+		name: "Earthquake",
+		fn: "elemental_earthquake",
+		asAnOrder: { aBlessWardMayTurnItAside: true }
+	},
+	flood: {
+		name: "Flood",
+		fn: "elemental_flood",
+		asAnOrder: { aBlessWardMayTurnItAside: true }
+	},
+	plague: {
+		name: "Plague",
+		fn: "necromancy_plague",
+		asAnOrder: { aBlessWardMayTurnItAside: true }
+	},
+	"divine-judgment": {
+		name: "Divine Judgment",
+		fn: "white_judgment",
+		asAnOrder: { itsMarkMustStandInTheProvince: true }
+	},
+	"mass-confusion": {
+		name: "Mass Confusion",
+		fn: "psychic_massconfusion",
+		asAnOrder: { itsMarkMustStandInTheProvince: true }
+	},
+	dominate: {
+		name: "Dominate",
+		fn: "psychic_dominate",
+		asAnOrder: {
+			aCharmedHeroWillNotTurnItOnHisLord: true,
+			itsMarkMustStandInTheProvince: true
+		}
+	},
+	"chain-lightning": {
+		name: "Chain Lightning",
+		fn: "elemental_chainlightning",
+		asAnOrder: { itsMarkMustStandInTheProvince: true }
+	}
+};
+//#endregion
+//#region src/engine/rules-on-plain-values/whether-a-spells-mark-must-stand-in-the-casters-province.ts
+/** Whether the hero the spell named is aimed at must stand in the caster's own province, as its row in the content
+*  says (`asAnOrder.itsMarkMustStandInTheProvince`): one who has left is refused before the cast roll. A spell aimed at
+*  a province, Resurrect (its body's own rule), Clairvoyance (a scry from afar) and a name with no row need none. */
+function theMarkOfThisSpellMustStandInTheCastersProvince(theSpellsName) {
+	return Object.values(SPELL_EFFECTS_THE_REGISTRY_HOLDS).find((r) => r.name === theSpellsName)?.asAnOrder?.itsMarkMustStandInTheProvince === true;
+}
+//#endregion
 //#region src/engine/rules-on-plain-values/unit-types-and-base-strength.ts
+var UNIT_TYPE_WORD_OF = KC_UNIT_TYPE;
 function unitTypeOf(armyType) {
-	return typeof KC_UNIT_TYPE !== "undefined" && KC_UNIT_TYPE[armyType] || "infantry";
+	return typeof KC_UNIT_TYPE !== "undefined" && UNIT_TYPE_WORD_OF[armyType] || "infantry";
 }
 var UNIT_BASE_STR = { ...KC_UNIT_BASE_STR };
 var UNIT_Q_MULT = { ...KC_UNIT_Q_MULT };
@@ -4199,65 +5691,13 @@ function buildTargetField(c, ph, saved) {
 		case "Cast Spell": {
 			c.skills;
 			if (skillsUnseenP(c)) {
-				const _hsPhase = /* @__PURE__ */ new Set([
-					"Resurrect",
-					"Part Sea",
-					"Bless Province",
-					"Holy Symbol",
-					"Charm",
-					"Oratory",
-					"Clairvoyance",
-					"Psychic Blast",
-					"Telekinetic Storm",
-					"Illusory Terrain",
-					"Phantasmal Armies",
-					"Hide Lairs",
-					"Invisibility",
-					"Earthquake",
-					"Flood",
-					"Elemental Summon",
-					"Control Undead",
-					"Skeletal Armies",
-					"Curse",
-					"Plague"
-				]);
+				const _hsPhase = theActionSpellsNoMasteryLevelGates();
 				const _hsList = Object.entries(SPELLS_BY_SCHOOL).flatMap(([school, list]) => list.filter((sp) => _hsPhase.has(sp) && !SPELL_REQ_LEVEL[sp]).map((sp) => [sp, school]));
 				const _hsSel = target && _hsList.some(([sp]) => sp === target) ? target : _hsList[0] && _hsList[0][0] || "";
 				return kcHtml`<select id="po-target-${c.id}-${ph}" onchange="onSpellChange(${kcArg(String(c.id))},${kcArg(ph)},this.value)">${_hsList.map(([sp, school]) => kcHtml`<option value="${sp}" ${sp === _hsSel ? "selected" : ""}>${sp} (${SKILL_LABELS[school]})</option>`)}</select>
           <div style="font-size:.7rem;color:var(--stone)">${c._unknownSkills ? `${c.name}'s training is unknown until they have joined — every base spell is offered; one from a school they have not learned simply fails.` : `You cannot see this hero's skills — a spell from a school they have not learned simply fails.`}</div>${spellSecondaryHtml(report, c, ph, _hsSel, _hsSel === target ? extra : "", target)}`;
 			}
-			const PHASE_SPELLS = /* @__PURE__ */ new Set([
-				"Resurrect",
-				"Part Sea",
-				"Bless Province",
-				"Holy Symbol",
-				"Charm",
-				"Oratory",
-				"Clairvoyance",
-				"Psychic Blast",
-				"Telekinetic Storm",
-				"Illusory Terrain",
-				"Phantasmal Armies",
-				"Hide Lairs",
-				"Invisibility",
-				"Earthquake",
-				"Flood",
-				"Elemental Summon",
-				"Control Undead",
-				"Skeletal Armies",
-				"Curse",
-				"Plague",
-				"Sanctuary",
-				"Divine Judgment",
-				"Mass Confusion",
-				"Dominate",
-				"Phantom Host",
-				"Veil",
-				"Chain Lightning",
-				"Cataclysm",
-				"Raise Wraiths",
-				"Death's Dominion"
-			]);
+			const PHASE_SPELLS = theActionSpells();
 			const { practising: practisingSchools, projected: _projLvl } = projectedMagicLevels(c, ph);
 			const schoolCastCount = {};
 			for (let prevPh = 0; prevPh < ph; prevPh++) {
@@ -4830,32 +6270,8 @@ function renderReckoningOrders() {
 	w.innerHTML = kcHtml`<div style="color:#231e16;line-height:1.5">${why} The <strong>👑 Call the Reckoning</strong> button will appear here when you qualify.</div>`;
 }
 function spellSecondaryHtml(report, c, ph, selSpell, extra, target) {
-	const NEEDS_PROV = /* @__PURE__ */ new Set([
-		"Bless Province",
-		"Part Sea",
-		"Illusory Terrain",
-		"Hide Lairs",
-		"Earthquake",
-		"Flood",
-		"Plague",
-		"Sanctuary",
-		"Cataclysm"
-	]);
-	const NEEDS_CHAR = /* @__PURE__ */ new Set([
-		"Resurrect",
-		"Psychic Blast",
-		"Telekinetic Storm",
-		"Clairvoyance",
-		"Phantasmal Armies",
-		"Control Undead",
-		"Curse",
-		"Charm",
-		"Oratory",
-		"Divine Judgment",
-		"Mass Confusion",
-		"Dominate",
-		"Chain Lightning"
-	]);
+	const NEEDS_PROV = theActionSpellsAimedAtAProvince();
+	const NEEDS_CHAR = theActionSpellsAimedAtAHero();
 	let secondaryHtml = "";
 	if (NEEDS_PROV.has(selSpell)) {
 		const wmProvs = report.worldMeta?.provinces || [];
@@ -4881,6 +6297,8 @@ function spellSecondaryHtml(report, c, ph, selSpell, extra, target) {
           <div style="font-size:.72rem;color:var(--stone);margin-top:2px">${SPELL_HINTS[selSpell] || ""}</div>`;
 	} else if (NEEDS_CHAR.has(selSpell)) {
 		const casterLoc = predictedLocation(c.id, ph)?.id ?? c.locationId;
+		const theMarkMustStandHere = theMarkOfThisSpellMustStandInTheCastersProvince(selSpell);
+		const standsWhereTheMarkMust = (whereHeStands) => !theMarkMustStandHere || whereHeStands === casterLoc;
 		let charOpts = "";
 		if (selSpell === "Resurrect") {
 			const casterHereName = (predictedLocation(c.id, ph) || {}).name;
@@ -4902,19 +6320,19 @@ function spellSecondaryHtml(report, c, ph, selSpell, extra, target) {
 			});
 			if (!charOpts.length) charOpts = kcHtml`<option value="" disabled>No fallen hero lies in ${casterHereName || "this province"} — only bodies in the caster's province can be raised; move there first</option>`;
 		} else if (selSpell === "Charm") {
-			charOpts = (report.visibleChars || []).filter((x) => x.alive !== false && x.locationId === casterLoc && !x.isKing && !leadsArmiesP(x) && !x.charmImmune && (x.player === null || x.player !== c.player)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering — joins you free)" : ` ⚔ (${realmNameP(x.player, report)}, no armies — yours for the turn)`} — ${x.locationName || "?"}</option>`);
+			charOpts = (report.visibleChars || []).filter((x) => x.alive !== false && standsWhereTheMarkMust(x.locationId) && !x.isKing && !leadsArmiesP(x) && !x.charmImmune && (x.player === null || x.player !== c.player)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering — joins you free)" : ` ⚔ (${realmNameP(x.player, report)}, no armies — yours for the turn)`} — ${x.locationName || "?"}</option>`);
 			if (!charOpts.length) charOpts = kcHtml`<option value="" disabled>No valid target — needs a lone hero (wandering or enemy, leading no armies) in this province (kings are immune, and so is anyone charmed last turn)</option>`;
-		} else if (selSpell === "Oratory") charOpts = [kcHtml`<option value="${c.id}" ${extra == c.id ? "selected" : ""}>${c.name} (self)</option>`, ...orderTargetCharsP(report, ph, { allowCharmEnemy: true }).filter((x) => x.id !== c.id && (predictedLocation(x.id, ph)?.id ?? x.locationId) === casterLoc).map((x) => kcHtml`<option value="${x.id}" ${extra == x.id ? "selected" : ""}>${x.name} — ${x.locationName || "?"}${preOrderTagP(x)}</option>`)];
-		else if (selSpell === "Phantasmal Armies") charOpts = [kcHtml`<option value="${c.id}" ${extra == c.id ? "selected" : ""}>${c.name} (self)</option>`, ...orderTargetCharsP(report, ph, { allowCharmEnemy: true }).filter((x) => x.id !== c.id && (predictedLocation(x.id, ph)?.id ?? x.locationId) === casterLoc).map((x) => kcHtml`<option value="${x.id}" ${extra == x.id ? "selected" : ""}>${x.name} — ${x.locationName || "?"}${preOrderTagP(x)}</option>`)];
+		} else if (selSpell === "Oratory") charOpts = [kcHtml`<option value="${c.id}" ${extra == c.id ? "selected" : ""}>${c.name} (self)</option>`, ...orderTargetCharsP(report, ph, { allowCharmEnemy: true }).filter((x) => x.id !== c.id && standsWhereTheMarkMust(predictedLocation(x.id, ph)?.id ?? x.locationId)).map((x) => kcHtml`<option value="${x.id}" ${extra == x.id ? "selected" : ""}>${x.name} — ${x.locationName || "?"}${preOrderTagP(x)}</option>`)];
+		else if (selSpell === "Phantasmal Armies") charOpts = [kcHtml`<option value="${c.id}" ${extra == c.id ? "selected" : ""}>${c.name} (self)</option>`, ...orderTargetCharsP(report, ph, { allowCharmEnemy: true }).filter((x) => x.id !== c.id && standsWhereTheMarkMust(predictedLocation(x.id, ph)?.id ?? x.locationId)).map((x) => kcHtml`<option value="${x.id}" ${extra == x.id ? "selected" : ""}>${x.name} — ${x.locationName || "?"}${preOrderTagP(x)}</option>`)];
 		else if (selSpell === "Clairvoyance") {
 			charOpts = (report.everSeenChars && report.everSeenChars.length ? report.everSeenChars : report.visibleChars || []).filter((x) => x && x.player != null && !x.isWandering).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((x) => kcHtml`<option value="${x.id}"${x.player === c.player ? "" : realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === c.player ? " (yours)" : ` ⚔ (${realmNameP(x.player, report)})`} — last seen: ${x.lastLocName || x.locationName || "?"}${x.lastSeenTurn ? ` (turn ${x.lastSeenTurn})` : ""}</option>`);
 			if (!charOpts.length) charOpts = kcHtml`<option value="" disabled>You have not seen any enemy characters yet</option>`;
-		} else if (selSpell === "Control Undead") charOpts = [kcHtml`<option value="__scan__" ${extra === "__scan__" || extra === "" || extra == null ? "selected" : ""}>🔍 Cast on THIS province — reveal the dead army units here</option>`, ...(report.visibleChars || []).filter((x) => x.player !== c.player && x.locationId === casterLoc).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — seize one undead unit from them</option>`)];
+		} else if (selSpell === "Control Undead") charOpts = [kcHtml`<option value="__scan__" ${extra === "__scan__" || extra === "" || extra == null ? "selected" : ""}>🔍 Cast on THIS province — reveal the dead army units here</option>`, ...(report.visibleChars || []).filter((x) => x.player !== c.player && standsWhereTheMarkMust(x.locationId)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — seize one undead unit from them</option>`)];
 		else if (selSpell === "Telekinetic Storm") {
-			charOpts = (report.visibleChars || []).filter((x) => x.player !== c.player && x.locationId === casterLoc && leadsArmiesP(x)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — ${x.armyBand || x.armies + " unit" + (x.armies !== 1 ? "s" : "")} — ${x.locationName || "?"}</option>`);
+			charOpts = (report.visibleChars || []).filter((x) => x.player !== c.player && standsWhereTheMarkMust(x.locationId) && leadsArmiesP(x)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — ${x.armyBand || x.armies + " unit" + (x.armies !== 1 ? "s" : "")} — ${x.locationName || "?"}</option>`);
 			if (!charOpts.length) charOpts = kcHtml`<option value="" disabled>No enemy/neutral hero leading armies in this province</option>`;
 		} else {
-			charOpts = (report.visibleChars || []).filter((x) => x.player !== c.player && x.locationId === casterLoc).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — ${x.locationName || "?"}</option>`);
+			charOpts = (report.visibleChars || []).filter((x) => x.player !== c.player && standsWhereTheMarkMust(x.locationId)).map((x) => kcHtml`<option value="${x.id}"${realmOptStyleP(x.player, report)} ${extra == x.id ? "selected" : ""}>${x.name}${x.player === null ? " (wandering)" : ` ⚔ (${realmNameP(x.player, report)})`} — ${x.locationName || "?"}</option>`);
 			if (!charOpts.length) charOpts = kcHtml`<option value="" disabled>No enemy/neutral heroes in this province</option>`;
 		}
 		const _ph0 = selSpell === "Control Undead" ? "— Choose what to cast it on —" : "— Target character —";
@@ -5147,15 +6565,11 @@ function renderReportView(report) {
 			const druLevel = effSkillP(c, "druid");
 			let totalStr = 0, totalCost = 0, druidUnits = 0, druidShort = 0;
 			const lines = arr.map((a) => {
-				const rawBs = unitBaseStrength(a);
-				const kingRaceMatch = !!(a.race && kingdom.race && a.race === kingdom.race);
-				const leadRaceMatch = !!(a.race && a.race === c.race);
-				const _RIVAL_RACE_UI = { ...KC_RIVAL_RACE };
-				const feudLed = !!(a.race && c.race && _RIVAL_RACE_UI[a.race] === c.race);
-				let bs = rawBs;
-				if (kingRaceMatch) bs = Math.round(bs * 1.2);
-				if (leadRaceMatch) bs = Math.round(bs * 1.2);
-				if (feudLed) bs = Math.round(bs * .8);
+				const _kin = theStrengthAUnitsKinAndARivalKinsLeaderLeaveIt(unitBaseStrength(a), a.race, kingdom.race, c.race);
+				const kingRaceMatch = _kin.itsKingIsOfItsKin;
+				const leadRaceMatch = _kin.itsLeaderIsOfItsKin;
+				const feudLed = _kin.aLeaderOfItsRivalKinLeadsIt;
+				let bs = _kin.strength;
 				const creature = CREATURE_ARMIES_UI.has(a.type), monster = MONSTER_ARMIES_UI.has(a.type);
 				const _dn = druidNeedP(a, c, report);
 				const req = _dn.req;
@@ -6115,21 +7529,7 @@ function addEncounterTactic(charId, code) {
 	if (code === "CA") {
 		const char = (currentReport?.characters || []).find((c) => String(c.id) === String(charId));
 		char?.skills;
-		const ENCOUNTER_VALID = {
-			white: ["Holy Symbol", "Spiritwrack"],
-			psychic: [
-				"Psychic Blast",
-				"Telekinetic Storm",
-				"Charm"
-			],
-			illusory: ["Mirror Image", "Invisibility"],
-			elemental: ["Lightning Bolt", "Fireball"],
-			necromancy: [
-				"Curse",
-				"Hand of Death",
-				"Control Undead"
-			]
-		};
+		const ENCOUNTER_VALID = theCombatSpellsBySchool();
 		const MAGIC_SCHOOLS_EP = new Set(KC_MAGIC_SCHOOLS);
 		const practisingSchoolsEP = /* @__PURE__ */ new Set();
 		for (let prevPh = 0; prevPh < 5; prevPh++) if ((document.getElementById(`po-action-${charId}-${prevPh}`)?.value || "") === "Practice Skill") {
@@ -6371,55 +7771,6 @@ function updateAlignmentDesc() {
 		Undead: "💀 **Undead:** The deathless. King starts with Necromancy +1 and a free skeletal unit. Skeletal armies cost just 1g, need no Druid skill, **always** fight fanatically (+50% under the king, +30% under a hero), and never lose men fleeing a lost battle. **Harvest the Field** raises a grave as a soldier for 2g with no magic at all. Will not hire Divine heroes. One Undead realm per game."
 	}[sel.value] || "");
 }
-var UNIT_ABILITIES = {
-	"Shieldwall Levies": "Spear Hedge — cavalry facing them in the line fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Shieldwall — ×1.25 when an archer stands in the second line behind them.",
-	"Men-at-Arms": "Halberds — ×1.25 facing cavalry. Sergeants — Levies beside them in the front line fight ×1.1.",
-	"Free Lances": "Harriers — ×1.15 in a flank duel. Ride Them Down — in plains and desert only, each adds +6% to enemy losses when your side wins (max +18%). Works the same against neutral defenders — and theirs works the same against you.",
-	"Yeoman Longbows": "Bodkin Points — no penalty shooting cavalry from the second line (other archers fire at ×0.75). Prepared Ground — defending, they loose two pre-battle volleys.",
-	"Gilded Lances": "Lance Charge — ×1.15 facing foot, where cavalry is usually ×0.85 (a Spear Hedge still stops it). Knightly Example — while a Gilded Lances unit is in the army, your Levies and Men-at-Arms never lose a tier in defeat.",
-	"Noble Griffons": "Dive on the Bowmen — the enemy’s strongest second-line archer fights ×0.75. Screech Dive — a diving pre-battle strike scatters one enemy unit (2–4), one chance in two whatever the commander’s Druid.",
-	"Human Garrison": "Hold the Gate — defending, never hit from the side when the enemy line wraps its end. Town Watch — counts as Levies for Shieldwall and for anchoring the line.",
-	"Galleon Fleet": "Broadside — fires in the pre-battle archery phase during sea battles.",
-	"Forest Wardens": "Woodland Skirmish — ×1.15 in forest and jungle, whatever they face. Ambush — in forest or jungle, the side facing them gets no archery phase at all (unless Eagle Riders fly with it). Works attacking or defending, and against province defenders as well as another realm.",
-	"Elven Bowmen": "Volley at the Charge — ×1.25 shooting cavalry from the second line. Woodland Volley — double volley damage in forest and jungle.",
-	"Shadow Archers": "Marksmen — ×1.25 shooting archers from the second line, and they pick the best target anywhere along the enemy front. Loosed From Cover — cannot be targeted by enemy volleys (unless Eagle Riders fly with the shooters).",
-	"Stag Riders": "Through the Trees — the one cavalry that takes a flank in forest and jungle. Forest Runners — ×1.1 in forest and no penalty in jungle (see the roster).",
-	"Eagle Riders": "Stoop on the Horses — on open ground they may hold a flank slot no rider fills, and fight cavalry at ×1.25. Eyes of the Forest — while they fly with your shooters, an enemy Ambush is spoiled and Shadow Archers can be shot at.",
-	"Elven Garrison": "Thorn Hedge — cavalry facing it in forest or jungle ×0.85. Tree Watch — in forest or jungle it shoots in the archery step like an archer unit.",
-	"Elven Galleys": "Sea Archers — your ranged units ignore the land-unit penalty at sea.",
-	"Dwarven Guard": "Unbreakable — foot facing them in the line ×0.85, and they are never hit from the side. Shield Fort — when at least half the front line is Guard (a Dwarf Garrison counts), a beaten force never routs: with a retreat open it withdraws in good order (immune to pursuit losses and to demotion in retreat); trapped, it locks shields and holds the province contested with no flight casualties. In every battle, and for a province's own Guard defenders too.",
-	"Ironwood Crossbows": "Armour-Piercing — ×1.25 shooting a unit of base strength 6 or more from the second line. Punch Through — can soften a target to 55% instead of the usual 40% limit (90% instead of 80% against a winged rider).",
-	"Mountain Guns": "Bombard — ×1.15 from the second line, whatever they shoot. Bombardment — fire before all other ranged units, and +50% volley damage against garrisons.",
-	"Ironhoof Rams": "Battering Horns — a Ram riding free turns the enemy flank even when infantry anchor both ends of its line. Crag Charge — the one cavalry that takes a flank in the mountains.",
-	"Gnomish Gyrocopters": "Flak Gunners — ×1.25 when the enemy has flyers. Flak Screen — each engages one enemy flying unit before the battle (−30% strength). No two gyrocopters engage the same flyer.",
-	"Dwarf Garrison": "Stone Halls — foot facing it in the mountains ×0.9. Deep Halls — counts as Guard for Shield Fort.",
-	"Dwarf Ironclads": "Armoured Hulls — immune to pre-battle volleys.",
-	"Goblin Horde": "Arrow Fodder — second-line archers shooting them fire at ×0.75. Sheer Numbers — +10% strength per other orc foot unit in the force (Goblin Hordes, Berserkers, the Orc Garrison), max +30%.",
-	"Orc Berserkers": "Frenzy — ×1.15 facing foot. Driven Before Them — +10% for each Goblin Horde beside them in the front line.",
-	"Black Arrows": "Brawling Archers — full strength when forced into the front line, where other archers fight ×0.75. Raiders’ Volley — their pre-battle volley does ×1.5 when attacking.",
-	"Warg Riders": "Wolves Panic Horses — ×1.25 facing cavalry. Run Them Down — if at least half your winning force are Wargs, they run the beaten army down on the field: every beaten unit is 15% more likely to be destroyed in the rout, on any ground (not against a Dwarven Shield Fort). There is no chase afterwards. Against neutral guards, who never flee, they end the fight fast instead: half casualties for you on a win.",
-	"Wyvern Riders": "Terror From Above — the enemy’s strongest front-line unit fights ×0.85. Acid Spit — a pre-battle strike on one enemy unit (2–5), one chance in two whatever the commander’s Druid.",
-	"Orc Garrison": "Bloodthirsty — defending, ×1.15 facing foot. Raiders’ Muster — an orcish province that sees an orc realm win there gains a Goblin Horde in its garrison at turn’s end, for nothing.",
-	"Orcish Longships": "Reaver Crews — the whole force fights at +25% in any battle the phase it lands from these ships, even if another hero takes command of the combined host.",
-	"Whale Cohort": "Breach and Swamp — 25% chance each to sink one enemy fleet outright before the battle is fought.",
-	Thunderbirds: "Storm Wings — every enemy unit in the air fights ×0.85. Lightning Strike: a pre-battle strike on one enemy unit (4–8). Storm-birds of the high crags that fight from the air, taking no place in the line.",
-	"Forest Ents": "Rooted — never hit from the side when the enemy line wraps their end. Choking Spores: a pre-battle strike across the whole enemy line (2–4 each). At home in forest and jungle (terrain ×1.15), withering in the desert.",
-	"Stone Giants": "Boulder Wall — cavalry facing them fights at no better than ×0.75 (the Unicorn Herd's Purity breaks it). Boulder Barrage: a pre-battle strike that shatters one enemy unit (4–7). At home in the mountains (terrain ×1.15); slow.",
-	"Cave Trolls": "Regenerating Hide — after a lost battle, a 30% chance to shrug off a death roll. Hurled Rubble: a pre-battle strike on one enemy unit (4–7). At home in the mountains and the forest (terrain ×1.15 and ×1.1).",
-	"Manticore Pride": "Relentless Hunt — ×1.25 strength when their side is the attacker, and when at least half the winning force are Manticores the beaten foe takes +15% rout losses. Spine Volley: a pre-battle strike across every enemy unit (2–4 each). Fights from the air.",
-	"Basilisk Brood": "Stone Deterrent — ×1.25 strength when their side is defending. Petrifying Gaze: a pre-battle strike across the whole enemy line (2–4 each).",
-	"Crimson Rocs": "Air Superiority — ×1.3 strength when the enemy fields ranged troops. Thunderous Stoop: a pre-battle strike scatters one enemy unit (5–9). Fights from the air, taking no place in the line.",
-	"Elder Dragons": "Wyrmscale — ×1.25 strength in every battle. Dragonfire Breath: a pre-battle strike that washes every enemy unit in fire (3–6 each). Fights from the air, taking no place in the line.",
-	"Titan Warbeasts": "Colossal Bulk — fights from the second line at full strength. World-Shaking Charge: a pre-battle strike that unbalances every enemy unit (3–6 each). At home on the plain and in the desert (terrain ×1.1).",
-	"Sea Giants": "Tidal Might — ×1.2 strength in a coastal land province (one bordering the sea). Tidal Surge: a pre-battle strike on one enemy unit (4–8).",
-	"Eldritch Kraken": "Deepwater Grasp — ×1.35 strength at sea. Crushing Coils: a pre-battle strike that drags one enemy unit under (5–9).",
-	"Dread Hydras": "Many Heads — ×1.25 facing foot. Venom Breath: a pre-battle strike across the whole enemy line (3–6 each). The greatest of the Monsters, at home in jungle and forest (terrain ×1.1 and ×1.05).",
-	"Shark Shoals": "Shoal Swarm — +10% strength per other Shark Shoals in the force, to +30%. Feeding Frenzy — when at least half the winning force are shoals, a foe beaten at sea takes +15% rout losses. A shoal is no hull: it carries nothing.",
-	"Great Bears": "Maul — ×1.15 facing foot. Thick Hide — pre-battle volleys against them do half. At home in forest and mountain (terrain ×1.1), poor in the desert; move 3.",
-	"Unicorn Herd": "Purity — ×1.25 facing Monsters and skeletons, and it breaks a Spear Hedge or a Boulder Wall (no ×0.75 cap). Through the Glades — the one cavalry, with the Stag Riders, that takes a flank in forest and jungle. At home on the plain and in the forest (terrain ×1.1).",
-	"Mammoth Host": "Trample — ×1.15 facing foot. Stampede: a pre-battle strike across the whole enemy line (2–4 each). At home on the open plain (terrain ×1.1), ill at ease under trees; slow.",
-	"Great Turtles": "Island Back — carries two land units a hull, where a fleet carries one. Shell Wall — immune to pre-battle volleys, as the Ironclads. Island-backed turtles of the prosperous seas that swim under their own power; slow."
-};
 function unitAbilityText(type) {
 	return UNIT_ABILITIES[type] || "";
 }
@@ -9598,53 +10949,7 @@ async function persistHeroOrder() {
 }
 //#endregion
 //#region src/ui/player/order-chances.ts
-var SPELLS_BY_SCHOOL = {
-	white: [
-		"Resurrect",
-		"Part Sea",
-		"Bless Province",
-		"Holy Symbol",
-		"Spiritwrack",
-		"Sanctuary",
-		"Divine Judgment"
-	],
-	psychic: [
-		"Charm",
-		"Oratory",
-		"Clairvoyance",
-		"Psychic Blast",
-		"Telekinetic Storm",
-		"Mass Confusion",
-		"Dominate"
-	],
-	illusory: [
-		"Illusory Terrain",
-		"Phantasmal Armies",
-		"Hide Lairs",
-		"Invisibility",
-		"Mirror Image",
-		"Phantom Host",
-		"Veil"
-	],
-	elemental: [
-		"Lightning Bolt",
-		"Fireball",
-		"Earthquake",
-		"Flood",
-		"Elemental Summon",
-		"Chain Lightning",
-		"Cataclysm"
-	],
-	necromancy: [
-		"Control Undead",
-		"Skeletal Armies",
-		"Curse",
-		"Hand of Death",
-		"Plague",
-		"Raise Wraiths",
-		"Death's Dominion"
-	]
-};
+var SPELLS_BY_SCHOOL = everySpellBySchool();
 function castChanceNote(c, spellName, opts) {
 	opts = opts || {};
 	const school = SPELL_TO_SCHOOL[spellName];
@@ -9730,22 +11035,8 @@ function orderChanceNote(c, action, ph) {
 		default: return "";
 	}
 }
-var SPELL_TO_SCHOOL = {};
-Object.entries(SPELLS_BY_SCHOOL).forEach(([school, list]) => list.forEach((s) => {
-	SPELL_TO_SCHOOL[s] = school;
-}));
-var SPELL_REQ_LEVEL = {
-	Sanctuary: 7,
-	"Divine Judgment": 9,
-	"Mass Confusion": 7,
-	Dominate: 9,
-	"Phantom Host": 7,
-	Veil: 9,
-	"Chain Lightning": 7,
-	Cataclysm: 9,
-	"Raise Wraiths": 7,
-	"Death's Dominion": 9
-};
+var SPELL_TO_SCHOOL = theSchoolOfEachSpell();
+var SPELL_REQ_LEVEL = theLevelEachMasterySpellNeeds();
 var rawMagicLvl = (charObj, school) => (charObj && charObj.skills || {})[school] || 0;
 var ITEM_UNCAPPED_SKILLS_P = new Set(KC_ITEM_UNCAPPED_SKILLS);
 function effMagicLvl(charObj, school) {
@@ -9823,7 +11114,7 @@ var SPELL_HINTS = {
 	"Illusory Terrain": "Target: a province you’re in or adjacent to. Cloaks it in a false, ever-shifting terrain: enemies who fight there are disoriented, each unit fighting as if in the worst terrain for its kind (at least −15%). An enemy hero who enters dispels it at the end of that turn; 20%/turn natural fade.",
 	"Phantasmal Armies": "Target: yourself or any friendly hero in your province. Spectral duplicates of their humanoid armies — 10% of the host per caster level, counted to level 5, at least one — march and fight with the real host for the rest of the turn. The doubles never appear in the roster, need no berth aboard ship, and melt away if their originals fall or the force is beaten.",
 	"Hide Lairs": "Target: a province you’re in or adjacent to. Hides every lair there from all other players — they cannot discover any lair in it while the glamour holds (one already found stays theirs). 20% chance to fade each turn.",
-	Invisibility: "Combat: enemies suffer −10%, and a further −4% per Illusory level (−14% at 1, −30% at 5), to hit you (melee and arrows) for the fight, +30% to Flee, and +15% to a following Steal. Action: cast on yourself — 80% chance no enemy player sees you (sightings, spies, Encounter targeting, the map) for the rest of the turn.",
+	Invisibility: "Combat: enemies suffer −10%, and a further −4% per Illusory level (−14% at 1, −30% at 5), to hit you (melee and arrows) for the fight, +30% to Flee, and +15% to a following Steal. Action: cast on yourself — 80% chance no enemy player sees you (sightings, spies, Encounter targeting, the map) for the rest of the turn, and every enemy order and ambush aimed at you misses you.",
 	"Lightning Bolt": "Combat: 1–3 damage per caster level to your opponent. Battle: your-level enemy armies each lose 20% strength.",
 	Fireball: "Combat: burns the target for 10% of its health each round, +2% per Elemental level (12% at 1, 20% at 5), for 3 rounds. Battle: the strongest enemy unit’s strength is halved.",
 	Earthquake: "Target: a province you’re in or adjacent to. It yields no tax at the end of this turn.",
