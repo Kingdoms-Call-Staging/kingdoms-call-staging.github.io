@@ -1,14 +1,15 @@
 //#region src/ui/shared/kc-safe.ts
 function kcEsc(v) {
-	return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+	return String(typeof v === "undefined" || v === null ? "" : v).replace(/[&<>"']/g, (c) => String({
 		"&": "&amp;",
 		"<": "&lt;",
 		">": "&gt;",
 		"\"": "&quot;",
 		"'": "&#39;"
-	})[c]);
+	}[c]));
 }
 var KcSafeHtml = class {
+	s;
 	constructor(s) {
 		this.s = s;
 	}
@@ -18,20 +19,27 @@ var KcSafeHtml = class {
 };
 function kcHtml(strings, ...values) {
 	const show = (v) => v instanceof KcSafeHtml ? v.s : Array.isArray(v) ? v.map(show).join("") : kcEsc(v);
-	let out = strings[0];
-	for (let i = 0; i < values.length; i++) out += show(values[i]) + strings[i + 1];
+	let out = String(strings[0]);
+	for (let i = 0; i < values.length; i++) out += show(values[i]) + String(strings[i + 1]);
 	return new KcSafeHtml(out);
 }
 //#endregion
 //#region src/db/kc-db-guard.ts
-async function kcDbGuard(sb, min) {
+/** A thrown value as `(e && e.message) || e` reads it: its message when it is an object or a function with a truthy
+*  one, else the value itself. */
+function itsMessageOrItself(e) {
+	const message = (typeof e === "object" || typeof e === "function") && e !== null && "message" in e ? e.message : void 0;
+	if (message) return message;
+	return e;
+}
+async function kcDbGuard(db, min) {
 	const ask = async () => {
 		try {
-			return await sb.rpc("kc_db_version");
+			return await db.theDatabasesVersion.askTheDatabaseItsVersion();
 		} catch (e) {
 			return {
 				data: null,
-				error: { message: String(e && e.message || e) },
+				error: { message: String(itsMessageOrItself(e)) },
 				status: 0
 			};
 		}
@@ -40,18 +48,97 @@ async function kcDbGuard(sb, min) {
 	if (r.error && !r.status) r = await ask();
 	const v = !r.error && typeof r.data === "string" && /^\d{14}$/.test(r.data) ? r.data : null;
 	if (!v || v < min) {
-		const why = r.error ? r.status ? "no version check in the database" : "the database didn't answer" : `database ${v || "unknown"}`;
+		const why = r.error ? r.status ? "no version check in the database" : "the database didn't answer" : `database ${v ?? "unknown"}`;
 		window.dispatchEvent(new ErrorEvent("error", { message: `The game is being updated. Try again in a few minutes. (${why}; this page needs ${min})` }));
-		return new Promise(() => {});
+		return new Promise(() => void 0);
 	}
 	document.documentElement.setAttribute("data-kc-db", v);
 	document.dispatchEvent(new CustomEvent("kc-db-version", { detail: v }));
 	return v;
 }
 //#endregion
+//#region src/db/the-db-interface-and-its-areas.ts
+/** The page's Db, on its own client: each function sends the query the page sent on that client before. */
+function makeTheDbFromItsClient(client) {
+	return {
+		theDatabasesVersion: { askTheDatabaseItsVersion: () => client.rpc("kc_db_version") },
+		signingIn: {
+			theSessionKeptInThisBrowser: () => client.auth.getSession(),
+			signInWithEmailAndPassword: (email, password) => client.auth.signInWithPassword({
+				email,
+				password
+			}),
+			signUpWithEmailPasswordAndName: (email, password, name) => client.auth.signUp({
+				email,
+				password,
+				options: { data: { display_name: name } }
+			}),
+			signOut: () => client.auth.signOut(),
+			changeThePassword: (password) => client.auth.updateUser({ password }),
+			changeTheNameKeptWithTheSignIn: (name) => client.auth.updateUser({ data: { display_name: name } })
+		},
+		theAccountsNames: {
+			theNamesOfTheseAccounts: (ids) => client.from("profiles").select("id,name").in("id", ids),
+			theNameOfEveryAccount: () => client.from("profiles").select("id,name"),
+			theNameAndJoiningDateOfEveryAccountInNameOrder: () => client.from("profiles").select("id,name,created_at").order("name", { ascending: true }),
+			theNameOfThisAccount: (id) => client.from("profiles").select("id,name").eq("id", id).single(),
+			giveThisAccountItsName: (id, name) => client.from("profiles").upsert({
+				id,
+				name
+			}, { onConflict: "id" })
+		},
+		theRoles: {
+			isTheSignedInAccountAGameMaster: () => client.rpc("is_game_master"),
+			isTheSignedInAccountTheOverlord: () => client.rpc("is_site_admin"),
+			theGameMasterOfferMadeToThisAccount: (id) => client.from("game_masters").select("accepted_at").eq("user_id", id).maybeSingle(),
+			answerTheGameMasterOffer: (answer) => client.rpc(answer)
+		},
+		theOverlordsAccounts: {
+			everyAccountAsTheOverlordSeesIt: () => client.rpc("overlord_accounts"),
+			suspendThisAccountUntil: (user, until) => client.rpc("account_suspend", {
+				p_user: user,
+				p_until: until
+			}),
+			liftThisAccountsSuspension: (user) => client.rpc("account_unsuspend", { p_user: user }),
+			deleteThisAccount: (user) => client.rpc("account_delete", { p_user: user }),
+			offerThisAccountGameMaster: (user) => client.rpc("gm_offer", { p_user: user }),
+			withdrawTheGameMasterOfferToThisAccount: (user) => client.rpc("gm_withdraw_offer", { p_user: user }),
+			revokeThisAccountsGameMaster: (user) => client.rpc("gm_revoke", { p_user: user })
+		},
+		theOverlordsGames: {
+			everyGameNewestFirstFromRowToRow: (from, to) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,created_at,meta").order("created_at", { ascending: false }).range(from, to),
+			handThisGameToThisGameMaster: (game, gameMaster) => client.rpc("reassign_game", {
+				p_game: game,
+				p_new_gm: gameMaster
+			}),
+			theRealmsNamesOfTheseGames: (games) => client.from("game_players").select("game_id,player_index,display_name").in("game_id", games)
+		}
+	};
+}
+//#endregion
+//#region src/db/the-pages-database-client.ts
+/** The name, on the page's window, of the Db a test hands the page. */
+var THE_NAME_A_TEST_HANDS_THE_PAGE_ITS_DB_UNDER = "kcTheDbATestHandsThePage";
+/** A value a test handed in, taken as a Db when it has the version guard's area (the first area: every page has it). */
+function isADbHandedIn(handed) {
+	return typeof handed === "object" && handed !== null && "theDatabasesVersion" in handed;
+}
+/** The page's client, made as the page made it (with its options only when it has some), and its Db: the one a test
+*  handed in, else the one on this client. */
+function makeThePagesDatabase(url, key, options) {
+	const client = options === void 0 ? supabase.createClient(url, key) : supabase.createClient(url, key, options);
+	const handed = Reflect.get(globalThis, THE_NAME_A_TEST_HANDS_THE_PAGE_ITS_DB_UNDER);
+	return {
+		client,
+		db: isADbHandedIn(handed) ? handed : makeTheDbFromItsClient(client)
+	};
+}
+//#endregion
 //#region src/ui/overlord/main.ts
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
-var sb = supabase.createClient(KC_CONFIG.supabaseUrl, KC_CONFIG.supabaseKey, { auth: { storageKey: "kc-overlord-auth" } });
+var thePagesDatabase = makeThePagesDatabase(KC_CONFIG.supabaseUrl, KC_CONFIG.supabaseKey, { auth: { storageKey: "kc-overlord-auth" } });
+var sb = thePagesDatabase.client;
+var thePagesDb = thePagesDatabase.db;
 var KC_DB_MIN = "20261015051826";
 var ME = null;
 var ACCOUNTS = [];
@@ -92,7 +179,7 @@ function section(id) {
 }
 async function init() {
 	$("spinner").style.display = "none";
-	const { data: { session } } = await sb.auth.getSession();
+	const { data: { session } } = await thePagesDb.signingIn.theSessionKeptInThisBrowser();
 	if (session && session.user) {
 		ME = session.user;
 		onSignedIn();
@@ -105,20 +192,17 @@ async function doSignIn() {
 		return;
 	}
 	fill("auth-msg", el("div", { class: "msg-info" }, "Signing in…"));
-	const { data, error } = await sb.auth.signInWithPassword({
-		email,
-		password
-	});
+	const { data, error } = await thePagesDb.signingIn.signInWithEmailAndPassword(email, password);
 	if (error) {
 		fill("auth-msg", el("div", { class: "msg-error" }, /Invalid login/.test(error.message) ? "Email or password incorrect." : error.message));
 		return;
 	}
 	fill("auth-msg");
-	ME = data && data.user || ((await sb.auth.getSession()).data.session || {}).user || null;
+	ME = data && data.user || ((await thePagesDb.signingIn.theSessionKeptInThisBrowser()).data.session || {}).user || null;
 	if (ME) onSignedIn();
 }
 async function doSignOut() {
-	await sb.auth.signOut();
+	await thePagesDb.signingIn.signOut();
 	ME = null;
 	ACCOUNTS = [];
 	GAMES = [];
@@ -129,7 +213,7 @@ async function doSignOut() {
 	section("sec-auth");
 }
 async function onSignedIn() {
-	const { data, error } = await sb.rpc("is_site_admin");
+	const { data, error } = await thePagesDb.theRoles.isTheSignedInAccountTheOverlord();
 	if (error || data !== true) {
 		const m = $("denied-msg");
 		m.className = error ? "msg-error" : "msg-info";
@@ -151,14 +235,14 @@ async function loadAll() {
 	await loadReports();
 }
 async function loadAccounts() {
-	const { data, error } = await sb.rpc("overlord_accounts");
+	const { data, error } = await thePagesDb.theOverlordsAccounts.everyAccountAsTheOverlordSeesIt();
 	ACCOUNTS = error ? null : data || [];
 	ACCOUNTS_ERROR = error ? error.message : "";
 }
 async function loadGames() {
 	const rows = [];
 	for (let from = 0;; from += 200) {
-		const { data, error } = await sb.from("games").select("id,name,gm_user_id,status,turn,max_turns,created_at,meta").order("created_at", { ascending: false }).range(from, from + 199);
+		const { data, error } = await thePagesDb.theOverlordsGames.everyGameNewestFirstFromRowToRow(from, from + 199);
 		if (error) {
 			GAMES = null;
 			GAMES_ERROR = error.message;
@@ -179,7 +263,7 @@ async function loadReports() {
 	const ids = [...new Set(REPORTS.map((r) => r.game_id))];
 	REALMS = {};
 	if (ids.length) {
-		const { data: slots } = await sb.from("game_players").select("game_id,player_index,display_name").in("game_id", ids);
+		const { data: slots } = await thePagesDb.theOverlordsGames.theRealmsNamesOfTheseGames(ids);
 		(slots || []).forEach((s) => {
 			(REALMS[s.game_id] = REALMS[s.game_id] || {})[s.player_index] = s.display_name;
 		});
@@ -316,13 +400,10 @@ function accountActions(a) {
 async function suspend(a, how) {
 	const [words, ms] = SUSPEND_FOR[how] || SUSPEND_FOR.day;
 	if (!confirm(`Suspend ${label(a)} ${words}? They can't sign in until then. If they're signed in now, that session lasts until it expires, up to an hour. They keep their realms and games.`)) return;
-	await act(sb.rpc("account_suspend", {
-		p_user: a.user_id,
-		p_until: ms == null ? null : new Date(Date.now() + ms).toISOString()
-	}), `${label(a)} is suspended ${words}.`);
+	await act(thePagesDb.theOverlordsAccounts.suspendThisAccountUntil(a.user_id, ms == null ? null : new Date(Date.now() + ms).toISOString()), `${label(a)} is suspended ${words}.`);
 }
 async function unsuspend(a) {
-	await act(sb.rpc("account_unsuspend", { p_user: a.user_id }), `${label(a)} can sign in again.`);
+	await act(thePagesDb.theOverlordsAccounts.liftThisAccountsSuspension(a.user_id), `${label(a)} can sign in again.`);
 }
 function deletePanel(a) {
 	const word = a.email || a.name || "";
@@ -365,18 +446,18 @@ function deletePanel(a) {
 }
 async function deleteAccount(a) {
 	DELETING = null;
-	await act(sb.rpc("account_delete", { p_user: a.user_id }), `${label(a)}'s account is deleted.`);
+	await act(thePagesDb.theOverlordsAccounts.deleteThisAccount(a.user_id), `${label(a)}'s account is deleted.`);
 }
 async function offerGm(a) {
-	await act(sb.rpc("gm_offer", { p_user: a.user_id }), `Offered Game Master to ${a.name || a.email}. They'll see it at the top of their player portal.`);
+	await act(thePagesDb.theOverlordsAccounts.offerThisAccountGameMaster(a.user_id), `Offered Game Master to ${a.name || a.email}. They'll see it at the top of their player portal.`);
 }
 async function withdrawOffer(a) {
-	await act(sb.rpc("gm_withdraw_offer", { p_user: a.user_id }), `Withdrew the offer to ${a.name || a.email}.`);
+	await act(thePagesDb.theOverlordsAccounts.withdrawTheGameMasterOfferToThisAccount(a.user_id), `Withdrew the offer to ${a.name || a.email}.`);
 }
 async function revokeGm(a) {
 	if (!confirm(`Revoke Game Master from ${a.name || a.email}? They can still play.`)) return;
 	REVOKING = null;
-	await act(sb.rpc("gm_revoke", { p_user: a.user_id }), `${a.name || a.email} is no longer a Game Master.`);
+	await act(thePagesDb.theOverlordsAccounts.revokeThisAccountsGameMaster(a.user_id), `${a.name || a.email} is no longer a Game Master.`);
 }
 function handOver(g) {
 	const pick = el("select", { "data-act": "pick" }, el("option", { value: "" }, "Hand over to…"), gameMasters(g.gm_user_id).map((a) => el("option", { value: a.user_id }, a.name || a.email || "(no name)")));
@@ -392,10 +473,7 @@ async function reassign(g, to) {
 		return;
 	}
 	if (!confirm(`Hand ${g.name} to ${nameOf(to)}? Their GM portal picks it up; ${nameOf(g.gm_user_id)}'s can no longer save it.`)) return;
-	await act(sb.rpc("reassign_game", {
-		p_game: g.id,
-		p_new_gm: to
-	}), `${g.name} is now run by ${nameOf(to)}.`);
+	await act(thePagesDb.theOverlordsGames.handThisGameToThisGameMaster(g.id, to), `${g.name} is now run by ${nameOf(to)}.`);
 }
 function renderGames() {
 	if (GAMES == null) {
@@ -466,7 +544,7 @@ async function act(call, done) {
 	await loadAll();
 	return true;
 }
-kcDbGuard(sb, KC_DB_MIN).then(() => init());
+kcDbGuard(thePagesDb, KC_DB_MIN).then(() => init());
 //#endregion
 //#region src/ui/shared/a-newer-version-of-this-page.ts
 /** The file each deploy publishes beside the pages. */

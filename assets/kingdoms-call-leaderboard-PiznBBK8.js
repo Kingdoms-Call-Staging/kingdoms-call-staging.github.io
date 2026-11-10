@@ -1,14 +1,15 @@
 //#region src/ui/shared/kc-safe.ts
 function kcEsc(v) {
-	return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+	return String(typeof v === "undefined" || v === null ? "" : v).replace(/[&<>"']/g, (c) => String({
 		"&": "&amp;",
 		"<": "&lt;",
 		">": "&gt;",
 		"\"": "&quot;",
 		"'": "&#39;"
-	})[c]);
+	}[c]));
 }
 var KcSafeHtml = class {
+	s;
 	constructor(s) {
 		this.s = s;
 	}
@@ -18,8 +19,8 @@ var KcSafeHtml = class {
 };
 function kcHtml(strings, ...values) {
 	const show = (v) => v instanceof KcSafeHtml ? v.s : Array.isArray(v) ? v.map(show).join("") : kcEsc(v);
-	let out = strings[0];
-	for (let i = 0; i < values.length; i++) out += show(values[i]) + strings[i + 1];
+	let out = String(strings[0]);
+	for (let i = 0; i < values.length; i++) out += show(values[i]) + String(strings[i + 1]);
 	return new KcSafeHtml(out);
 }
 function kcArg(v) {
@@ -27,14 +28,21 @@ function kcArg(v) {
 }
 //#endregion
 //#region src/db/kc-db-guard.ts
-async function kcDbGuard(sb, min) {
+/** A thrown value as `(e && e.message) || e` reads it: its message when it is an object or a function with a truthy
+*  one, else the value itself. */
+function itsMessageOrItself(e) {
+	const message = (typeof e === "object" || typeof e === "function") && e !== null && "message" in e ? e.message : void 0;
+	if (message) return message;
+	return e;
+}
+async function kcDbGuard(db, min) {
 	const ask = async () => {
 		try {
-			return await sb.rpc("kc_db_version");
+			return await db.theDatabasesVersion.askTheDatabaseItsVersion();
 		} catch (e) {
 			return {
 				data: null,
-				error: { message: String(e && e.message || e) },
+				error: { message: String(itsMessageOrItself(e)) },
 				status: 0
 			};
 		}
@@ -43,20 +51,99 @@ async function kcDbGuard(sb, min) {
 	if (r.error && !r.status) r = await ask();
 	const v = !r.error && typeof r.data === "string" && /^\d{14}$/.test(r.data) ? r.data : null;
 	if (!v || v < min) {
-		const why = r.error ? r.status ? "no version check in the database" : "the database didn't answer" : `database ${v || "unknown"}`;
+		const why = r.error ? r.status ? "no version check in the database" : "the database didn't answer" : `database ${v ?? "unknown"}`;
 		window.dispatchEvent(new ErrorEvent("error", { message: `The game is being updated. Try again in a few minutes. (${why}; this page needs ${min})` }));
-		return new Promise(() => {});
+		return new Promise(() => void 0);
 	}
 	document.documentElement.setAttribute("data-kc-db", v);
 	document.dispatchEvent(new CustomEvent("kc-db-version", { detail: v }));
 	return v;
 }
 //#endregion
+//#region src/db/the-db-interface-and-its-areas.ts
+/** The page's Db, on its own client: each function sends the query the page sent on that client before. */
+function makeTheDbFromItsClient(client) {
+	return {
+		theDatabasesVersion: { askTheDatabaseItsVersion: () => client.rpc("kc_db_version") },
+		signingIn: {
+			theSessionKeptInThisBrowser: () => client.auth.getSession(),
+			signInWithEmailAndPassword: (email, password) => client.auth.signInWithPassword({
+				email,
+				password
+			}),
+			signUpWithEmailPasswordAndName: (email, password, name) => client.auth.signUp({
+				email,
+				password,
+				options: { data: { display_name: name } }
+			}),
+			signOut: () => client.auth.signOut(),
+			changeThePassword: (password) => client.auth.updateUser({ password }),
+			changeTheNameKeptWithTheSignIn: (name) => client.auth.updateUser({ data: { display_name: name } })
+		},
+		theAccountsNames: {
+			theNamesOfTheseAccounts: (ids) => client.from("profiles").select("id,name").in("id", ids),
+			theNameOfEveryAccount: () => client.from("profiles").select("id,name"),
+			theNameAndJoiningDateOfEveryAccountInNameOrder: () => client.from("profiles").select("id,name,created_at").order("name", { ascending: true }),
+			theNameOfThisAccount: (id) => client.from("profiles").select("id,name").eq("id", id).single(),
+			giveThisAccountItsName: (id, name) => client.from("profiles").upsert({
+				id,
+				name
+			}, { onConflict: "id" })
+		},
+		theRoles: {
+			isTheSignedInAccountAGameMaster: () => client.rpc("is_game_master"),
+			isTheSignedInAccountTheOverlord: () => client.rpc("is_site_admin"),
+			theGameMasterOfferMadeToThisAccount: (id) => client.from("game_masters").select("accepted_at").eq("user_id", id).maybeSingle(),
+			answerTheGameMasterOffer: (answer) => client.rpc(answer)
+		},
+		theOverlordsAccounts: {
+			everyAccountAsTheOverlordSeesIt: () => client.rpc("overlord_accounts"),
+			suspendThisAccountUntil: (user, until) => client.rpc("account_suspend", {
+				p_user: user,
+				p_until: until
+			}),
+			liftThisAccountsSuspension: (user) => client.rpc("account_unsuspend", { p_user: user }),
+			deleteThisAccount: (user) => client.rpc("account_delete", { p_user: user }),
+			offerThisAccountGameMaster: (user) => client.rpc("gm_offer", { p_user: user }),
+			withdrawTheGameMasterOfferToThisAccount: (user) => client.rpc("gm_withdraw_offer", { p_user: user }),
+			revokeThisAccountsGameMaster: (user) => client.rpc("gm_revoke", { p_user: user })
+		},
+		theOverlordsGames: {
+			everyGameNewestFirstFromRowToRow: (from, to) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,created_at,meta").order("created_at", { ascending: false }).range(from, to),
+			handThisGameToThisGameMaster: (game, gameMaster) => client.rpc("reassign_game", {
+				p_game: game,
+				p_new_gm: gameMaster
+			}),
+			theRealmsNamesOfTheseGames: (games) => client.from("game_players").select("game_id,player_index,display_name").in("game_id", games)
+		}
+	};
+}
+//#endregion
+//#region src/db/the-pages-database-client.ts
+/** The name, on the page's window, of the Db a test hands the page. */
+var THE_NAME_A_TEST_HANDS_THE_PAGE_ITS_DB_UNDER = "kcTheDbATestHandsThePage";
+/** A value a test handed in, taken as a Db when it has the version guard's area (the first area: every page has it). */
+function isADbHandedIn(handed) {
+	return typeof handed === "object" && handed !== null && "theDatabasesVersion" in handed;
+}
+/** The page's client, made as the page made it (with its options only when it has some), and its Db: the one a test
+*  handed in, else the one on this client. */
+function makeThePagesDatabase(url, key, options) {
+	const client = options === void 0 ? supabase.createClient(url, key) : supabase.createClient(url, key, options);
+	const handed = Reflect.get(globalThis, THE_NAME_A_TEST_HANDS_THE_PAGE_ITS_DB_UNDER);
+	return {
+		client,
+		db: isADbHandedIn(handed) ? handed : makeTheDbFromItsClient(client)
+	};
+}
+//#endregion
 //#region src/ui/leaderboard/main.ts
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
 var SUPABASE_URL = KC_CONFIG.supabaseUrl;
 var SUPABASE_ANON_KEY = KC_CONFIG.supabaseKey;
-var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+var thePagesDatabase = makeThePagesDatabase(SUPABASE_URL, SUPABASE_ANON_KEY);
+var sb = thePagesDatabase.client;
+var thePagesDb = thePagesDatabase.db;
 var KC_DB_MIN = "20261012064100";
 globalThis.GAMES = [];
 var TAB = "champions";
@@ -663,7 +750,7 @@ function fmtVal(v, f) {
 async function loadAll(force) {
 	const msg = $("msg");
 	try {
-		const { data: { session } } = await sb.auth.getSession();
+		const { data: { session } } = await thePagesDb.signingIn.theSessionKeptInThisBrowser();
 		ME = session ? session.user : null;
 	} catch (e) {
 		ME = null;
@@ -671,7 +758,7 @@ async function loadAll(force) {
 	GM = false;
 	OVERLORD = false;
 	if (ME && new URLSearchParams(location.search).get("gm") === "1") try {
-		const [{ data }, ov] = await Promise.all([sb.from("games").select("id").eq("gm_user_id", ME.id).limit(1), sb.rpc("is_site_admin")]);
+		const [{ data }, ov] = await Promise.all([sb.from("games").select("id").eq("gm_user_id", ME.id).limit(1), thePagesDb.theRoles.isTheSignedInAccountTheOverlord()]);
 		OVERLORD = !!(ov && !ov.error && ov.data === true);
 		GM = OVERLORD || !!(data && data.length);
 	} catch (e) {
@@ -704,7 +791,7 @@ async function loadAll(force) {
 	}));
 	PEOPLE = {};
 	try {
-		const { data: profs } = await sb.from("profiles").select("id,name");
+		const { data: profs } = await thePagesDb.theAccountsNames.theNameOfEveryAccount();
 		(profs || []).forEach((r) => {
 			if (r && r.id && r.name) PEOPLE[r.id] = r.name;
 		});
@@ -1182,7 +1269,7 @@ async function deleteRecord(id, purge) {
 	buildFilterOptions();
 	render();
 }
-kcDbGuard(sb, KC_DB_MIN).then(() => loadAll());
+kcDbGuard(thePagesDb, KC_DB_MIN).then(() => loadAll());
 //#endregion
 //#region src/ui/shared/a-newer-version-of-this-page.ts
 /** The file each deploy publishes beside the pages. */
