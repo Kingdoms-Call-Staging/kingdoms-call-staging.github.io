@@ -1,12 +1,12 @@
 {
-  "commit": "af5ea90780fe4a68d73b2566eba26a20be752dc9",
-  "time": "2026-11-14T13:50:32+13:00",
+  "commit": "8f63ea9a8dab1aa4db14431bf69f346e3633ef76",
+  "time": "2026-11-15T00:15:01+13:00",
   "pages": {
     "index.html": "2c5cadeafa63",
-    "kingdoms-call-gm-portal.html": "c19220d107f7",
+    "kingdoms-call-gm-portal.html": "59f415b16838",
     "kingdoms-call-leaderboard.html": "68f36be85bf9",
     "kingdoms-call-overlord.html": "5abdd7041131",
-    "kingdoms-call-player-portal.html": "576d66cd723b",
+    "kingdoms-call-player-portal.html": "7d8ed4e09e4a",
     "kingdoms-call-rules-intro.html": "4ed1d9055cfe",
     "kingdoms-call-rules.html": "3b967c72dc40"
   }
