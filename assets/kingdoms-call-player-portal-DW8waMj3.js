@@ -1317,6 +1317,8 @@ var UNIT_ABILITIES = {
 	"Great Turtles": "Island Back — carries two land units a hull, where a fleet carries one. Shell Wall — immune to pre-battle volleys, as the Ironclads. Island-backed turtles of the prosperous seas that swim under their own power; slow."
 };
 // src/db/the-db-interface-and-its-areas.ts
+var A_GAME_IN_THE_GAME_MASTERS_LIST = "id,name,gm_user_id,status,turn,max_players,max_turns,created_at,meta, game_players(id,game_id,user_id,player_index,display_name,orders_submitted)";
+var EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST = "*, game_players(*)";
 /** The page's Db, on its own client: each function sends the query the page sent on that client before. */
 function makeTheDbFromItsClient(client) {
 	return {
@@ -1371,6 +1373,155 @@ function makeTheDbFromItsClient(client) {
 				p_new_gm: gameMaster
 			}),
 			theRealmsNamesOfTheseGames: (games) => client.from("game_players").select("game_id,player_index,display_name").in("game_id", games)
+		},
+		theHallOfFame: {
+			oneEntrysGame: () => client.from("game_records").select("game_id").limit(1),
+			everyEntryNewestFinishedFirstFromRowToRow: (from, to) => client.from("game_records").select("*").order("finished_at", { ascending: false }).range(from, to),
+			theGameOfEveryEntry: () => client.from("game_records").select("game_id"),
+			theGameMastersNotesOnThisGamesEntry: (game) => client.from("game_records").select("note,hidden,game_name").eq("game_id", game).maybeSingle(),
+			writeTheseEntries: (entries) => client.from("game_records").upsert([...entries], { onConflict: "game_id" }),
+			changeThisGamesEntry: (game, change) => client.from("game_records").update(change).eq("game_id", game),
+			deleteThisGamesEntry: (game) => client.from("game_records").delete().eq("game_id", game),
+			deleteTheseGamesEntries: (games) => client.from("game_records").delete().in("game_id", games),
+			renameThisPlayer: (user, name) => client.rpc("rename_player", {
+				p_user: user,
+				p_name: name
+			})
+		},
+		theStatistics: {
+			oneTurnRecordsId: () => client.from("turn_events").select("id").limit(1),
+			oneGameResultsId: () => client.from("game_results").select("id").limit(1),
+			theResultsOfThisGame: (game) => client.from("game_results").select("*").eq("game_id", game),
+			thisGamesTurnRecordsForItsEntryFromRowToRow: (game, from, to) => client.from("turn_events").select("turn,player_index,is_bot,realm,race,alignment,post,outcomes").eq("game_id", game).order("turn").order("player_index").range(from, to),
+			theGameOfEveryResultFromRowToRow: (from, to) => client.from("game_results").select("game_id").order("game_id").order("player_index").range(from, to),
+			everyTurnRecordFromRowToRow: (from, to) => client.from("turn_events").select("game_id,turn,player_index,is_bot,bot_difficulty,realm,race,alignment,orders,pre,post,outcomes").order("game_id").order("turn").order("player_index").range(from, to),
+			everyResultFromRowToRow: (from, to) => client.from("game_results").select("*").range(from, to),
+			deleteThisGamesResults: (game) => client.from("game_results").delete().eq("game_id", game),
+			deleteThisGamesTurnRecords: (game) => client.from("turn_events").delete().eq("game_id", game),
+			deleteTheseGamesResults: (games) => client.from("game_results").delete().in("game_id", games),
+			deleteTheseGamesTurnRecords: (games) => client.from("turn_events").delete().in("game_id", games),
+			writeTheseResults: (results) => client.from("game_results").upsert(results, { onConflict: "game_id,player_index" }),
+			writeTheseTurnRecords: (records) => client.from("turn_events").upsert(records, { onConflict: "game_id,turn,player_index" }),
+			theGamesOfTheseGamesResults: (games) => client.from("game_results").select("game_id").in("game_id", games)
+		},
+		theHallOfFamesGames: {
+			oneGameThisGameMasterRuns: (gameMaster) => client.from("games").select("id").eq("gm_user_id", gameMaster).limit(1),
+			thisGameWithItsWorldAndRealms: (game) => client.from("games").select("id,name,gm_user_id,created_at,max_turns,meta,game_state,game_players(id,player_index,user_id,display_name)").eq("id", game).maybeSingle(),
+			theFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,gm_user_id,created_at,max_turns,meta").eq("gm_user_id", gameMaster).eq("status", "complete"),
+			everyGamesNameStatusAndTurn: () => client.from("games").select("id,name,status,turn"),
+			theNameStatusAndTurnOfTheGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status,turn").eq("gm_user_id", gameMaster),
+			whichOfTheseGamesStillExist: (games) => client.from("games").select("id").in("id", games),
+			theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status").eq("gm_user_id", gameMaster).eq("status", "complete"),
+			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(*)").eq("id", game).single()
+		},
+		theDispatches: {
+			oneDispatchsId: () => client.from("game_messages").select("id").limit(1),
+			oneReadMarksGame: () => client.from("game_message_reads").select("game_id").limit(1),
+			theNewestDispatchesOfThisGame: (game, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).order("id", { ascending: false }).limit(count),
+			theDispatchesOfThisGameAfterThisOne: (game, after, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).gt("id", after).order("id", { ascending: true }).limit(count),
+			theDispatchesOfThisGameBeforeThisOne: (game, before, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).lt("id", before).order("id", { ascending: false }).limit(count),
+			theNewestDispatchesOfTheseGamesGamesAndRealms: (games) => client.from("game_messages").select("id,game_id,from_index,to_indexes,scope").in("game_id", games).order("id", { ascending: false }).limit(3e3),
+			sendThisDispatch: (dispatch) => client.from("game_messages").insert(dispatch),
+			deleteThisDispatch: (id) => client.from("game_messages").delete().eq("id", id),
+			thisRealmsReadMarksInThisGame: (game, realm) => client.from("game_message_reads").select("reads").eq("game_id", game).eq("player_index", realm).maybeSingle(),
+			thisAccountsReadMarksInTheseGames: (games, account) => client.from("game_message_reads").select("game_id,player_index,reads").in("game_id", games).eq("user_id", account),
+			writeTheseReadMarks: (marks) => client.from("game_message_reads").upsert(marks, { onConflict: "game_id,player_index" })
+		},
+		theReportedDispatches: {
+			theDispatchesThisAccountReportedInThisGame: (game) => client.from("message_reports").select("message_id").eq("game_id", game),
+			reportThisDispatch: (report) => client.from("message_reports").insert(report),
+			theDispatchesReportedToThisAccount: (game) => client.rpc("gm_reported_messages", { p_game: game })
+		},
+		thePlayersRealms: {
+			thisAccountsRealmsAndTheirOrdersFlags: (account) => client.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", account),
+			everyRealmOfThisAccount: (account) => client.from("game_players").select("*").eq("user_id", account),
+			theGamesOfThisAccountsRealms: (account) => client.from("game_players").select("game_id").eq("user_id", account),
+			thisAccountsRealmsInThisGame: (game, account) => client.from("game_players").select("id,player_index").eq("game_id", game).eq("user_id", account),
+			thisRealm: (id) => client.from("game_players").select("*").eq("id", id).single(),
+			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			theSlotsOfTheseGames: (games) => client.rpc("get_game_slots", { p_games: games })
+		},
+		thePlayersGames: {
+			theTurnAndStateOfTheseGames: (games) => client.from("games").select("id,turn,status").in("id", games),
+			theseGamesForTheirCards: (games) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,created_at,meta").in("id", games),
+			theseGamesEveryColumn: (games) => client.from("games").select("*").in("id", games),
+			theGamesInSetup: () => client.from("games").select("*").eq("status", "setup"),
+			thisGamesWorldAndState: (game) => client.from("games").select("game_state,status").eq("id", game).single(),
+			thisGameForItsReport: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", game).single(),
+			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single()
+		},
+		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
+		theOrders: {
+			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
+				orders,
+				orders_submitted: false
+			}).eq("id", realm),
+			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
+			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
+			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
+				orders,
+				orders_submitted: true,
+				last_submitted_at: submittedAt
+			}).eq("id", realm),
+			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+		},
+		theGameMastersGames: {
+			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
+			theGamesThisGameMasterRunsNewestFirst: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).order("created_at", { ascending: false }),
+			theGamesThisGameMasterRunsNewestFirstEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).order("created_at", { ascending: false }),
+			everyGameNewestFirstFromRowToRow: (from, to) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
+			everyGameNewestFirstFromRowToRowEveryColumn: (from, to) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
+			theActiveGamesThisGameMasterRuns: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
+			theActiveGamesThisGameMasterRunsEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
+			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single(),
+			makeThisGame: (game) => client.from("games").insert(game).select().single(),
+			thisGamesTurnAndWorld: (game) => client.from("games").select("id,turn,game_state").eq("id", game).single(),
+			theGamesThisGameMasterRunsWithNoMeta: (gameMaster) => client.from("games").select("id,game_state").eq("gm_user_id", gameMaster).is("meta", null),
+			changeThisGame: (game, change) => client.from("games").update(change).eq("id", game),
+			changeThisGameAndAnswerItsId: (game, change) => client.from("games").update(change).eq("id", game).select("id").maybeSingle(),
+			changeThisGameWhileOnThisTurnAndAnswerItsId: (game, turn, change) => client.from("games").update(change).eq("id", game).eq("turn", turn).select("id").maybeSingle(),
+			keepTheRealmsThatAreOutOfThisGameFromSendingDispatches: (game, keep) => client.from("games").update({ block_eliminated_msgs: keep }).eq("id", game).select("id,block_eliminated_msgs").maybeSingle()
+		},
+		theGameMastersRealms: { removeThisRealm: (realm) => client.from("game_players").delete().eq("id", realm) },
+		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
+		theDeletionOfAGame: {
+			removeThisGamesTurnLogs: (game) => client.from("turn_logs").delete().eq("game_id", game),
+			removeThisGamesDispatches: (game) => client.from("game_messages").delete().eq("game_id", game),
+			removeThisGamesReadMarks: (game) => client.from("game_message_reads").delete().eq("game_id", game),
+			removeThisGamesTurnEvents: (game) => client.from("turn_events").delete().eq("game_id", game),
+			removeThisGamesResults: (game) => client.from("game_results").delete().eq("game_id", game),
+			removeThisGamesHallOfFameEntry: (game) => client.from("game_records").delete().eq("game_id", game),
+			removeThisGamesRealms: (game) => client.from("game_players").delete().eq("game_id", game),
+			removeThisGame: (game) => client.from("games").delete().eq("id", game)
+		},
+		theTurnAsTheGameMasterRunsIt: {
+			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single(),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			clearTheOrdersOfEveryRealmOfThisGame: (game) => client.from("game_players").update({
+				orders: null,
+				orders_submitted: false
+			}).eq("game_id", game),
+			saveThisGameWhileOnThisTurnAndAnswerItsId: (game, turn, change) => client.from("games").update(change).eq("id", game).eq("turn", turn).select("id").maybeSingle(),
+			giveThisRealmItsTurnReport: (realm, report) => client.from("game_players").update({ turn_report: report }).eq("id", realm),
+			writeThisLog: (log) => client.from("turn_logs").insert(log),
+			theTurnOfThisGameIfItIsThere: (game) => client.from("games").select("turn").eq("id", game).maybeSingle(),
+			putBackThisRealmsOrders: (realm, orders, submitted) => client.from("game_players").update({
+				orders,
+				orders_submitted: submitted
+			}).eq("id", realm)
+		},
+		theTurnZeroAsTheGameMasterRunsIt: {
+			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			removeEveryBotsRealmOfThisGame: (game) => client.from("game_players").delete().eq("game_id", game).is("user_id", null),
+			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			startThisGame: (game, change) => client.from("games").update(change).eq("id", game),
+			giveThisRealmItsFirstReport: (realm, report) => client.from("game_players").update({
+				turn_report: report,
+				orders: null,
+				orders_submitted: false
+			}).eq("id", realm),
+			writeThisLog: (log) => client.from("turn_logs").insert(log),
+			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single()
 		}
 	};
 }
@@ -5373,7 +5524,7 @@ function theMagicLevelsAHerosPractisesBeforeAPhaseMayRaise(orders, c, ph) {
 /** The slots' caps, labels and the tiers' names and colours, read by any slot or tier. */
 var theSlotCaps = { ...KC_ITEM_SLOT_CAP };
 var theWondersByAlignment = { ...KC_GRAND_DESIGNS };
-var theSkillsNames$6 = SKILL_LABELS;
+var theSkillsNames$7 = SKILL_LABELS;
 /** A pair's leads, as `p.options` the filter made sure is a list. */
 function theLeadsOf$1(p) {
 	const options = p.options;
@@ -5627,7 +5778,7 @@ function renderPreSchool(charId) {
 	if (!disp || !(hidden instanceof HTMLInputElement)) return;
 	const school = (hidden.value || "").toLowerCase();
 	if (school) disp.innerHTML = String(kcHtml`<span style="display:inline-flex;align-items:center;gap:6px;background:#fff8e8;border:1px solid #c8922a;border-radius:2px;padding:3px 8px;font-size:.78rem">
-        <span style="color:#5a4208">Random <strong>${(theSkillsNames$6[school] ?? "") || school}</strong> spell</span>
+        <span style="color:#5a4208">Random <strong>${(theSkillsNames$7[school] ?? "") || school}</strong> spell</span>
         <button onclick="clearPreSchool(${kcArg(String(charId))})" title="Remove" style="background:var(--crimson);color:#fff;border:none;border-radius:2px;padding:0 6px;cursor:pointer;font-size:.7rem">✕</button>
       </span>
       <button onclick="openPreSchoolPicker(${kcArg(String(charId))})" style="font-size:.7rem;padding:3px 8px;border:1px solid var(--stone);background:var(--parchment-dark);cursor:pointer;border-radius:2px">Change</button>`);
@@ -5640,7 +5791,7 @@ function kcJoinP(list, sep) {
 }
 // src/ui/player/order-chances.ts
 /** The skills' names by key, read by any key (none is empty words). */
-var theSkillsNames$5 = SKILL_LABELS;
+var theSkillsNames$6 = SKILL_LABELS;
 var SPELLS_BY_SCHOOL = everySpellBySchool();
 function castChanceNote(c, spellName, optsHanded) {
 	const opts = optsHanded ?? {};
@@ -5649,10 +5800,10 @@ function castChanceNote(c, spellName, optsHanded) {
 	const rec = c?.castChance?.[school] ?? null;
 	if (opts.itemCast) return kcHtml`<div style="font-size:.72rem;color:var(--forest);margin-top:2px">🎲 Cast chance: <strong>95%</strong> — worked from the item, whatever your own skill.</div>`;
 	const lvl = rec ? rec.level : effMagicLvl(c, school);
-	if (Number(lvl) <= 0) return kcHtml`<div style="font-size:.72rem;color:var(--crimson);margin-top:2px">🎲 No ${(theSkillsNames$5[school] ?? "") || school} skill yet — this cast will fail unless a Practice order earlier this turn raises it.</div>`;
+	if (Number(lvl) <= 0) return kcHtml`<div style="font-size:.72rem;color:var(--crimson);margin-top:2px">🎲 No ${(theSkillsNames$6[school] ?? "") || school} skill yet — this cast will fail unless a Practice order earlier this turn raises it.</div>`;
 	if (school === "necromancy" && c?.necroAutoReady) return kcHtml`<div style="font-size:.72rem;color:var(--forest);margin-top:2px">🎲 Cast chance: <strong>100%</strong> — your Wailing Phylactery makes this turn's first Necromancy spell certain.</div>`;
 	const chance = rec ? rec.chance : Math.min(95, 30 + Number(lvl) * 10);
-	const bits = [`${(theSkillsNames$5[school] ?? "") || school} ${String(lvl)}`];
+	const bits = [`${(theSkillsNames$6[school] ?? "") || school} ${String(lvl)}`];
 	if (rec?.arcane) bits.push(`+${String(rec.arcane)}% Arcane Codex`);
 	if (rec?.mastery) bits.push(`+${String(rec.mastery)}% school mastery`);
 	if (rec?.discovery) bits.push(`+${String(rec.discovery)}% discoveries`);
@@ -5687,7 +5838,7 @@ function unitEmoji(type) {
 }
 // src/ui/player/skills-and-projections.ts
 /** The skills' names, the sources' kinds, marks and words, and the beasts' classes, read by any key. */
-var theSkillsNames$4 = SKILL_LABELS;
+var theSkillsNames$5 = SKILL_LABELS;
 var BONUS_KIND_P = {
 	item: {
 		c: "#9a6b12",
@@ -5776,7 +5927,7 @@ function skillRowHTML(c, style) {
 		const srcs = _skillSourcesP(c, k);
 		const cb = srcs.filter((s) => s.scope !== "always").reduce((sm, x) => sm + (Number(x.delta) || 0), 0);
 		if (Number(base) <= 0 && bonus <= 0 && cb <= 0) return "";
-		const label = (theSkillsNames$4[k] ?? "") || k;
+		const label = (theSkillsNames$5[k] ?? "") || k;
 		const always = srcs.filter((s) => s.scope === "always");
 		const rawTotal = always.reduce((s, x) => s + (Number(x.delta) || 0), 0);
 		const chips = [];
@@ -6033,7 +6184,7 @@ function theDiplomaticChoices() {
 	return diploChoices;
 }
 /** The tables read by a key of words: the skills' names and the guardians' colours (no colour is ''). */
-var theSkillsNames$3 = SKILL_LABELS;
+var theSkillsNames$4 = SKILL_LABELS;
 var theGuardiansColours = GUARD_POWER_COLORS_P;
 var TERRAIN_COLORS_MAP = { ...KC_TERRAIN_COLORS };
 function makeTerrainIcon(svgNS, cx, cy, terrain) {
@@ -6503,7 +6654,7 @@ function popupKnownChars(pd, deadHeroes) {
 }
 function heroFameTextP(h) {
 	const ts = h?.topSkill ?? topSkillOf(h);
-	return ts ? `${skillFameLabelM(ts.level)} ${(theSkillsNames$3[ts.skill] ?? "") || ts.skill}` : "no notable skills";
+	return ts ? `${skillFameLabelM(ts.level)} ${(theSkillsNames$4[ts.skill] ?? "") || ts.skill}` : "no notable skills";
 }
 var MAP_SYMBOL_FONT = "'Noto Sans Symbols 2','Noto Sans Symbols','Segoe UI Symbol','Apple Symbols','Symbola','DejaVu Sans',sans-serif";
 function _setGlyphText(el, s) {
@@ -6631,6 +6782,11 @@ function _renderDiplomacyInto(el, report, withControls) {
 function theValueOfAField(el) {
 	return "value" in el ? el.value : void 0;
 }
+/** The value of the page's field with the id `id`, as `document.getElementById(id)?.value` read it. */
+function theValueOfThePagesField(id) {
+	const el = document.getElementById(id);
+	return el ? theValueOfAField(el) : void 0;
+}
 function getOrderTarget(charId, ph) {
 	const hidden = document.getElementById(`po-target-${String(charId)}-${String(ph)}`);
 	if (hidden) {
@@ -6713,7 +6869,7 @@ function theRowOf(p) {
 	return p.row;
 }
 /** The skills' names, read by any skill. */
-var theSkillsNames$2 = SKILL_LABELS;
+var theSkillsNames$3 = SKILL_LABELS;
 /** The hero's name, read where the notice reads it: a TypeError for no hero, as the read on none threw. */
 function theNameOfTheHero(ch) {
 	if (ch === null || ch === void 0) throw new TypeError(`Cannot read properties of ${String(ch)} (reading 'name')`);
@@ -6932,7 +7088,7 @@ function heirSelectorHTML(chars) {
 	const pip = (skill) => {
 		const lvl = Number(heir.skills?.[skill]) || 0;
 		const added = heirAddedTo(heir, skill);
-		const displayName = (theSkillsNames$2[skill] ?? "") || skill;
+		const displayName = (theSkillsNames$3[skill] ?? "") || skill;
 		const minusOff = added <= 0;
 		const plusOff = remaining <= 0 || added >= 2;
 		return kcHtml`<div class="skill-pip">
@@ -7023,7 +7179,7 @@ function tacticLabel(code) {
 	if (code.startsWith("CA:")) return `Cast Spell — ${code.slice(3)}`;
 	if (code.startsWith("CS:")) {
 		const school = code.slice(3);
-		return `Pre-battle: random ${(theSkillsNames$2[school] ?? "") || school} spell`;
+		return `Pre-battle: random ${(theSkillsNames$3[school] ?? "") || school} spell`;
 	}
 	const baseCode = code.split(":")[0];
 	return (ENCOUNTER_TACTICS.find((et) => et.code === baseCode)?.label ?? "") || code;
@@ -8074,16 +8230,23 @@ async function persistHeroOrder() {
 	if (Reflect.get(raw, "forTurn") == null) Reflect.set(raw, "forTurn", Number(currentReport ? Number(currentReport._liveTurn) || currentReport.turn : currentReport) || 1);
 	Reflect.set(raw, "heroOrder", heroOrder.slice());
 	const payload = JSON.stringify(raw);
-	const { error } = await sb.from("game_players").update({ orders: payload }).eq("id", gp.id);
+	const { error } = await thePagesDb.theOrders.saveThisRealmsHeroOrder(gp.id, payload);
 	if (error) {
 		console.warn("persistHeroOrder:", error.message);
 		return;
 	}
 	gp.orders = payload;
 }
+// src/ui/shared/the-pages-element-with-the-id.ts
+/** The element of `page` with the id `id`, of the kind `kind`. Throws a TypeError naming the id when the page holds no
+*  element with it, or holds one of another kind. `page` is the page's own document unless a test hands another. */
+function theElementWithTheId(id, kind, page = document) {
+	const found = page.getElementById(id);
+	if (found === null) throw new TypeError(`the page holds no element with the id "${id}"`);
+	if (!(found instanceof kind)) throw new TypeError(`the page's element with the id "${id}" is a <${found.tagName.toLowerCase()}>, not of the kind asked for`);
+	return found;
+}
 // src/ui/player/dispatches.ts
-var KC_MSG_TABLE = "game_messages";
-var KC_MSG_READS = "game_message_reads";
 var MSG_POLL_MS = 8e3;
 var MSG_SLOW_EVERY = 4;
 var MSG_MAX_LEN = 500;
@@ -8121,6 +8284,20 @@ function _msgNum(v) {
 function _msgArr(v) {
 	return Array.isArray(v) ? v : [];
 }
+function theWordsOfWhatTheDispatchesMet(e) {
+	let words = e;
+	if (e) {
+		const message = Reflect.get(Object(e), "message");
+		if (message) words = message;
+	}
+	return String(words);
+}
+function theRefusalAsThrown(error) {
+	return error;
+}
+function theLiveTurnHeldBy(holder) {
+	return holder && Reflect.get(Object(holder), "_liveTurn");
+}
 function msgChannelKeyOf(row) {
 	if (!row) return "public";
 	if (row.scope === "public" || !_msgArr(row.to_indexes).length) return "public";
@@ -8131,41 +8308,40 @@ function msgGroupKey(indices) {
 }
 function msgParticipantsOf(key) {
 	if (!key || key === "public") return [];
-	return String(key).slice(2).split("-").map(_msgNum).filter((i) => i != null);
+	return key.slice(2).split("-").map(_msgNum).filter((i) => i != null);
 }
 function msgRealmName(i) {
-	const r = _msgRealms[i];
-	return r && r.name || "Realm " + ((_msgNum(i) || 0) + 1);
+	return (_msgRealms[String(i)]?.name ?? "") || `Realm ${String((_msgNum(i) ?? 0) + 1)}`;
 }
 function msgRealmColour(i) {
-	const r = _msgRealms[i];
-	const hex = r && r.color || null;
+	const hex = (_msgRealms[String(i)]?.color ?? "") || null;
 	if (!hex) return "#c9b189";
 	try {
-		return _tintForDarkTooltip ? _tintForDarkTooltip(hex) : hex;
-	} catch (e) {
+		return _tintForDarkTooltip(hex);
+	} catch {
 		return hex;
 	}
 }
 async function loadMessageRoster(gameId, report) {
 	const known = {};
-	_msgArr(report && report.diplomacy && report.diplomacy.known).forEach((k) => {
-		const i = _msgNum(k && k.index);
+	_msgArr(report?.diplomacy?.known).forEach((k) => {
+		const i = _msgNum(k.index);
 		if (i == null) return;
 		known[i] = {
 			index: i,
-			name: k.name || "Realm " + (i + 1),
-			color: k.color || null,
-			alignment: k.alignment || null,
+			name: (k.name ?? "") || `Realm ${String(i + 1)}`,
+			color: (k.color ?? "") || null,
+			alignment: (k.alignment ?? "") || null,
 			conceded: !!k.conceded,
 			eliminated: !!k.eliminated,
-			relation: k.relation || "neutral"
+			relation: (k.relation ?? "") || "neutral"
 		};
 	});
-	let humans = /* @__PURE__ */ new Set(), total = 0;
+	const humans = /* @__PURE__ */ new Set();
+	let total = 0;
 	try {
 		const { data: slots, error } = await fetchGameSlots([gameId]);
-		if (error) throw error;
+		if (error) throw theRefusalAsThrown(error);
 		_msgArr(slots).forEach((s) => {
 			const i = _msgNum(s.player_index);
 			if (i == null) return;
@@ -8173,7 +8349,7 @@ async function loadMessageRoster(gameId, report) {
 			if (!s.is_bot) humans.add(i);
 		});
 	} catch (e) {
-		_msgErr = "Could not read the realm roster: " + (e && e.message || e);
+		_msgErr = "Could not read the realm roster: " + theWordsOfWhatTheDispatchesMet(e);
 	}
 	_msgRealms = {};
 	Object.values(known).forEach((k) => {
@@ -8200,7 +8376,7 @@ async function loadMessageRoster(gameId, report) {
 	};
 }
 function msgContacts() {
-	return Object.values(_msgRealms).filter((r) => r && r.met && r.human && r.index !== _msgMyIndex).sort((a, b) => a.index - b.index);
+	return Object.values(_msgRealms).filter((r) => r !== void 0 && r.met && r.human && r.index !== _msgMyIndex).sort((a, b) => a.index - b.index);
 }
 function msgChannelIsSendable(key) {
 	return msgChannelOpen(key) && !msgOutReason(key);
@@ -8211,7 +8387,7 @@ function msgChannelOpen(key) {
 	if (!others.length) return false;
 	return others.some((i) => {
 		const r = _msgRealms[i];
-		return r && r.human && (_msgGameOver || !r.conceded && !r.eliminated);
+		return r?.human && (_msgGameOver || !r.conceded && !r.eliminated);
 	});
 }
 function msgOutReason(key) {
@@ -8235,15 +8411,15 @@ function msgChannelLabel(key) {
 }
 async function initMessaging(gameId, myIndex, report, game) {
 	const same = String(_msgGameId) === String(gameId) && _msgMyIndex === _msgNum(myIndex);
-	_msgGameId = gameId != null ? String(gameId) : null;
+	_msgGameId = gameId ?? null;
 	_msgMyIndex = _msgNum(myIndex);
-	_msgMyName = report && report.playerName || "";
-	_msgMyColor = report && report.kingdom && report.kingdom.color || null;
+	_msgMyName = report?.playerName ?? "";
+	_msgMyColor = (report?.kingdom?.color ?? "") || null;
 	{
-		const k = report && report.kingdom || {};
+		const k = report?.kingdom ?? {};
 		_msgOut = k.conceded ? "conceded" : k.eliminated ? "eliminated" : null;
-		_msgGameOver = !!(game && game.status === "complete" || report && report.titles && report.titles.gameOver);
-		_msgBlockOut = !!(game && game.block_eliminated_msgs);
+		_msgGameOver = !!(game?.status === "complete" || report?.titles?.gameOver);
+		_msgBlockOut = !!game?.block_eliminated_msgs;
 	}
 	if (!same) {
 		_msgRows = [];
@@ -8268,7 +8444,7 @@ async function initMessaging(gameId, myIndex, report, game) {
 	if (dt) dt.style.display = _msgEnabled ? "" : "none";
 	try {
 		applyDeskViews();
-	} catch (e) {}
+	} catch {}
 	if (!_msgEnabled) {
 		stopMessagePolling();
 		updateMsgBadges();
@@ -8286,23 +8462,23 @@ async function initMessaging(gameId, myIndex, report, game) {
 }
 async function probeMessagesTable() {
 	try {
-		const { error } = await sb.from(KC_MSG_TABLE).select("id").limit(1);
+		const { error } = await thePagesDb.theDispatches.oneDispatchsId();
 		_msgTableOk = !error;
 		if (error) _msgErr = error.message;
 	} catch (e) {
 		_msgTableOk = false;
-		_msgErr = String(e && e.message || e);
+		_msgErr = theWordsOfWhatTheDispatchesMet(e);
 	}
 	return _msgTableOk;
 }
 async function loadMessageReads() {
 	if (!_msgGameId || _msgMyIndex == null) return;
 	try {
-		const { data, error } = await sb.from(KC_MSG_READS).select("reads").eq("game_id", _msgGameId).eq("player_index", _msgMyIndex).maybeSingle();
-		if (error) throw error;
-		const r = data && data.reads;
+		const { data, error } = await thePagesDb.theDispatches.thisRealmsReadMarksInThisGame(_msgGameId, _msgMyIndex);
+		if (error) throw theRefusalAsThrown(error);
+		const r = data?.reads;
 		_msgReads = r && typeof r === "object" && !Array.isArray(r) ? { ...r } : {};
-	} catch (e) {
+	} catch {
 		_msgReads = {};
 	}
 }
@@ -8318,14 +8494,14 @@ async function saveMessageReads() {
 	if (!_msgReadsDirty || !_msgGameId || _msgMyIndex == null || !currentUser) return;
 	_msgReadsDirty = false;
 	try {
-		await sb.from(KC_MSG_READS).upsert({
+		await thePagesDb.theDispatches.writeTheseReadMarks({
 			game_id: _msgGameId,
 			player_index: _msgMyIndex,
 			user_id: currentUser.id,
 			reads: _msgReads,
 			updated_at: (/* @__PURE__ */ new Date()).toISOString()
-		}, { onConflict: "game_id,player_index" });
-	} catch (e) {}
+		});
+	} catch {}
 }
 function startMessagePolling() {
 	if (_msgTimer) return;
@@ -8341,7 +8517,7 @@ function startMessagePolling() {
 function refreshMsgBadgeSoon() {
 	try {
 		if (_msgEnabled && _msgGameId && _activeSectionId() === "sec-report") refreshMessages(false);
-	} catch (e) {}
+	} catch {}
 }
 function stopMessagePolling() {
 	if (_msgTimer) {
@@ -8366,10 +8542,8 @@ async function refreshMessages(force) {
 	}
 	_msgBusy = true;
 	try {
-		let q = sb.from(KC_MSG_TABLE).select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", _msgGameId);
-		q = _msgMaxId > 0 ? q.gt("id", _msgMaxId).order("id", { ascending: true }).limit(MSG_PAGE) : q.order("id", { ascending: false }).limit(MSG_PAGE);
-		const { data, error } = await q;
-		if (error) throw error;
+		const { data, error } = await (_msgMaxId > 0 ? thePagesDb.theDispatches.theDispatchesOfThisGameAfterThisOne(_msgGameId, _msgMaxId, MSG_PAGE) : thePagesDb.theDispatches.theNewestDispatchesOfThisGame(_msgGameId, MSG_PAGE));
+		if (error) throw theRefusalAsThrown(error);
 		let rows = _msgArr(data);
 		if (_msgMaxId <= 0) {
 			rows = rows.slice().reverse();
@@ -8383,7 +8557,7 @@ async function refreshMessages(force) {
 		}
 		updateMsgBadges();
 	} catch (e) {
-		_msgErr = String(e && e.message || e);
+		_msgErr = theWordsOfWhatTheDispatchesMet(e);
 		renderMessageThread();
 	} finally {
 		_msgBusy = false;
@@ -8392,7 +8566,7 @@ async function refreshMessages(force) {
 function _msgAbsorb(rows) {
 	let added = 0;
 	_msgArr(rows).forEach((r) => {
-		const id = _msgNum(r && r.id);
+		const id = _msgNum(r.id);
 		if (id == null || _msgIds.has(id)) return;
 		_msgIds.add(id);
 		_msgRows.push(r);
@@ -8400,7 +8574,7 @@ function _msgAbsorb(rows) {
 		if (id > _msgMaxId) _msgMaxId = id;
 		if (_msgMinId === 0 || id < _msgMinId) _msgMinId = id;
 	});
-	if (added) _msgRows.sort((a, b) => _msgNum(a.id) - _msgNum(b.id));
+	if (added) _msgRows.sort((a, b) => Number(_msgNum(a.id)) - Number(_msgNum(b.id)));
 	return added;
 }
 async function loadOlderMessages() {
@@ -8408,13 +8582,13 @@ async function loadOlderMessages() {
 	_msgLoadingOlder = true;
 	renderMessageThread();
 	try {
-		const { data, error } = await sb.from(KC_MSG_TABLE).select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", _msgGameId).lt("id", _msgMinId).order("id", { ascending: false }).limit(MSG_PAGE);
-		if (error) throw error;
+		const { data, error } = await thePagesDb.theDispatches.theDispatchesOfThisGameBeforeThisOne(_msgGameId, _msgMinId, MSG_PAGE);
+		if (error) throw theRefusalAsThrown(error);
 		const page = _msgArr(data);
 		_msgMoreOlder = page.length >= MSG_PAGE;
 		_msgAbsorb(page.slice().reverse());
 	} catch (e) {
-		_msgErr = String(e && e.message || e);
+		_msgErr = theWordsOfWhatTheDispatchesMet(e);
 	} finally {
 		_msgLoadingOlder = false;
 		renderMessageChannels();
@@ -8425,8 +8599,8 @@ function msgRowsOf(key) {
 	return _msgRows.filter((r) => msgChannelKeyOf(r) === key);
 }
 function msgUnreadIn(key) {
-	const seen = _msgNum(_msgReads[key]) || 0;
-	return msgRowsOf(key).filter((r) => (_msgNum(r.id) || 0) > seen && _msgNum(r.from_index) !== _msgMyIndex).length;
+	const seen = _msgNum(_msgReads[key]) ?? 0;
+	return msgRowsOf(key).filter((r) => (_msgNum(r.id) ?? 0) > seen && _msgNum(r.from_index) !== _msgMyIndex).length;
 }
 function msgUnreadTotal() {
 	return msgChannelKeys().reduce((n, k) => n + msgUnreadIn(k), 0);
@@ -8434,8 +8608,8 @@ function msgUnreadTotal() {
 function markChannelRead(key) {
 	const rows = msgRowsOf(key);
 	if (!rows.length) return;
-	const top = rows.reduce((m, r) => Math.max(m, _msgNum(r.id) || 0), 0);
-	if ((_msgNum(_msgReads[key]) || 0) >= top) return;
+	const top = rows.reduce((m, r) => Math.max(m, _msgNum(r.id) ?? 0), 0);
+	if ((_msgNum(_msgReads[key]) ?? 0) >= top) return;
 	_msgReads[key] = top;
 	queueMessageReadSave();
 	updateMsgBadges();
@@ -8475,34 +8649,34 @@ function setMsgChannel(key) {
 	const ta = document.getElementById("msg-input");
 	if (ta) try {
 		ta.focus();
-	} catch (e) {}
+	} catch {}
 }
 function renderMessageChannels() {
 	const el = document.getElementById("msg-channels");
 	if (!el) return;
 	const keys = msgChannelKeys();
 	if (!keys.includes(_msgChannel)) _msgChannel = "public";
-	el.innerHTML = kcHtml`${keys.map((k) => {
+	el.innerHTML = String(kcHtml`${keys.map((k) => {
 		const others = msgParticipantsOf(k).filter((i) => i !== _msgMyIndex);
 		const gone = k !== "public" && !msgChannelIsSendable(k);
 		const dot = k === "public" ? kcHtml`<span class="mc-dot" style="background:#7d5fb5"></span>` : others.length === 1 ? kcHtml`<span class="mc-dot" style="background:${msgRealmColour(others[0])}"></span>` : kcHtml`<span class="mc-dot" style="background:linear-gradient(90deg,${others.slice(0, 3).map((i) => msgRealmColour(i)).join(",")})"></span>`;
 		const u = msgUnreadIn(k);
 		return kcHtml`<button type="button" class="msg-chan${k === _msgChannel ? " active" : ""}${gone ? " gone" : ""}" data-ch="${k}" title="${msgChannelLabel(k)}${gone ? " — no longer in the game" : ""}">${dot}<span class="mc-label">${msgChannelLabel(k)}</span>${u ? kcHtml`<span class="mc-unread">${u > 99 ? "99+" : u}</span>` : ""}</button>`;
-	})}`;
+	})}`);
 	updateMsgComposer();
 }
 function _msgBindChannelClicks() {
 	const el = document.getElementById("msg-channels");
-	if (!el || el._bound) return;
-	el._bound = true;
+	if (!el || Reflect.get(el, "_bound")) return;
+	Reflect.set(el, "_bound", true);
 	el.addEventListener("click", (ev) => {
-		const b = ev.target && ev.target.closest ? ev.target.closest(".msg-chan") : null;
-		if (b && b.dataset && b.dataset.ch) setMsgChannel(b.dataset.ch);
+		const b = ev.target instanceof Element ? ev.target.closest(".msg-chan") : null;
+		if (b instanceof HTMLElement && b.dataset["ch"]) setMsgChannel(b.dataset["ch"]);
 	});
 }
 function _msgWhen(iso) {
 	const d = new Date(iso);
-	if (isNaN(d)) return "";
+	if (isNaN(d.getTime())) return "";
 	return d.toLocaleTimeString([], {
 		hour: "2-digit",
 		minute: "2-digit"
@@ -8510,7 +8684,7 @@ function _msgWhen(iso) {
 }
 function _msgDay(iso) {
 	const d = new Date(iso);
-	if (isNaN(d)) return "";
+	if (isNaN(d.getTime())) return "";
 	return d.toLocaleDateString([], {
 		weekday: "short",
 		day: "numeric",
@@ -8525,7 +8699,7 @@ function renderMessageThread() {
 		return;
 	}
 	if (_msgTableOk === false) {
-		el.innerHTML = kcHtml`<div class="msg-empty">Dispatches are not switched on for this server yet — the <strong>game_messages</strong> table is missing. Ask your GM to run the messaging SQL shown on their portal.${_msgErr ? kcHtml`<br><span style="font-size:.72rem;opacity:.7">${_msgErr}</span>` : ""}</div>`;
+		el.innerHTML = String(kcHtml`<div class="msg-empty">Dispatches are not switched on for this server yet — the <strong>game_messages</strong> table is missing. Ask your GM to run the messaging SQL shown on their portal.${_msgErr ? kcHtml`<br><span style="font-size:.72rem;opacity:.7">${_msgErr}</span>` : ""}</div>`);
 		updateMsgComposer();
 		return;
 	}
@@ -8533,11 +8707,12 @@ function renderMessageThread() {
 	const rows = msgRowsOf(_msgChannel);
 	const older = _msgMoreOlder ? kcHtml`<button type="button" class="msg-chan" style="align-self:center" onclick="loadOlderMessages()"${_msgLoadingOlder ? kcHtml` disabled` : ""}>${_msgLoadingOlder ? "Loading…" : "↑ Earlier dispatches"}</button>` : "";
 	if (!rows.length) {
-		el.innerHTML = kcHtml`${older}<div class="msg-empty">No dispatches here yet.<br>Anything you write goes to <strong>${_msgChannel === "public" ? "every realm in the game" : msgChannelLabel(_msgChannel)}</strong>.</div>`;
+		const who = _msgChannel === "public" ? "every realm in the game" : msgChannelLabel(_msgChannel);
+		el.innerHTML = String(kcHtml`${older}<div class="msg-empty">No dispatches here yet.<br>Anything you write goes to <strong>${who}</strong>.</div>`);
 		updateMsgComposer();
 		return;
 	}
-	const seen = _msgNum(_msgReads[_msgChannel]) || 0;
+	const seen = _msgNum(_msgReads[_msgChannel]) ?? 0;
 	let lastDay = null;
 	const html = [older];
 	rows.forEach((r) => {
@@ -8551,17 +8726,17 @@ function renderMessageThread() {
 		const pub = r.scope === "public" || !_msgArr(r.to_indexes).length;
 		const others = _msgArr(r.to_indexes).map(_msgNum).filter((i) => i != null && i !== from);
 		const showTo = pub ? "to all realms" : others.length > 1 ? "to " + others.map((i) => msgRealmName(i)).join(", ") : "";
-		const fresh = !mine && (_msgNum(r.id) || 0) > seen;
+		const fresh = !mine && (_msgNum(r.id) ?? 0) > seen;
 		const meta = [
 			kcHtml`<span class="msg-from" style="color:${msgRealmColour(from)}">${mine ? msgRealmName(from) + " (you)" : msgRealmName(from)}</span>`,
 			showTo ? kcHtml`<span class="msg-to">${showTo}</span>` : "",
-			kcHtml`<span class="msg-when">${r.turn != null ? "T" + r.turn + " · " : ""}${_msgWhen(r.created_at)}</span>`,
+			kcHtml`<span class="msg-when">${r.turn != null ? `T${String(r.turn)} · ` : ""}${_msgWhen(r.created_at)}</span>`,
 			fresh ? kcHtml`<span class="mc-unread" title="New since you last read this thread">new</span>` : "",
-			mine ? "" : _msgReported.has(String(r.id)) ? kcHtml`<span class="msg-reported" title="Your GM (or the Overlord) can see this dispatch">⚑ Reported</span>` : kcHtml`<button type="button" class="msg-report" title="Show this dispatch to your GM" onclick="reportMessage(${kcArg(_msgNum(r.id) || 0)})">⚑ Report</button>`
+			mine ? "" : _msgReported.has(String(r.id)) ? kcHtml`<span class="msg-reported" title="Your GM (or the Overlord) can see this dispatch">⚑ Reported</span>` : kcHtml`<button type="button" class="msg-report" title="Show this dispatch to your GM" onclick="reportMessage(${kcArg(_msgNum(r.id) ?? 0)})">⚑ Report</button>`
 		];
 		html.push(kcHtml`<div class="msg-bubble${mine ? " mine" : ""}${pub && !mine ? " pub" : ""}"><div class="msg-meta">${meta}</div>${r.body}</div>`);
 	});
-	el.innerHTML = kcHtml`${html}`;
+	el.innerHTML = String(kcHtml`${html}`);
 	if (atBottom) el.scrollTop = el.scrollHeight;
 	updateMsgComposer();
 }
@@ -8576,22 +8751,23 @@ function onMessagesShown() {
 }
 async function loadMyReports() {
 	if (!_msgGameId) return;
-	const { data, error } = await sb.from("message_reports").select("message_id").eq("game_id", String(_msgGameId));
+	const { data, error } = await thePagesDb.theReportedDispatches.theDispatchesThisAccountReportedInThisGame(_msgGameId);
 	if (!error) _msgReported = new Set(_msgArr(data).map((r) => String(r.message_id)));
 }
 async function reportMessage(id) {
 	const r = _msgRows.find((x) => _msgNum(x.id) === _msgNum(id));
-	if (!r || _msgMyIndex == null || _msgNum(r.from_index) === _msgMyIndex) return;
+	const messageId = _msgNum(id);
+	if (!r || messageId === null || _msgMyIndex == null || _msgNum(r.from_index) === _msgMyIndex) return;
 	const why = prompt("Report this dispatch?\n\nYour GM will see it, with your reason (or the Overlord will, if your GM plays in this game). The sender isn't told.\n\nReason (optional):", "");
 	if (why == null) return;
-	const { error } = await sb.from("message_reports").insert({
-		message_id: _msgNum(id),
+	const { error } = await thePagesDb.theReportedDispatches.reportThisDispatch({
+		message_id: messageId,
 		game_id: String(_msgGameId),
 		reporter_index: _msgMyIndex,
-		reason: String(why).trim().slice(0, 500) || null
+		reason: why.trim().slice(0, 500) || null
 	});
-	if (error && error.code !== "23505") {
-		_msgErr = "Report not sent: " + String(error.message || error);
+	if (error && Reflect.get(error, "code") !== "23505") {
+		_msgErr = "Report not sent: " + theWordsOfWhatTheDispatchesMet(error);
 		updateMsgComposer();
 		return;
 	}
@@ -8601,15 +8777,15 @@ async function reportMessage(id) {
 }
 function updateMsgComposer() {
 	const btn = document.getElementById("msg-send-btn"), ta = document.getElementById("msg-input"), hint = document.getElementById("msg-hint"), note = document.getElementById("msg-note");
-	if (!btn || !ta) return;
+	if (!(btn instanceof HTMLButtonElement) || !(ta instanceof HTMLTextAreaElement)) return;
 	const sendable = _msgEnabled && _msgTableOk !== false && msgChannelIsSendable(_msgChannel);
 	const len = (ta.value || "").trim().length;
 	btn.disabled = !sendable || !len || _msgSending;
 	ta.disabled = !sendable;
-	if (hint) hint.innerHTML = !sendable ? kcHtml`${_msgTableOk === false ? "Messaging is not active on this server." : msgOutReason(_msgChannel) || "Every realm in this conversation has left the game."}` : kcHtml`${_msgChannel === "public" ? kcHtml`Public — <strong>every realm in this game</strong> will read this.${msgOutPrivateOff() ? " " + msgOutPrivateOff() : ""}` : "Private to " + msgChannelLabel(_msgChannel) + "."} <span style="opacity:.75">Ctrl+Enter sends. ${MSG_MAX_LEN - len} left.</span>`;
+	if (hint) hint.innerHTML = String(!sendable ? kcHtml`${_msgTableOk === false ? "Messaging is not active on this server." : (msgOutReason(_msgChannel) ?? "") || "Every realm in this conversation has left the game."}` : kcHtml`${_msgChannel === "public" ? kcHtml`Public — <strong>every realm in this game</strong> will read this.${msgOutPrivateOff() ? " " + msgOutPrivateOff() : ""}` : "Private to " + msgChannelLabel(_msgChannel) + "."} <span style="opacity:.75">Ctrl+Enter sends. ${MSG_MAX_LEN - len} left.</span>`);
 	if (note) {
 		note.style.display = _msgErr && _msgTableOk !== false ? "block" : "none";
-		note.textContent = _msgErr || "";
+		note.textContent = _msgErr ?? "";
 	}
 }
 function onMsgInput() {
@@ -8617,8 +8793,8 @@ function onMsgInput() {
 }
 function _msgBindComposerKeys() {
 	const ta = document.getElementById("msg-input");
-	if (!ta || ta._bound) return;
-	ta._bound = true;
+	if (!ta || Reflect.get(ta, "_bound")) return;
+	Reflect.set(ta, "_bound", true);
 	ta.addEventListener("keydown", (ev) => {
 		if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
 			ev.preventDefault();
@@ -8628,7 +8804,7 @@ function _msgBindComposerKeys() {
 }
 async function sendMessage() {
 	const ta = document.getElementById("msg-input");
-	if (!ta) return;
+	if (!(ta instanceof HTMLTextAreaElement)) return;
 	const body = (ta.value || "").trim();
 	if (!body || _msgSending || !_msgEnabled || !_msgGameId || _msgMyIndex == null) return;
 	if (!msgChannelIsSendable(_msgChannel)) return;
@@ -8638,18 +8814,18 @@ async function sendMessage() {
 	if (!pub && !to.length) return;
 	_msgSending = true;
 	updateMsgComposer();
-	const turn = _msgNum(currentGamePlayer && currentGamePlayer._liveTurn) || _msgNum(currentReport && currentReport._liveTurn);
+	const turn = (_msgNum(theLiveTurnHeldBy(currentGamePlayer)) ?? 0) || _msgNum(theLiveTurnHeldBy(currentReport));
 	try {
-		const { error } = await sb.from(KC_MSG_TABLE).insert({
+		const { error } = await thePagesDb.theDispatches.sendThisDispatch({
 			game_id: _msgGameId,
 			turn,
 			from_index: _msgMyIndex,
-			from_user_id: currentUser && currentUser.id || null,
+			from_user_id: (currentUser?.id ?? "") || null,
 			to_indexes: to,
 			scope: pub ? "public" : "private",
 			body: body.slice(0, MSG_MAX_LEN)
 		});
-		if (error) throw error;
+		if (error) throw theRefusalAsThrown(error);
 		ta.value = "";
 		_msgErr = null;
 		await refreshMessages(true);
@@ -8657,8 +8833,8 @@ async function sendMessage() {
 		if (th) th.scrollTop = th.scrollHeight;
 		markChannelRead(key);
 	} catch (e) {
-		const m = String(e && e.message || e);
-		_msgErr = e && e.hint === "kc_dispatch_rate" ? m : /game_messages_body_len/.test(m) ? "A dispatch can be at most 500 characters. Shorten it and send again." : "Dispatch not sent: " + m;
+		const m = theWordsOfWhatTheDispatchesMet(e);
+		_msgErr = e && Reflect.get(Object(e), "hint") === "kc_dispatch_rate" ? m : m.includes("game_messages_body_len") ? `A dispatch can be at most ${String(MSG_MAX_LEN)} characters. Shorten it and send again.` : "Dispatch not sent: " + m;
 	} finally {
 		_msgSending = false;
 		updateMsgComposer();
@@ -8672,12 +8848,12 @@ function toggleMsgGroupPicker(force) {
 	if (!open) return;
 	const list = document.getElementById("msg-group-list");
 	const cs = msgContacts();
-	if (list) list.innerHTML = cs.length ? kcHtml`${cs.map((r) => kcHtml`<label><input type="checkbox" value="${r.index}"><span style="color:${msgRealmColour(r.index)}">${r.name}</span>${r.conceded || r.eliminated ? kcHtml` <span style="opacity:.6;font-size:.72rem">(out)</span>` : ""}</label>`)}` : "<span style=\"font-size:.76rem;color:#8a7a5c\">You have not met another player's realm yet.</span>";
+	if (list) list.innerHTML = cs.length ? String(kcHtml`${cs.map((r) => kcHtml`<label><input type="checkbox" value="${r.index}"><span style="color:${msgRealmColour(r.index)}">${r.name}</span>${r.conceded || r.eliminated ? kcHtml` <span style="opacity:.6;font-size:.72rem">(out)</span>` : ""}</label>`)}`) : "<span style=\"font-size:.76rem;color:#8a7a5c\">You have not met another player's realm yet.</span>";
 }
 function createMsgGroup() {
 	const list = document.getElementById("msg-group-list");
 	if (!list) return;
-	const picked = [...list.querySelectorAll("input[type=checkbox]:checked")].map((c) => _msgNum(c.value)).filter((i) => i != null);
+	const picked = [...list.querySelectorAll("input[type=checkbox]:checked")].filter((c) => c instanceof HTMLInputElement).map((c) => _msgNum(c.value)).filter((i) => i != null);
 	if (!picked.length) return;
 	const key = msgGroupKey([_msgMyIndex, ...picked]);
 	if (!_msgExtraGroups.includes(key)) _msgExtraGroups.push(key);
@@ -8687,15 +8863,15 @@ function createMsgGroup() {
 window.addEventListener("pagehide", () => {
 	try {
 		saveMessageReads();
-	} catch (e) {}
+	} catch {}
 });
 document.addEventListener("visibilitychange", () => {
 	if (document.hidden) try {
 		saveMessageReads();
-	} catch (e) {}
+	} catch {}
 	else if (_msgEnabled && _msgViewVisible()) try {
 		refreshMessages(true);
-	} catch (e) {}
+	} catch {}
 	else refreshMsgBadgeSoon();
 });
 function _activeSectionId() {
@@ -8703,12 +8879,12 @@ function _activeSectionId() {
 	return s ? s.id : null;
 }
 async function fetchGameSlots(gameIds) {
-	const ids = [...new Set((gameIds || []).filter(Boolean))];
+	const ids = [...new Set((gameIds ?? []).filter((id) => Boolean(id)))];
 	if (!ids.length) return {
 		data: [],
 		error: null
 	};
-	const { data, error } = await sb.rpc("get_game_slots", { p_games: ids });
+	const { data, error } = await thePagesDb.thePlayersRealms.theSlotsOfTheseGames(ids);
 	return {
 		data: Array.isArray(data) ? data : [],
 		error
@@ -8728,7 +8904,7 @@ function setDeskView(side, view) {
 	applyDeskViews();
 	if (side === "left" && view === "messages") try {
 		onMessagesShown();
-	} catch (e) {}
+	} catch {}
 	else refreshMsgBadgeSoon();
 }
 function applyDeskViews() {
@@ -8755,13 +8931,13 @@ function applyDeskViews() {
 	document.querySelectorAll("#desk-right .desk-tabs button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-view") === rightTab));
 	if (_deskLeftView === "map") try {
 		renderPlayerMap();
-	} catch (e) {}
+	} catch {}
 }
 function refreshOrdersVisibility(available) {
 	_ordersAvailable = !!available;
 	const lay = document.getElementById("rp-layout");
 	const oc = document.getElementById("orders-column");
-	if (lay && lay.classList.contains("desk")) {
+	if (lay?.classList.contains("desk")) {
 		if (!_ordersAvailable && _deskRightView === "orders" && _deskLeftView !== "report") _deskRightView = "report";
 		applyDeskViews();
 	} else if (oc) oc.style.display = _ordersAvailable ? "flex" : "none";
@@ -8779,18 +8955,18 @@ function setMobileView(view) {
 	lay.classList.add("mv-" + view);
 	try {
 		_closeMapTip();
-	} catch (e) {}
+	} catch {}
 	document.querySelectorAll("#mobile-tabbar button").forEach((b) => b.classList.toggle("active", b.getAttribute("data-mv") === view));
 	if (view === "map") try {
 		applyMapZoom();
-	} catch (e) {}
+	} catch {}
 	if (view === "messages") try {
 		onMessagesShown();
-	} catch (e) {}
+	} catch {}
 	else refreshMsgBadgeSoon();
 	try {
 		window.scrollTo(0, 0);
-	} catch (e) {}
+	} catch {}
 }
 globalThis._msgEnabled = false;
 globalThis._deskLeftView = "map";
@@ -8811,10 +8987,10 @@ function setupDeskLayout() {
 		right.innerHTML = "<div class=\"desk-tabs\"><button data-side=\"right\" data-view=\"report\" onclick=\"setDeskView('right','report')\">📜 Report</button><button data-side=\"right\" data-view=\"orders\" onclick=\"setDeskView('right','orders')\">📋 Orders</button></div><div class=\"desk-body\" id=\"desk-right-body\"><div id=\"desk-right-none\" style=\"display:none;padding:22px;font-family:'Crimson Text',Georgia,serif;font-size:.9rem;color:#dccba8\">The Report is open in the left panel. There are no orders to give for this turn — choose 📜 Report here to bring it back to this side.</div></div>";
 		lay.appendChild(left);
 		lay.appendChild(right);
-		document.getElementById("desk-left-body").appendChild(map);
-		if (msg) document.getElementById("desk-left-body").appendChild(msg);
-		document.getElementById("desk-right-body").appendChild(ord);
-		document.getElementById("desk-right-body").appendChild(rep);
+		theElementWithTheId("desk-left-body", HTMLElement).appendChild(map);
+		if (msg) theElementWithTheId("desk-left-body", HTMLElement).appendChild(msg);
+		theElementWithTheId("desk-right-body", HTMLElement).appendChild(ord);
+		theElementWithTheId("desk-right-body", HTMLElement).appendChild(rep);
 		injectMapZoomBar();
 	}
 	lay.classList.add("desk");
@@ -8831,12 +9007,17 @@ function fitDeskPanels() {
 		return;
 	}
 	const top = l.getBoundingClientRect().top + (window.scrollY || 0);
-	const h = Math.max(360, Math.floor(window.innerHeight - top - 8)) + "px";
+	const h = `${String(Math.max(360, Math.floor(window.innerHeight - top - 8)))}px`;
 	if (l.style.height !== h) l.style.height = h;
 	if (r.style.height !== h) r.style.height = h;
 	if (!_deskFitObs && typeof ResizeObserver === "function") {
-		_deskFitObs = new ResizeObserver(() => fitDeskPanels());
-		document.querySelectorAll("#sec-report > .detail-header, #new-turn-banner").forEach((el) => _deskFitObs.observe(el));
+		const observer = new ResizeObserver(() => {
+			fitDeskPanels();
+		});
+		_deskFitObs = observer;
+		document.querySelectorAll("#sec-report > .detail-header, #new-turn-banner").forEach((el) => {
+			observer.observe(el);
+		});
 	}
 }
 function teardownDeskLayout() {
@@ -8883,8 +9064,12 @@ function _makeProvLinkEl(id, name) {
 	sp.setAttribute("data-prov-link", String(id));
 	sp.title = `Hover to light up ${name} on the map — click or tap to show it`;
 	sp.textContent = name;
-	sp.onmouseenter = () => highlightMapProv(id, true);
-	sp.onmouseleave = () => highlightMapProv(id, false);
+	sp.onmouseenter = () => {
+		highlightMapProv(id, true);
+	};
+	sp.onmouseleave = () => {
+		highlightMapProv(id, false);
+	};
 	sp.onclick = (ev) => {
 		ev.stopPropagation();
 		locateOnMap(id);
@@ -8894,39 +9079,57 @@ function _makeProvLinkEl(id, name) {
 var _provLinking = false;
 function linkProvinceNames(root) {
 	if (!root || _provLinking) return;
-	_buildProvNameIndex(viewingReport || currentReport);
-	if (!_provNameRe) return;
+	_buildProvNameIndex(viewingReport ?? currentReport);
+	const provNameRe = _provNameRe, provNameMap = _provNameMap;
+	if (!provNameRe) return;
 	_provLinking = true;
 	try {
 		const walker = document.createTreeWalker(root, window.NodeFilter.SHOW_TEXT, { acceptNode(n) {
 			if (!n.nodeValue || n.nodeValue.length < 3) return window.NodeFilter.FILTER_REJECT;
 			for (let el = n.parentNode; el && el !== root; el = el.parentNode) {
-				if (_PROV_LINK_SKIP.has(el.nodeName) || el.namespaceURI === "http://www.w3.org/2000/svg") return window.NodeFilter.FILTER_REJECT;
-				if (el.classList && (el.classList.contains("prov-link") || el.classList.contains("no-prov-link"))) return window.NodeFilter.FILTER_REJECT;
-				if (el.isContentEditable) return window.NodeFilter.FILTER_REJECT;
+				if (_PROV_LINK_SKIP.has(el.nodeName) || el instanceof Element && el.namespaceURI === "http://www.w3.org/2000/svg") return window.NodeFilter.FILTER_REJECT;
+				if (el instanceof Element && (el.classList.contains("prov-link") || el.classList.contains("no-prov-link"))) return window.NodeFilter.FILTER_REJECT;
+				if (el instanceof HTMLElement && el.isContentEditable) return window.NodeFilter.FILTER_REJECT;
 			}
-			_provNameRe.lastIndex = 0;
-			return _provNameRe.test(n.nodeValue) ? window.NodeFilter.FILTER_ACCEPT : window.NodeFilter.FILTER_REJECT;
+			provNameRe.lastIndex = 0;
+			return provNameRe.test(n.nodeValue) ? window.NodeFilter.FILTER_ACCEPT : window.NodeFilter.FILTER_REJECT;
 		} });
 		const hits = [];
 		let n;
 		while (n = walker.nextNode()) hits.push(n);
 		hits.forEach((t) => {
-			const txt = t.nodeValue;
+			const txt = theWordsOfTheTextAccepted(t);
 			const frag = document.createDocumentFragment();
 			let last = 0, m;
-			_provNameRe.lastIndex = 0;
-			while (m = _provNameRe.exec(txt)) {
+			provNameRe.lastIndex = 0;
+			while (m = provNameRe.exec(txt)) {
 				if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
-				frag.appendChild(_makeProvLinkEl(_provNameMap.get(m[1]), m[1]));
-				last = m.index + m[1].length;
+				const name = theProvinceNameMatched(m);
+				if (provNameMap === null) throw new TypeError("Cannot read properties of null (reading 'get')");
+				frag.appendChild(_makeProvLinkEl(provNameMap.get(name), name));
+				last = m.index + name.length;
 			}
 			if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
-			t.parentNode.replaceChild(frag, t);
+			theParentOfTheTextAccepted(t).replaceChild(frag, t);
 		});
-	} catch (e) {} finally {
+	} catch {} finally {
 		_provLinking = false;
 	}
+}
+function theWordsOfTheTextAccepted(t) {
+	const words = t.nodeValue;
+	if (words === null) throw new TypeError("Cannot read properties of null (reading 'slice')");
+	return words;
+}
+function theParentOfTheTextAccepted(t) {
+	const parent = t.parentNode;
+	if (parent === null) throw new TypeError("Cannot read properties of null (reading 'replaceChild')");
+	return parent;
+}
+function theProvinceNameMatched(m) {
+	const name = m[1];
+	if (name === void 0) throw new TypeError("Cannot read properties of undefined (reading 'length')");
+	return name;
 }
 var _provLinkObs = null;
 var _provLinkTimer = null;
@@ -8935,12 +9138,15 @@ function ensureProvinceLinking() {
 	if (!col) return;
 	linkProvinceNames(col);
 	if (_provLinkObs || typeof MutationObserver === "undefined") return;
-	_provLinkObs = new MutationObserver(() => {
+	const observer = new MutationObserver(() => {
 		if (_provLinking) return;
-		clearTimeout(_provLinkTimer);
-		_provLinkTimer = setTimeout(() => linkProvinceNames(document.getElementById("rp-report-col")), 60);
+		clearTimeout(_provLinkTimer ?? void 0);
+		_provLinkTimer = setTimeout(() => {
+			linkProvinceNames(document.getElementById("rp-report-col"));
+		}, 60);
 	});
-	_provLinkObs.observe(col, {
+	_provLinkObs = observer;
+	observer.observe(col, {
 		childList: true,
 		subtree: true
 	});
@@ -8949,11 +9155,11 @@ var _provHlTimer = null;
 function locateOnMap(id) {
 	try {
 		if (window.innerWidth < 821) setMobileView("map");
-		else if (typeof _deskLeftView !== "undefined" && _deskLeftView !== "map" && typeof setDeskView === "function") setDeskView("left", "map");
-	} catch (e) {}
+		else if (typeof _deskLeftView !== "undefined" && _deskLeftView !== "map") setDeskView("left", "map");
+	} catch {}
 	setTimeout(() => {
 		highlightMapProv(id, true);
-		const g = document.querySelector(`#report-map-svg g[data-prov="${id}"]`);
+		const g = document.querySelector(`#report-map-svg g[data-prov="${String(id)}"]`);
 		try {
 			const box = document.getElementById("report-map-container");
 			if (g && box) {
@@ -8961,9 +9167,11 @@ function locateOnMap(id) {
 				box.scrollLeft += r.left + r.width / 2 - (b.left + b.width / 2);
 				box.scrollTop += r.top + r.height / 2 - (b.top + b.height / 2);
 			}
-		} catch (e) {}
-		clearTimeout(_provHlTimer);
-		_provHlTimer = setTimeout(() => highlightMapProv(id, false), 4e3);
+		} catch {}
+		clearTimeout(_provHlTimer ?? void 0);
+		_provHlTimer = setTimeout(() => {
+			highlightMapProv(id, false);
+		}, 4e3);
 	}, 60);
 }
 // src/ui/player/init.ts
@@ -8974,14 +9182,14 @@ globalThis.currentGamePlayerId = null;
 globalThis.viewingReport = null;
 globalThis.viewedTurn = null;
 function snapshotTurnLabel(key) {
-	return (parseInt(key) || 0) + 1;
+	return (parseInt(String(key)) || 0) + 1;
 }
 function refreshTurnNavHighlight() {
 	const navEl = document.getElementById("turn-nav-btns");
 	if (!navEl) return;
-	const resolved = parseInt(navEl.dataset.resolved ?? "-1");
-	[...navEl.children].forEach((btn) => {
-		const d = parseInt(btn.dataset.turn);
+	const resolved = parseInt(navEl.dataset["resolved"] ?? "-1");
+	[...navEl.children].filter((child) => child instanceof HTMLElement).forEach((btn) => {
+		const d = parseInt(String(btn.dataset["turn"]));
 		const isCurrent = d === resolved;
 		const isViewed = viewedTurn != null && d === viewedTurn && !isCurrent;
 		let bg = "transparent", border = "var(--stone)", color = "var(--stone)";
@@ -9011,7 +9219,7 @@ function jumpToReportSection(id) {
 			behavior: "smooth"
 		});
 	} else {
-		tgt.style.scrollMarginTop = barH + "px";
+		tgt.style.scrollMarginTop = `${String(barH)}px`;
 		tgt.scrollIntoView({
 			behavior: "smooth",
 			block: "start"
@@ -9021,15 +9229,17 @@ function jumpToReportSection(id) {
 function show(id) {
 	try {
 		_closeMapTip();
-	} catch (e) {}
-	if (id !== "sec-report" && /^#game=/.test(location.hash || "")) try {
+	} catch {}
+	if (id !== "sec-report" && (location.hash || "").startsWith("#game=")) try {
 		history.replaceState(null, "", location.pathname + location.search);
-	} catch (e) {}
+	} catch {}
 	if (id !== "sec-report") try {
 		stopMessagePolling();
 		saveMessageReads();
-	} catch (e) {}
-	document.querySelectorAll("section").forEach((s) => s.classList.remove("section-active"));
+	} catch {}
+	document.querySelectorAll("section").forEach((s) => {
+		s.classList.remove("section-active");
+	});
 	document.getElementById(id)?.classList.add("section-active");
 	if (id === "sec-report") {
 		ensureMobileDefault();
@@ -9037,37 +9247,79 @@ function show(id) {
 		else setupDeskLayout();
 	}
 }
+// src/ui/shared/a-value-of-any-kind-read-as-javascript-reads-it.ts
+/** `value[key]` as JavaScript reads it (a game's state as parsed from JSON): for none, the TypeError that read throws. */
+function theField(value, key) {
+	if (value === null || value === void 0) throw new TypeError(`Cannot read properties of ${String(value)} (reading '${String(key)}')`);
+	return Reflect.get(Object(value), key);
+}
+/** `a || b` on values of any kind (a game's state as parsed): `a` where it is truthy, else `b`. */
+function thisOrElse$1(a, b) {
+	if (a) return a;
+	return b;
+}
+/** Whether a value is a list (of values of any kind). */
+function isAList(value) {
+	return Array.isArray(value);
+}
+/** A list a value of a game's state holds, as `.some` reads it: any other value throws the TypeError `.some` threw. */
+function theListToSearch(value) {
+	if (isAList(value)) return value;
+	throw new TypeError("the value searched is not a list");
+}
+/** `new Date(value)` on a value of any kind (a deadline as a game's state holds it), as the constructor reads it. */
+function theDateOf(value) {
+	const made = Reflect.construct(Date, [value]);
+	if (made instanceof Date) return made;
+	throw new TypeError("the Date constructor made no date");
+}
 // src/ui/player/game-lists.ts
+/** A game's state parsed from its JSON text: any value. */
+function theStateParsed(text) {
+	return JSON.parse(text);
+}
+/** The signed-in account's id, as `currentUser.id` read it: before sign-in, the TypeError that read threw. */
+function theSignedInAccountsId() {
+	if (currentUser === null) throw new TypeError("Cannot read properties of null (reading 'id')");
+	return currentUser.id;
+}
+/** An element the page looked up and writes into, as the write read it: none throws the TypeError writing it threw. */
+function theElementFound$1(el) {
+	if (el === null) throw new TypeError("the page holds no element of the game lists");
+	return el;
+}
 globalThis._pollTimer = null;
 var _lastMyGamesSig = null;
 var POLL_MS = 2e4;
 function startUpdatePolling() {
 	if (_pollTimer) return;
-	_pollTimer = setInterval(pollForUpdates, POLL_MS);
+	_pollTimer = setInterval(() => {
+		pollForUpdates();
+	}, POLL_MS);
 }
 async function pollForUpdates() {
 	if (!currentUser) return;
 	if (document.hidden) return;
 	try {
-		const { data: mySlots } = await sb.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", currentUser.id);
-		if (!mySlots || !mySlots.length) return;
+		const { data: mySlots } = await thePagesDb.thePlayersRealms.thisAccountsRealmsAndTheirOrdersFlags(currentUser.id);
+		if (!mySlots?.length) return;
 		const gameIds = [...new Set(mySlots.map((s) => s.game_id))];
-		const { data: games } = await sb.from("games").select("id,turn,status").in("id", gameIds);
-		const gById = Object.fromEntries((games || []).map((g) => [g.id, g]));
+		const { data: games } = await thePagesDb.thePlayersGames.theTurnAndStateOfTheseGames(gameIds);
+		const gById = Object.fromEntries((games ?? []).map((g) => [g.id, g]));
 		const { data: pollSlots } = await fetchGameSlots(gameIds);
 		const _tally = {};
-		(pollSlots || []).forEach((r) => {
+		pollSlots.forEach((r) => {
 			if (r.is_bot) return;
-			const t = _tally[r.game_id] = _tally[r.game_id] || [0, 0];
+			const t = _tally[r.game_id] = _tally[r.game_id] ?? [0, 0];
 			t[1]++;
 			if (r.orders_submitted) t[0]++;
 		});
 		const active = _activeSectionId();
 		const _unread = active === "sec-games" ? await fetchUnreadDispatchCounts(mySlots, pollSlots) : {};
 		const sig = mySlots.map((s) => {
-			const g = gById[s.game_id] || {};
-			const t = _tally[s.game_id] || [0, 0];
-			return `${s.id}:${g.turn || 0}:${g.status || ""}:${s.orders_submitted ? 1 : 0}:${t[0]}/${t[1]}:u${_unread[String(s.game_id)] || 0}`;
+			const g = gById[s.game_id] ?? {};
+			const t = _tally[s.game_id] ?? [0, 0];
+			return `${s.id}:${String(Number(g.turn) || 0)}:${g.status ?? ""}:${String(s.orders_submitted ? 1 : 0)}:${String(t[0])}/${String(t[1])}:u${String(_unread[s.game_id] ?? 0)}`;
 		}).sort().join("|");
 		if (active === "sec-games") {
 			if (sig !== _lastMyGamesSig) {
@@ -9075,38 +9327,38 @@ async function pollForUpdates() {
 				loadMyGames();
 			}
 		} else if (active === "sec-report" && currentGamePlayer) {
-			const g = gById[currentGamePlayer.game_id];
-			const openLiveTurn = currentGamePlayer._liveTurn || 0;
+			const g = gById[String(currentGamePlayer.game_id)];
+			const openLiveTurn = Number(currentGamePlayer._liveTurn) || 0;
 			if (g && (g.turn || 0) > openLiveTurn) {
 				const b = document.getElementById("new-turn-banner");
 				if (b) b.style.display = "flex";
 			}
 		}
 		_lastMyGamesSig = sig;
-	} catch (e) {}
+	} catch {}
 }
 async function loadMyGames() {
 	const el = document.getElementById("my-games-list");
-	const { data: mySlots, error } = await sb.from("game_players").select("*").eq("user_id", currentUser.id);
+	const { data: mySlots, error } = await thePagesDb.thePlayersRealms.everyRealmOfThisAccount(theSignedInAccountsId());
 	if (error) {
-		el.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		theElementFound$1(el).innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 		return;
 	}
 	if (!mySlots || mySlots.length === 0) {
-		el.innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">You are not enrolled in any games yet. Join an open game below.</div>";
+		theElementFound$1(el).innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">You are not enrolled in any games yet. Join an open game below.</div>";
 		return;
 	}
 	const gameIds = mySlots.map((s) => s.game_id);
 	const { data: games, error: gErr } = await fetchGamesLite(gameIds);
 	if (gErr) {
-		el.innerHTML = kcHtml`<div class="msg-error">${gErr.message}</div>`;
+		theElementFound$1(el).innerHTML = String(kcHtml`<div class="msg-error">${gErr.message}</div>`);
 		return;
 	}
-	const gamesById = Object.fromEntries((games || []).map((g) => [g.id, g]));
+	const gamesById = Object.fromEntries((games ?? []).map((g) => [g.id, g]));
 	const { data: allSlots } = await fetchGameSlots(gameIds);
 	const slotsByGame = {};
-	(allSlots || []).forEach((s) => {
-		(slotsByGame[s.game_id] = slotsByGame[s.game_id] || []).push(s);
+	allSlots.forEach((s) => {
+		(slotsByGame[s.game_id] = slotsByGame[s.game_id] ?? []).push(s);
 	});
 	const unreadByGame = await fetchUnreadDispatchCounts(mySlots, allSlots);
 	const cardOf = (slot) => {
@@ -9116,8 +9368,8 @@ async function loadMyGames() {
 		const pillClass = slot.orders_submitted ? "pill-blue" : g.status === "active" ? "pill-amber" : g.status === "setup" ? "pill-green" : "";
 		const _arch = gameArchivedP(g) ? kcHtml` <span class="pill" style="background:#e4d4b0;color:#4a3105">🗄 Archived by the GM</span>` : "";
 		const tally = ordersInTextP(g, slotsByGame[slot.game_id]), deadline = turnDeadlineText(g);
-		return kcHtml`<div class="game-card clickable" onclick="openGameFresh(${kcArg(String(slot.id))})"${gameArchivedP(g) ? kcHtml` style="opacity:.85"` : ""}>
-      <div class="gc-name">${g.name} <span class="pill ${pillClass}">${statusLabel}</span>${_arch}${unreadDispatchPillP(unreadByGame[String(slot.game_id)])}</div>
+		return kcHtml`<div class="game-card clickable" onclick="openGameFresh(${kcArg(slot.id)})"${gameArchivedP(g) ? kcHtml` style="opacity:.85"` : ""}>
+      <div class="gc-name">${g.name} <span class="pill ${pillClass}">${statusLabel}</span>${_arch}${unreadDispatchPillP(unreadByGame[slot.game_id])}</div>
       <div class="gc-meta">
         Your realm: <strong>${slot.display_name || "(joining…)"}</strong> ·
         Turn ${g.turn || 0}
@@ -9134,14 +9386,15 @@ async function loadMyGames() {
 		const g = gamesById[slot.game_id];
 		return !!(g && gameArchivedP(g));
 	});
-	el.innerHTML = _liveSlots.length ? kcHtml`${_liveSlots.map(cardOf)}` : "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No active games — your archived games are listed further down.</div>";
+	const theLiveCards = _liveSlots.length ? String(kcHtml`${_liveSlots.map(cardOf)}`) : "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No active games — your archived games are listed further down.</div>";
+	theElementFound$1(el).innerHTML = theLiveCards;
 	renderArchivedGamesCard(_archSlots.map(cardOf));
 }
 var ARCH_CARD_KEY = "kc_archived_games_min";
 function archivedCardMinimised() {
 	try {
 		return localStorage.getItem(ARCH_CARD_KEY) === "1";
-	} catch (e) {
+	} catch {
 		return false;
 	}
 }
@@ -9154,9 +9407,9 @@ function renderArchivedGamesCard(cards) {
 	}
 	card.style.display = "";
 	const cnt = document.getElementById("archived-games-count");
-	if (cnt) cnt.textContent = `(${cards.length})`;
+	if (cnt) cnt.textContent = `(${String(cards.length)})`;
 	const list = document.getElementById("archived-games-list");
-	if (list) list.innerHTML = kcHtml`${cards}`;
+	if (list) list.innerHTML = String(kcHtml`${cards}`);
 	applyArchivedCardState();
 }
 function applyArchivedCardState() {
@@ -9174,7 +9427,7 @@ function toggleArchivedGamesCard() {
 	try {
 		if (min) localStorage.setItem(ARCH_CARD_KEY, "1");
 		else localStorage.removeItem(ARCH_CARD_KEY);
-	} catch (e) {}
+	} catch {}
 	applyArchivedCardState();
 }
 async function fetchUnreadDispatchCounts(mySlots, allSlots) {
@@ -9183,40 +9436,40 @@ async function fetchUnreadDispatchCounts(mySlots, allSlots) {
 		const humans = {};
 		_msgArr(allSlots).forEach((s) => {
 			if (s && !s.is_bot) {
-				const k = String(s.game_id);
-				humans[k] = (humans[k] || 0) + 1;
+				const k = s.game_id;
+				humans[k] = (humans[k] ?? 0) + 1;
 			}
 		});
 		const mine = {};
 		_msgArr(mySlots).forEach((s) => {
-			const k = String(s.game_id);
-			if ((humans[k] || 0) >= 2 && _msgNum(s.player_index) != null) mine[k] = _msgNum(s.player_index);
+			const k = s.game_id;
+			if ((humans[k] ?? 0) >= 2 && _msgNum(s.player_index) != null) mine[k] = _msgNum(s.player_index);
 		});
 		const ids = Object.keys(mine);
 		if (!ids.length) return out;
-		const { data: rows, error } = await sb.from(KC_MSG_TABLE).select("id,game_id,from_index,to_indexes,scope").in("game_id", ids).order("id", { ascending: false }).limit(3e3);
+		const { data: rows, error } = await thePagesDb.theDispatches.theNewestDispatchesOfTheseGamesGamesAndRealms(ids);
 		if (error || !rows) return out;
 		let reads = [];
 		try {
-			const r = await sb.from(KC_MSG_READS).select("game_id,player_index,reads").in("game_id", ids).eq("user_id", currentUser.id);
+			const r = await thePagesDb.theDispatches.thisAccountsReadMarksInTheseGames(ids, theSignedInAccountsId());
 			if (!r.error) reads = _msgArr(r.data);
-		} catch (e) {}
+		} catch {}
 		const seenBy = {};
 		reads.forEach((r) => {
-			const k = String(r.game_id);
+			const k = r.game_id;
 			if (mine[k] !== _msgNum(r.player_index)) return;
 			const m = r.reads;
 			seenBy[k] = m && typeof m === "object" && !Array.isArray(m) ? m : {};
 		});
 		rows.forEach((r) => {
-			const k = String(r.game_id);
+			const k = r.game_id;
 			if (!(k in mine)) return;
 			if (_msgNum(r.from_index) === mine[k]) return;
 			const ch = msgChannelKeyOf(r);
-			const seen = _msgNum((seenBy[k] || {})[ch]) || 0;
-			if ((_msgNum(r.id) || 0) > seen) out[k] = (out[k] || 0) + 1;
+			const seen = _msgNum(Reflect.get(seenBy[k] ?? {}, ch)) ?? 0;
+			if ((_msgNum(r.id) ?? 0) > seen) out[k] = (out[k] ?? 0) + 1;
 		});
-	} catch (e) {}
+	} catch {}
 	return out;
 }
 function unreadDispatchPillP(n) {
@@ -9225,38 +9478,38 @@ function unreadDispatchPillP(n) {
 }
 function parseGameStateP(g) {
 	try {
-		return typeof g.game_state === "string" ? JSON.parse(g.game_state) : g.game_state || {};
-	} catch (e) {
+		return typeof g.game_state === "string" ? theStateParsed(g.game_state) : thisOrElse$1(g.game_state, {});
+	} catch {
 		return {};
 	}
 }
-var GAME_LITE_COLS_P = "id,name,gm_user_id,status,turn,max_players,created_at,meta";
 function gameArchivedP(g) {
 	const m = gameMetaOf(g);
-	if (m && m.archived !== void 0) return !!m.archived;
-	return !!parseGameStateP(g).archived;
+	if (m?.["archived"] !== void 0) return !!m["archived"];
+	return !!theField(parseGameStateP(g), "archived");
 }
 async function fetchGamesLite(ids) {
-	let r = await sb.from("games").select(GAME_LITE_COLS_P).in("id", ids);
-	if (r.error && /meta/i.test(r.error.message || "")) r = await sb.from("games").select("*").in("id", ids);
+	let r = await thePagesDb.thePlayersGames.theseGamesForTheirCards(ids);
+	if (r.error && /meta/i.test(r.error.message || "")) r = await thePagesDb.thePlayersGames.theseGamesEveryColumn(ids);
 	return r;
 }
 function realmExemptFromOrdersP(G, idx) {
-	const pl = (G && G.players || [])[idx];
+	const pl = theField(thisOrElse$1(G ? theField(G, "players") : G, []), idx);
 	if (!pl) return false;
-	if (pl.conceded || pl._eliminated) return true;
-	const hasProv = (pl.provinces || []).length > 0;
-	const hasChar = (G && G.characters || []).some((c) => c && c.alive && c.player === idx);
+	if (theField(pl, "conceded") || theField(pl, "_eliminated")) return true;
+	const hasProv = Number(theField(thisOrElse$1(theField(pl, "provinces"), []), "length")) > 0;
+	const hasChar = theListToSearch(thisOrElse$1(G ? theField(G, "characters") : G, [])).some((c) => Boolean(c) && Boolean(theField(c, "alive")) && theField(c, "player") === idx);
 	return !hasProv && !hasChar;
 }
 function realmExemptInP(g, idx) {
 	const m = gameMetaOf(g);
-	if (m && Array.isArray(m.exempt)) return m.exempt.includes(idx);
+	const exempt = m ? m["exempt"] : void 0;
+	if (isAList(exempt)) return exempt.includes(idx);
 	return realmExemptFromOrdersP(parseGameStateP(g), idx);
 }
 function ordersInTextP(g, slots) {
-	if (!g || g.status !== "active") return "";
-	const need = (slots || []).filter((p) => p && !p.is_bot && !realmExemptInP(g, p.player_index));
+	if (g?.status !== "active") return "";
+	const need = (slots ?? []).filter((p) => Boolean(p && !p.is_bot && !realmExemptInP(g, p.player_index)));
 	if (need.length === 0) return "";
 	const inN = need.filter((p) => p.orders_submitted).length;
 	const waiting = need.length - inN;
@@ -9266,68 +9519,71 @@ function ordersInTextP(g, slots) {
 function turnModeOfGame(g) {
 	let gs = gameMetaOf(g);
 	if (!gs) try {
-		gs = typeof g.game_state === "string" ? JSON.parse(g.game_state) : g.game_state || {};
-	} catch (e) {
+		gs = typeof g.game_state === "string" ? theStateParsed(g.game_state) : thisOrElse$1(g.game_state, {});
+	} catch {
 		gs = {};
 	}
-	const tm = gs && gs.turnMode && typeof gs.turnMode === "object" ? gs.turnMode : {};
+	const held = gs ? theField(gs, "turnMode") : gs;
+	const tm = held && typeof held === "object" ? held : {};
+	const mode = Reflect.get(tm, "mode");
 	return {
 		mode: [
 			"manual",
 			"auto",
 			"deadline"
-		].includes(tm.mode) ? tm.mode : "manual",
-		nextDeadlineAt: tm.nextDeadlineAt || null
+		].includes(mode) ? mode : "manual",
+		nextDeadlineAt: thisOrElse$1(Reflect.get(tm, "nextDeadlineAt"), null)
 	};
 }
 function fmtDeadlineP(iso) {
 	if (!iso) return "";
 	try {
-		return new Date(iso).toLocaleString(void 0, {
+		return theDateOf(iso).toLocaleString(void 0, {
 			weekday: "short",
 			day: "numeric",
 			month: "short",
 			hour: "2-digit",
 			minute: "2-digit"
 		});
-	} catch (e) {
-		return String(iso);
+	} catch {
+		return inWords(iso);
 	}
 }
 function turnDeadlineText(g) {
-	if (!g || g.status !== "active") return "";
+	if (g?.status !== "active") return "";
 	const tm = turnModeOfGame(g);
 	if (tm.mode === "auto") return kcHtml`⚙️ Turn ${g.turn} resolves automatically as soon as every realm has sent its orders.`;
 	if (tm.mode === "deadline" && tm.nextDeadlineAt) {
-		const late = Date.now() >= new Date(tm.nextDeadlineAt).getTime();
+		const late = Date.now() >= theDateOf(tm.nextDeadlineAt).getTime();
 		return kcHtml`⏱ Turn ${g.turn} deadline: <strong>${fmtDeadlineP(tm.nextDeadlineAt)}</strong> (your local time)${late ? " — passed; the turn is being resolved" : ""}. It resolves at that time, or sooner if every realm has sent its orders. Orders not in by then hold (Defend).`;
 	}
 	return "";
 }
 async function loadOpenGames() {
 	const el = document.getElementById("open-games-list");
-	const { data: mySlots } = await sb.from("game_players").select("game_id").eq("user_id", currentUser.id);
-	const myGameIds = new Set((mySlots || []).map((s) => s.game_id));
-	const { data: games, error } = await sb.from("games").select("*").eq("status", "setup");
+	const { data: mySlots } = await thePagesDb.thePlayersRealms.theGamesOfThisAccountsRealms(theSignedInAccountsId());
+	const myGameIds = new Set((mySlots ?? []).map((s) => s.game_id));
+	const { data: games, error } = await thePagesDb.thePlayersGames.theGamesInSetup();
 	if (error) {
-		el.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		theElementFound$1(el).innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 		return;
 	}
 	if (!games || games.length === 0) {
-		el.innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No open games at the moment. Ask your GM to create one.</div>";
+		theElementFound$1(el).innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No open games at the moment. Ask your GM to create one.</div>";
 		return;
 	}
 	const { data: allSlots } = await fetchGameSlots(games.map((g) => g.id));
 	const slotsByGame = {};
-	(allSlots || []).forEach((s) => {
-		if (!slotsByGame[s.game_id]) slotsByGame[s.game_id] = [];
-		slotsByGame[s.game_id].push(s);
+	allSlots.forEach((s) => {
+		const list = slotsByGame[s.game_id] ?? [];
+		slotsByGame[s.game_id] = list;
+		list.push(s);
 	});
-	const gmIds = [...new Set(games.map((g) => g.gm_user_id).filter(Boolean))];
+	const gmIds = [...new Set(games.map((g) => g.gm_user_id).filter((id) => Boolean(id)))];
 	const gmNameById = {};
 	if (gmIds.length) {
 		const { data: gmProfiles } = await thePagesDb.theAccountsNames.theNamesOfTheseAccounts(gmIds);
-		(gmProfiles || []).forEach((pr) => {
+		(gmProfiles ?? []).forEach((pr) => {
 			gmNameById[pr.id] = pr.name;
 		});
 	}
@@ -9345,60 +9601,62 @@ async function loadOpenGames() {
 	const gameInfo = (g) => {
 		let cfg = {};
 		try {
-			cfg = typeof g.game_state === "string" ? JSON.parse(g.game_state) : g.game_state || {};
-		} catch (e) {}
-		const _sp = parseInt(cfg.seaPct);
+			cfg = typeof g.game_state === "string" ? theStateParsed(g.game_state) : thisOrElse$1(g.game_state, {});
+		} catch {}
+		const _sp = parseInt(String(theField(cfg, "seaPct")));
 		const seaPct = Number.isFinite(_sp) ? Math.max(20, Math.min(80, _sp)) : 35;
 		return {
-			gm: gmNameById[g.gm_user_id] || "the Game Master",
-			size: (SIZE_LABEL[cfg.mapSize] || "—") + ", " + seaPct + "% sea"
+			gm: (gmNameById[String(g.gm_user_id)] ?? "") || "the Game Master",
+			size: (SIZE_LABEL[String(theField(cfg, "mapSize"))] ?? "—") + ", " + String(seaPct) + "% sea"
 		};
 	};
 	const humanCapOf = (g) => {
 		let cfg = {};
 		try {
-			cfg = typeof g.game_state === "string" ? JSON.parse(g.game_state) : g.game_state || {};
-		} catch (e) {}
+			cfg = typeof g.game_state === "string" ? theStateParsed(g.game_state) : thisOrElse$1(g.game_state, {});
+		} catch {}
 		const maxP = g.max_players || 4;
-		if (cfg.allBot === true) return 0;
-		const bots = Math.max(0, Math.min(parseInt(cfg.botCount) || 0, maxP));
+		if (theField(cfg, "allBot") === true) return 0;
+		const bots = Math.max(0, Math.min(parseInt(String(theField(cfg, "botCount"))) || 0, maxP));
 		return Math.max(0, maxP - bots);
 	};
 	const visOf = (g) => {
 		let cfg = {};
 		try {
-			cfg = typeof g.game_state === "string" ? JSON.parse(g.game_state) : g.game_state || {};
-		} catch (e) {}
-		const isPrivate = cfg.visibility === "private";
+			cfg = typeof g.game_state === "string" ? theStateParsed(g.game_state) : thisOrElse$1(g.game_state, {});
+		} catch {}
+		const isPrivate = theField(cfg, "visibility") === "private";
+		const invited = isPrivate ? theField(cfg, "invited") : void 0;
 		return {
 			private: isPrivate,
-			invited: isPrivate && Array.isArray(cfg.invited) ? cfg.invited : []
+			invited: isPrivate && isAList(invited) ? invited : []
 		};
 	};
 	const canSee = (g) => {
 		const v = visOf(g);
-		return !v.private || v.invited.includes(currentUser.id);
+		return !v.private || v.invited.includes(theSignedInAccountsId());
 	};
 	const openGames = games.filter((g) => {
 		if (myGameIds.has(g.id)) return false;
 		if (!canSee(g)) return false;
-		return (slotsByGame[g.id] || []).filter((p) => !p.is_bot).length < humanCapOf(g);
+		return (slotsByGame[g.id] ?? []).filter((p) => !p.is_bot).length < humanCapOf(g);
 	});
 	if (openGames.length === 0) {
-		el.innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No open games at the moment. Ask your GM to create one.</div>";
+		theElementFound$1(el).innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No open games at the moment. Ask your GM to create one.</div>";
 		return;
 	}
-	el.innerHTML = kcHtml`${openGames.map((g) => {
-		const joined = (slotsByGame[g.id] || []).filter((p) => !p.is_bot).length;
+	const theOpenCards = String(kcHtml`${openGames.map((g) => {
+		const joined = (slotsByGame[g.id] ?? []).filter((p) => !p.is_bot).length;
 		const maxP = humanCapOf(g);
 		const info = gameInfo(g);
 		const privBadge = visOf(g).private ? kcHtml` <span class="pill pill-blue">🔒 Invited</span>` : "";
-		return kcHtml`<div class="game-card clickable" onclick="showJoinGame(${kcArg(String(g.id))},${kcArg(g.name)},${kcArg(maxP)},${kcArg(joined)},${kcArg(info.gm)},${kcArg(info.size)})">
+		return kcHtml`<div class="game-card clickable" onclick="showJoinGame(${kcArg(g.id)},${kcArg(g.name)},${kcArg(maxP)},${kcArg(joined)},${kcArg(info.gm)},${kcArg(info.size)})">
       <div class="gc-name">${g.name} <span class="pill pill-green">Open</span>${privBadge}</div>
       <div class="gc-meta">GM: <strong>${info.gm}</strong> · World: ${info.size} · ${joined}/${maxP} players joined</div>
       <div class="gc-meta" style="opacity:.7">Click to join this game</div>
     </div>`;
-	})}`;
+	})}`);
+	theElementFound$1(el).innerHTML = theOpenCards;
 }
 async function loadAllGames() {
 	await Promise.all([
@@ -9409,20 +9667,30 @@ async function loadAllGames() {
 }
 async function loadGmOffer() {
 	const el = document.getElementById("gm-offer-banner");
-	const { data, error } = await thePagesDb.theRoles.theGameMasterOfferMadeToThisAccount(currentUser.id);
+	const { data, error } = await thePagesDb.theRoles.theGameMasterOfferMadeToThisAccount(theSignedInAccountsId());
 	const open = !error && data && !data.accepted_at;
 	if (open) {
-		document.getElementById("gm-offer-ask").style.display = "block";
-		document.getElementById("gm-offer-done").style.display = "none";
+		theElementWithTheId("gm-offer-ask", HTMLElement).style.display = "block";
+		theElementWithTheId("gm-offer-done", HTMLElement).style.display = "none";
 	}
-	el.style.display = open ? "block" : "none";
+	theElementFound$1(el).style.display = open ? "block" : "none";
 }
 // src/ui/player/briefing-and-submit.ts
+/** The realm's seat the page holds now (`currentGamePlayer`), read again after an await: another handler may have
+*  changed it meanwhile, which the compiler's narrowing of a global doesn't see. */
+function theSeatOpenNow() {
+	return currentGamePlayer;
+}
+/** `a || b` on values of any kind (a field's value, a hero's mark): `a` where it is truthy, else `b`. */
+function thisOrElse(a, b) {
+	if (a) return a;
+	return b;
+}
 function updateAlignmentDesc() {
 	const sel = document.getElementById("join-alignment");
 	const desc = document.getElementById("join-alignment-desc");
-	if (!sel || !desc) return;
-	desc.innerHTML = bulletizeDesc({
+	if (!(sel instanceof HTMLSelectElement) || !desc) return;
+	desc.innerHTML = String(bulletizeDesc({
 		Divine: "✨ **Divine:** The holy crown. Best battle fervour in the game (50% chance your host fights fanatically). Your king may **Consecrate** provinces: +50% tax and much stiffer defence. A fallen character returns to life one turn later on consecrated ground — no other realm can do that. Heroes heal twice as fast resting. Will not hire Undead heroes, and dark ones cost extra. One Divine realm per game.",
 		Good: "⚔ **Good:** The steady defender. 40% fervour, +10% strength defending land you own, and better odds that your armies join up for a combined attack. **Call to Arms** gives the king a free garrison unit in one of your provinces every turn. Heroes of most alignments are cheap to hire. A forgiving choice.",
 		Druidic: "🌿 **Druidic:** The wild crown. Your king starts with Druid +1, and every character leads **Creature** armies (thunderbirds, ents, bears, giants, unicorns, mammoths, rocs, whales and great turtles) with no Druid penalty, and every level of Druid they do hold makes those beasts stronger; a hero leads at most as many beasts as his Druid level. Creature armies fight at ×1.5 in forest and jungle.",
@@ -9430,16 +9698,16 @@ function updateAlignmentDesc() {
 		Pagan: "🔥 **Pagan:** The old gods, for a price. King starts with Explorer +1. At a discovered ritual site you may **Perform Rite**: the **Wild Hunt** binds two of that province's beasts to your host — the only way to field Creatures or Monsters with no Druid magic — or a **Blood Offering** sacrifices units to make an equal number far better. You also earn +1g for every enemy unit you destroy in a victory.",
 		Evil: "💀 **Evil:** The tyrant. Your king starts with Druid +1, and every character leads **Monster** armies (trolls, basilisks, manticores, dragons, krakens) with no Druid penalty, at most as many as his Druid level; a Monster in the host lifts the whole host to ×1.25 in every battle. A crushing win leaves the enemy in Terror (−10% in their next fight), and your Monsters fight ×1.5 attacking ground your Terror grips (**Reign of Fear**). Each conquest is either **looted** for half the province's tax value in gold, or **enslaved** for a free garrison unit at the cost of its tax for three turns — your choice, character by character.",
 		Undead: "💀 **Undead:** The deathless. King starts with Necromancy +1 and a free skeletal unit. Skeletal armies cost just 1g, need no Druid skill, **always** fight fanatically (+50% under the king, +30% under a hero), and never lose men fleeing a lost battle. **Harvest the Field** raises a grave as a soldier for 2g with no magic at all. Will not hire Divine heroes. One Undead realm per game."
-	}[sel.value] || "");
+	}[sel.value] ?? ""));
 }
 function unitAbilityText(type) {
-	return UNIT_ABILITIES[type] || "";
+	return UNIT_ABILITIES[type] ?? "";
 }
 function itemLoreTip(it, inner) {
 	return inner;
 }
 function itemAcquiredTagP(it) {
-	if (!it || !it.acquiredThisTurn) return "";
+	if (!it || !Reflect.get(Object(it), "acquiredThisTurn")) return "";
 	return kcHtml`<span title="Acquired this turn" style="display:inline-block;font-size:.7rem;color:#123008;background:#eaf5e2;border:1px solid #5d8a3c;border-radius:2px;padding:0 5px;margin-right:5px;vertical-align:1px;white-space:nowrap">🆕 Acquired this turn</span>`;
 }
 function unitAbilityTip(type, inner) {
@@ -9450,27 +9718,27 @@ function unitAbilityTip(type, inner) {
 function updateRaceDesc() {
 	const sel = document.getElementById("join-race");
 	const desc = document.getElementById("join-race-desc");
-	if (!sel || !desc) return;
-	desc.innerHTML = bulletizeDesc({
+	if (!(sel instanceof HTMLSelectElement) || !desc) return;
+	desc.innerHTML = String(bulletizeDesc({
 		Human: "🛡 **Human:** The all-rounders — the widest choice of troops (Levies and sturdy Men-at-Arms, Longbows, the best horse in the game) and the strongest navy (the Galleons). Their units also **learn twice as fast**, so a Human army improves quickly with drilling and battle. No terrain is closed to them. Feud with Orcs. The easiest race to play.",
 		Elven: "🏹 **Elven:** Archers and woodsmen. Elven troops fight at **×1.5 in forest and jungle**, and an Elven unit that would be destroyed often slips away home instead of dying. Swift Eagle Riders scout and strike, and Stag Riders are the one cavalry at home among the trees. Weakest in the open. Feud with Dwarves.",
 		Dwarven: "⛏ **Dwarven:** The anvil. Dwarven troops fight at **×1.5 whenever they defend**, and every Dwarven character of a Dwarven realm wears **Mithril Armour** — 2 less damage from every blow and arrow they take. Mountain Guns and armoured Ironclads hit very hard, and Ironhoof Rams are the one cavalry sure-footed in the mountains. Slow to march. Feud with Elves.",
 		Orcish: "⚔ **Orcish:** The horde. Cheap, fast troops you can afford in numbers — Goblin Hordes (two a turn), Black Arrows, Warg Riders, Berserkers and flying Wyvern Riders. Orcish characters start with **18 HP instead of 15** and harden faster. Quality is poor; you win by numbers and speed. Feud with Humans."
-	}[sel.value] || "");
+	}[sel.value] ?? ""));
 }
 function updateTemperDesc() {
 	const sel = document.getElementById("join-temper");
 	const desc = document.getElementById("join-temper-desc");
-	if (!sel || !desc) return;
-	desc.innerHTML = bulletizeDesc({
+	if (!(sel instanceof HTMLSelectElement) || !desc) return;
+	desc.innerHTML = String(bulletizeDesc({
 		Berserk: "🔥 **Berserk:** The hammer. +18% to hit and +3 damage in melee — far the hardest hitter — and shrugs off 12% of every blow and arrow. But enemies hit them 10% more easily, and they fight on until nearly dead. The most likely of all to be killed.",
 		Brave: "🦁 **Brave:** The soldier. Good at everything (+12% melee, +8% archery, +1 damage) and, once per fight, **Second Wind**: when first badly wounded they recover about a quarter of their health. No weakness. The safe default.",
 		Cautious: "🧭 **Cautious:** The survivor. Enemies are 14% less likely to hit them (and can never beat 66% however skilled), every melee blow that does land does 2 less damage, and a missed attack draws a **40% riposte**. No attack bonus — they win by outlasting. The hardest king to kill.",
 		Cowardly: "🏃 **Cowardly:** The archer and the spy. +22% archery, +15% to Steal, best in the game at breaking off and fleeing, and if struck down they may beg for mercy and be spared. Poor with a blade. The sensible choice for a king you cannot afford to lose."
-	}[sel.value] || "");
+	}[sel.value] ?? ""));
 }
 function normalSubmitWrapHtml(verb) {
-	const turn = currentReport?._liveTurn || currentReport?.turn || 1;
+	const turn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
 	return kcHtml`
     <button class="btn btn-ghost" onclick="doSaveOrders()" style="flex:0 0 auto;padding:10px 16px">💾 Save Draft</button>
     <button class="btn btn-crimson btn-full" id="submit-btn" onclick="submitOrders()" style="flex:1;padding:12px;font-size:.85rem">
@@ -9485,40 +9753,40 @@ function setOrdersSubmittedUI(submitted) {
 function restoreSubmitWrap(verb) {
 	const w = document.getElementById("orders-submit-wrap");
 	if (!w) return;
-	w.innerHTML = normalSubmitWrapHtml(verb);
+	w.innerHTML = String(normalSubmitWrapHtml(verb));
 	w.style.display = "flex";
 	w.style.gap = "8px";
 }
 function cancelSubmit() {
-	document.getElementById("orders-msg").innerHTML = "";
+	theElementWithTheId("orders-msg", HTMLElement).innerHTML = "";
 	restoreSubmitWrap("Submit");
 }
 async function doSaveOrders() {
-	const chars = currentReport?.characters || [];
+	const chars = currentReport?.characters ?? [];
 	const orders = {};
 	const encounterPlans = {};
 	chars.forEach((c) => {
 		orders[c.id] = SEASONS.map((_, ph) => {
-			const action = document.getElementById(`po-action-${c.id}-${ph}`)?.value || "";
+			const action = theFieldOrNoWords(theValueOfThePagesField(`po-action-${String(c.id)}-${String(ph)}`));
 			const target = getOrderTarget(c.id, ph);
 			return {
 				action,
 				target,
 				extra: getOrderExtra(c.id, ph),
-				desc: action + (target ? " — " + target : "")
+				desc: inWords(action) + (target ? " — " + inWords(target) : "")
 			};
 		});
-		const tacHidden = document.getElementById(`ep-tactics-${c.id}`);
-		const notesEl = document.getElementById(`ep-notes-${c.id}`);
-		const preSchool = (document.getElementById(`ep-preschool-${c.id}`)?.value || "").toLowerCase();
-		if (tacHidden) {
+		const tacHidden = document.getElementById(`ep-tactics-${String(c.id)}`);
+		const notesEl = document.getElementById(`ep-notes-${String(c.id)}`);
+		const preSchool = theWordsAFieldHolds(theFieldOrNoWords(theValueOfThePagesField(`ep-preschool-${String(c.id)}`))).toLowerCase();
+		if (tacHidden instanceof HTMLInputElement) {
 			const tacts = (tacHidden.value || "ME").split(",").filter(Boolean);
 			if (preSchool) tacts.push(`CS:${preSchool}`);
 			encounterPlans[c.id] = {
 				tactics: tacts,
-				notes: notesEl?.value || "",
-				duelStance: document.getElementById(`ep-duel-${c.id}`)?.value || "refuse",
-				evilMode: document.getElementById(`ep-evilmode-${c.id}`)?.value || void 0
+				notes: theFieldOrNoWords(notesEl ? theValueOfAField(notesEl) : void 0),
+				duelStance: thisOrElse(theValueOfThePagesField(`ep-duel-${String(c.id)}`), "refuse"),
+				evilMode: thisOrElse(theValueOfThePagesField(`ep-evilmode-${String(c.id)}`), void 0)
 			};
 		}
 	});
@@ -9534,14 +9802,14 @@ async function doSaveOrders() {
 	const kingSkills = {};
 	chars.forEach((c) => {
 		if (c._isHeir) kingSkills[c.id] = {
-			skills: c.skills || {},
-			pending: c._pendingSkillAllocation || 0,
-			name: c.name || "",
-			temper: c.temper || "",
-			base: c._heirBase || c.skills || {}
+			skills: c.skills ?? {},
+			pending: thisOrElse(c._pendingSkillAllocation, 0),
+			name: c.name ?? "",
+			temper: c.temper ?? "",
+			base: c._heirBase ?? c.skills ?? {}
 		};
 	});
-	const _draftTurn = currentReport?._liveTurn || currentReport?.turn || 1;
+	const _draftTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
 	const _payload = JSON.stringify({
 		orders,
 		encounterPlans,
@@ -9554,10 +9822,7 @@ async function doSaveOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: _draftTurn
 	});
-	const { error: saveErr } = await sb.from("game_players").update({
-		orders: _payload,
-		orders_submitted: false
-	}).eq("id", gp.id);
+	const { error: saveErr } = await thePagesDb.theOrders.saveThisRealmsDraft(gp.id, _payload);
 	if (saveErr) {
 		console.error("Save draft error:", saveErr.message);
 		return;
@@ -9573,21 +9838,22 @@ async function doSaveOrders() {
 	}
 }
 async function doSubmitOrders() {
-	const chars = currentReport?.characters || [];
+	const chars = currentReport?.characters ?? [];
 	const btn = document.getElementById("submit-btn");
-	if (btn) {
+	if (btn instanceof HTMLButtonElement) {
 		btn.disabled = true;
 		btn.textContent = "Saving…";
 	}
-	const { data: freshGame } = await sb.from("games").select("turn").eq("id", currentGamePlayer?.game_id).single();
-	const expectedTurn = currentReport?._liveTurn || currentReport?.turn || 1;
+	const { data: freshGame } = await thePagesDb.theOrders.theTurnOfThisGame(String(currentGamePlayer?.game_id));
+	const expectedTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
 	if (freshGame && freshGame.turn !== expectedTurn) {
-		document.getElementById("orders-msg").innerHTML = kcHtml`<div class="msg-error">⚠ The GM has already resolved this turn. Your orders were not saved — please reload the page to see your new turn report.</div>`;
+		const resolved = String(kcHtml`<div class="msg-error">⚠ The GM has already resolved this turn. Your orders were not saved — please reload the page to see your new turn report.</div>`);
+		theElementWithTheId("orders-msg", HTMLElement).innerHTML = resolved;
 		restoreSubmitWrap("Submit");
 		return;
 	}
 	if (!currentGamePlayer?.id) {
-		document.getElementById("orders-msg").innerHTML = "<div class=\"msg-error\">Session error — please reload the page.</div>";
+		theElementWithTheId("orders-msg", HTMLElement).innerHTML = "<div class=\"msg-error\">Session error — please reload the page.</div>";
 		restoreSubmitWrap("Submit");
 		return;
 	}
@@ -9595,14 +9861,14 @@ async function doSubmitOrders() {
 	const encounterPlans = {};
 	chars.forEach((c) => {
 		orders[c.id] = SEASONS.map((_, ph) => {
-			const action = document.getElementById(`po-action-${c.id}-${ph}`)?.value || "Defend";
+			const action = thisOrElse(theValueOfThePagesField(`po-action-${String(c.id)}-${String(ph)}`), "Defend");
 			const target = getOrderTarget(c.id, ph);
 			const extra = getOrderExtra(c.id, ph);
-			const _spyName = action === "Spy" && String(target || "").startsWith("char:") ? ((currentReport || {}).visibleChars || []).find((x) => String(x.id) === String(target).slice(5))?.name || null : null;
-			const desc = action + (target && action !== "Move" && action !== "Defend" && action !== "Rest" && action !== "Spy" && action !== "Explore" ? ` — ${target}` : "") + (_spyName ? ` — on ${_spyName}` : "");
+			const _spyName = action === "Spy" && inWords(theFieldOrNoWords(target)).startsWith("char:") ? ((currentReport?.visibleChars ?? []).find((x) => inWords(x.id) === inWords(target).slice(5))?.name ?? "") || null : null;
+			const desc = inWords(action) + (target && action !== "Move" && action !== "Defend" && action !== "Rest" && action !== "Spy" && action !== "Explore" ? ` — ${inWords(target)}` : "") + (_spyName ? ` — on ${_spyName}` : "");
 			if (action === "Search Lair" || action === "Search Feature") {
 				const _pl = predictedLocation(c.id, ph);
-				if (_pl && _pl.id != null) return {
+				if (_pl?.id != null) return {
 					action,
 					target,
 					extra,
@@ -9617,17 +9883,17 @@ async function doSubmitOrders() {
 				desc
 			};
 		});
-		const tacHidden = document.getElementById(`ep-tactics-${c.id}`);
-		const notesEl = document.getElementById(`ep-notes-${c.id}`);
-		const preSchool = (document.getElementById(`ep-preschool-${c.id}`)?.value || "").toLowerCase();
-		if (tacHidden) {
+		const tacHidden = document.getElementById(`ep-tactics-${String(c.id)}`);
+		const notesEl = document.getElementById(`ep-notes-${String(c.id)}`);
+		const preSchool = theWordsAFieldHolds(theFieldOrNoWords(theValueOfThePagesField(`ep-preschool-${String(c.id)}`))).toLowerCase();
+		if (tacHidden instanceof HTMLInputElement) {
 			const tacts = (tacHidden.value || "ME").split(",").filter(Boolean);
 			if (preSchool) tacts.push(`CS:${preSchool}`);
 			encounterPlans[c.id] = {
 				tactics: tacts,
-				notes: notesEl?.value || "",
-				duelStance: document.getElementById(`ep-duel-${c.id}`)?.value || "refuse",
-				evilMode: document.getElementById(`ep-evilmode-${c.id}`)?.value || void 0
+				notes: theFieldOrNoWords(notesEl ? theValueOfAField(notesEl) : void 0),
+				duelStance: thisOrElse(theValueOfThePagesField(`ep-duel-${String(c.id)}`), "refuse"),
+				evilMode: thisOrElse(theValueOfThePagesField(`ep-evilmode-${String(c.id)}`), void 0)
 			};
 		}
 	});
@@ -9636,21 +9902,21 @@ async function doSubmitOrders() {
 		if (!sel) return;
 		const cid = sel.id.replace(/^po-action-/, "").replace(/-\d+$/, "");
 		orders[cid] = SEASONS.map((_, ph) => ({
-			action: document.getElementById(`po-action-${cid}-${ph}`)?.value || "Defend",
+			action: thisOrElse(theValueOfThePagesField(`po-action-${cid}-${String(ph)}`), "Defend"),
 			target: getOrderTarget(cid, ph),
 			extra: getOrderExtra(cid, ph),
 			desc: ""
 		}));
 		const hTac = document.getElementById(`ep-tactics-${cid}`);
-		if (hTac) {
+		if (hTac instanceof HTMLInputElement) {
 			const hTacts = (hTac.value || "ME").split(",").filter(Boolean);
-			const hPre = (document.getElementById(`ep-preschool-${cid}`)?.value || "").toLowerCase();
+			const hPre = theWordsAFieldHolds(theFieldOrNoWords(theValueOfThePagesField(`ep-preschool-${cid}`))).toLowerCase();
 			if (hPre) hTacts.push(`CS:${hPre}`);
 			encounterPlans[cid] = {
 				tactics: hTacts,
-				notes: document.getElementById(`ep-notes-${cid}`)?.value || "",
-				duelStance: document.getElementById(`ep-duel-${cid}`)?.value || "refuse",
-				evilMode: document.getElementById(`ep-evilmode-${cid}`)?.value || void 0
+				notes: theFieldOrNoWords(theValueOfThePagesField(`ep-notes-${cid}`)),
+				duelStance: thisOrElse(theValueOfThePagesField(`ep-duel-${cid}`), "refuse"),
+				evilMode: thisOrElse(theValueOfThePagesField(`ep-evilmode-${cid}`), void 0)
 			};
 		}
 	});
@@ -9659,16 +9925,16 @@ async function doSubmitOrders() {
 		if (!sel) return;
 		const rid = sel.id.replace(/^po-action-/, "").replace(/-\d+$/, "");
 		orders[rid] = SEASONS.map((_, ph) => ({
-			action: document.getElementById(`po-action-${rid}-${ph}`)?.value || "Defend",
+			action: thisOrElse(theValueOfThePagesField(`po-action-${rid}-${String(ph)}`), "Defend"),
 			target: getOrderTarget(rid, ph),
 			extra: getOrderExtra(rid, ph),
 			desc: ""
 		}));
 		const rTac = document.getElementById(`ep-tactics-${rid}`);
-		if (rTac) encounterPlans[rid] = {
+		if (rTac instanceof HTMLInputElement) encounterPlans[rid] = {
 			tactics: (rTac.value || "ME").split(",").filter(Boolean),
-			notes: document.getElementById(`ep-notes-${rid}`)?.value || "",
-			duelStance: document.getElementById(`ep-duel-${rid}`)?.value || "refuse"
+			notes: theFieldOrNoWords(theValueOfThePagesField(`ep-notes-${rid}`)),
+			duelStance: thisOrElse(theValueOfThePagesField(`ep-duel-${rid}`), "refuse")
 		};
 	});
 	document.querySelectorAll("[id^=\"charm-orders-\"]").forEach((card) => {
@@ -9676,26 +9942,26 @@ async function doSubmitOrders() {
 		if (!sel) return;
 		const cid = sel.id.replace(/^po-action-/, "").replace(/-\d+$/, "");
 		orders[cid] = SEASONS.map((_, ph) => ({
-			action: document.getElementById(`po-action-${cid}-${ph}`)?.value || "Defend",
+			action: thisOrElse(theValueOfThePagesField(`po-action-${cid}-${String(ph)}`), "Defend"),
 			target: getOrderTarget(cid, ph),
 			extra: getOrderExtra(cid, ph),
 			desc: ""
 		}));
 		const cTac = document.getElementById(`ep-tactics-${cid}`);
-		if (cTac) encounterPlans[cid] = {
+		if (cTac instanceof HTMLInputElement) encounterPlans[cid] = {
 			tactics: (cTac.value || "ME").split(",").filter(Boolean),
-			notes: document.getElementById(`ep-notes-${cid}`)?.value || "",
-			duelStance: document.getElementById(`ep-duel-${cid}`)?.value || "refuse"
+			notes: theFieldOrNoWords(theValueOfThePagesField(`ep-notes-${cid}`)),
+			duelStance: thisOrElse(theValueOfThePagesField(`ep-duel-${cid}`), "refuse")
 		};
 	});
 	const kingSkills = {};
 	chars.forEach((c) => {
 		if (c._isHeir) kingSkills[c.id] = {
-			skills: c.skills || {},
-			pending: c._pendingSkillAllocation || 0,
-			name: c.name || "",
-			temper: c.temper || "",
-			base: c._heirBase || c.skills || {}
+			skills: c.skills ?? {},
+			pending: thisOrElse(c._pendingSkillAllocation, 0),
+			name: c.name ?? "",
+			temper: c.temper ?? "",
+			base: c._heirBase ?? c.skills ?? {}
 		};
 	});
 	const _subPayload = JSON.stringify({
@@ -9710,27 +9976,54 @@ async function doSubmitOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: expectedTurn
 	});
-	const { error } = await sb.from("game_players").update({
-		orders: _subPayload,
-		orders_submitted: true,
-		last_submitted_at: (/* @__PURE__ */ new Date()).toISOString()
-	}).eq("id", currentGamePlayer.id);
+	const { error } = await thePagesDb.theOrders.submitThisRealmsOrders(currentGamePlayer.id, _subPayload, (/* @__PURE__ */ new Date()).toISOString());
 	if (error) {
-		document.getElementById("orders-msg").innerHTML = kcHtml`<div class="msg-error">Error: ${error.message}</div>`;
+		const refused = String(kcHtml`<div class="msg-error">Error: ${error.message}</div>`);
+		theElementWithTheId("orders-msg", HTMLElement).innerHTML = refused;
 		restoreSubmitWrap("Submit");
 		return;
 	}
-	if (currentGamePlayer) currentGamePlayer.orders = _subPayload;
-	document.getElementById("orders-msg").innerHTML = "";
-	document.getElementById("orders-submit-wrap").innerHTML = kcHtml`
+	const seat = theSeatOpenNow();
+	if (seat) seat.orders = _subPayload;
+	theElementWithTheId("orders-msg", HTMLElement).innerHTML = "";
+	const sent = String(kcHtml`
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%">
       <span style="color:var(--forest);font-size:.85rem;flex:1">✓ Orders submitted successfully! The GM will be notified.</span>
       <button class="btn btn-ghost" style="padding:8px 16px;font-size:.8rem" onclick="resubmitOrders()">↺ Resubmit Orders</button>
-    </div>`;
+    </div>`);
+	theElementWithTheId("orders-submit-wrap", HTMLElement).innerHTML = sent;
 	setOrdersSubmittedUI(true);
 	setMobileView("report");
 }
 // src/ui/player/join-and-chronicle.ts
+/** The game being joined now (`joiningGame`), read again after an await: another card's click may have changed it
+*  meanwhile, which the compiler's narrowing of a global doesn't see. */
+function theGameBeingJoinedNow() {
+	return joiningGame;
+}
+/** The game being joined, as `joiningGame.id` read it: with none, the TypeError that read threw. */
+function theGameBeingJoined() {
+	if (joiningGame === null) throw new TypeError("Cannot read properties of null (reading 'id')");
+	return joiningGame;
+}
+/** The join form's message box, looked up before an await and written after it: none throws the TypeError writing it
+*  threw. */
+function theMessageBox(msg) {
+	if (msg === null) throw new TypeError("Cannot set properties of null (setting 'innerHTML')");
+	return msg;
+}
+/** The first child of the message box just written with one: none throws the TypeError the read threw. */
+function theFirstChildOf(el) {
+	const child = el.firstChild;
+	if (child === null) throw new TypeError("Cannot set properties of null (setting 'textContent')");
+	return child;
+}
+/** The points the join form has spent, as `Object.values(joinSkills)` added them. */
+function thePointsSpent() {
+	return Object.values(joinSkills).reduce((s, v) => s + v, 0);
+}
+/** The skills' names and their descriptions, read by any skill's name. */
+var theSkillsNames$2 = SKILL_LABELS;
 async function showJoinGame(gameId, gameName, maxP, joined, gmName, worldSize) {
 	joiningGame = {
 		id: gameId,
@@ -9741,16 +10034,16 @@ async function showJoinGame(gameId, gameName, maxP, joined, gmName, worldSize) {
 		worldSize
 	};
 	joinSkills = {};
-	document.getElementById("join-game-title").textContent = `Join: ${gameName}`;
-	document.getElementById("join-king-name").value = "";
-	document.getElementById("join-msg").innerHTML = "";
+	theElementWithTheId("join-game-title", HTMLElement).textContent = `Join: ${gameName}`;
+	theElementWithTheId("join-king-name", HTMLInputElement).value = "";
+	theElementWithTheId("join-msg", HTMLElement).innerHTML = "";
 	renderSkillGrid();
 	show("sec-join");
 	const { data: slots } = await fetchGameSlots([gameId]);
-	const takenAlignments = new Set((slots || []).map((s) => s.alignment).filter(Boolean));
-	const alignSel = document.getElementById("join-alignment");
+	const takenAlignments = new Set(slots.map((s) => s.alignment).filter(Boolean));
+	const alignSel = theElementWithTheId("join-alignment", HTMLSelectElement);
 	const UNIQUE_ALIGNS = ["Divine", "Undead"];
-	let warningParts = [];
+	const warningParts = [];
 	Array.from(alignSel.options).forEach((opt) => {
 		if (UNIQUE_ALIGNS.includes(opt.value) && takenAlignments.has(opt.value)) {
 			opt.disabled = true;
@@ -9762,12 +10055,13 @@ async function showJoinGame(gameId, gameName, maxP, joined, gmName, worldSize) {
 			opt.text = opt.value;
 		}
 	});
-	const infoEl = document.getElementById("join-game-info");
 	const takenNote = warningParts.length > 0 ? kcHtml`<div class="msg-warning" style="margin-top:6px">⚠ <strong>${warningParts.join(" and ")}</strong> alignment${warningParts.length > 1 ? "s are" : " is"} already taken in this game — only one player per game may be Divine or Undead.</div>` : "";
-	infoEl.innerHTML = kcHtml`${kcHtml`<div style="background:#f5f0e8;border:1px solid var(--gold);border-radius:3px;padding:8px 12px;font-size:.82rem;line-height:1.6;margin-bottom:8px">
-      <div>\u{1F451} <strong>Game Master:</strong> ${joiningGame?.gmName || "the Game Master"}</div>
-      <div>\u{1F5FA}\uFE0F <strong>World size:</strong> ${joiningGame?.worldSize || "—"}</div>
-    </div>`}<div class="msg-info">${joined}/${maxP} players have already joined. There ${maxP - joined === 1 ? "is" : "are"} ${maxP - joined} open slot${maxP - joined === 1 ? "" : "s"}.</div>${takenNote}`;
+	const gmBox = kcHtml`<div style="background:#f5f0e8;border:1px solid var(--gold);border-radius:3px;padding:8px 12px;font-size:.82rem;line-height:1.6;margin-bottom:8px">
+      <div>\u{1F451} <strong>Game Master:</strong> ${(theGameBeingJoinedNow()?.gmName ?? "") || "the Game Master"}</div>
+      <div>\u{1F5FA}\uFE0F <strong>World size:</strong> ${(theGameBeingJoinedNow()?.worldSize ?? "") || "—"}</div>
+    </div>`;
+	const theInfo = String(kcHtml`${gmBox}<div class="msg-info">${joined}/${maxP} players have already joined. There ${maxP - joined === 1 ? "is" : "are"} ${maxP - joined} open slot${maxP - joined === 1 ? "" : "s"}.</div>${takenNote}`);
+	theElementWithTheId("join-game-info", HTMLElement).innerHTML = theInfo;
 	updateAlignmentDesc();
 	updateRaceDesc();
 	updateTemperDesc();
@@ -9790,11 +10084,11 @@ var SKILL_INFO = {
 	necromancy: "Necromancy — death magic: raise Skeletal Armies from battlefield graves, Control Undead, Curse, Hand of Death and Plague (Undead realms start with Necromancy 1)."
 };
 function renderSkillGrid() {
-	const remaining = 4 - Object.values(joinSkills).reduce((s, v) => s + v, 0);
-	document.getElementById("join-pts-remaining").textContent = `${remaining} point${remaining !== 1 ? "s" : ""} remaining`;
+	const remaining = 4 - thePointsSpent();
+	theElementWithTheId("join-pts-remaining", HTMLElement).textContent = `${String(remaining)} point${remaining !== 1 ? "s" : ""} remaining`;
 	const pip = (skill) => {
-		const lvl = joinSkills[skill] || 0;
-		const displayName = SKILL_LABELS[skill] || skill;
+		const lvl = Number(joinSkills[skill]) || 0;
+		const displayName = (theSkillsNames$2[skill] ?? "") || skill;
 		return kcHtml`<div class="skill-pip">
       <button onclick="adjustSkill(${kcArg(skill)},-1)" ${lvl <= 0 ? "disabled" : ""}>−</button>
       <span class="sk-name" onmousemove="showSkillTip(event,${kcArg(skill)})" onmouseleave="hideSkillTip()">${displayName}</span>
@@ -9802,7 +10096,8 @@ function renderSkillGrid() {
       <button onclick="adjustSkill(${kcArg(skill)},1)" ${remaining <= 0 || lvl >= 2 ? "disabled" : ""}>+</button>
     </div>`;
 	};
-	document.getElementById("join-skills-grid").innerHTML = kcHtml`<div class="skill-cols">${SKILL_COLUMNS.map((col) => kcHtml`<div class="skill-col"><div class="skill-col-head">${col.head}</div>${col.skills.map(pip)}</div>`)}</div>`;
+	const theGrid = String(kcHtml`<div class="skill-cols">${SKILL_COLUMNS.map((col) => kcHtml`<div class="skill-col"><div class="skill-col-head">${col.head}</div>${col.skills.map(pip)}</div>`)}</div>`);
+	theElementWithTheId("join-skills-grid", HTMLElement).innerHTML = theGrid;
 }
 function showSkillTip(ev, skill) {
 	let tip = document.getElementById("skill-info-tip");
@@ -9811,76 +10106,76 @@ function showSkillTip(ev, skill) {
 		tip.id = "skill-info-tip";
 		document.body.appendChild(tip);
 	}
-	tip.innerHTML = kcHtml`<strong>${SKILL_LABELS[skill] || skill}</strong><br>${SKILL_INFO[skill] || ""}`;
+	tip.innerHTML = String(kcHtml`<strong>${(theSkillsNames$2[skill] ?? "") || skill}</strong><br>${SKILL_INFO[skill] ?? ""}`);
 	tip.style.display = "block";
 	const pad = 14, w = tip.offsetWidth || 250, h = tip.offsetHeight || 80;
 	let x = ev.clientX + pad, y = ev.clientY + pad;
 	if (x + w > window.innerWidth - 8) x = ev.clientX - w - pad;
 	if (y + h > window.innerHeight - 8) y = ev.clientY - h - pad;
-	tip.style.left = Math.max(8, x) + "px";
-	tip.style.top = Math.max(8, y) + "px";
+	tip.style.left = `${String(Math.max(8, x))}px`;
+	tip.style.top = `${String(Math.max(8, y))}px`;
 }
 function hideSkillTip() {
 	const tip = document.getElementById("skill-info-tip");
 	if (tip) tip.style.display = "none";
 }
 function adjustSkill(skill, delta) {
-	const spent = Object.values(joinSkills).reduce((s, v) => s + v, 0);
-	const current = joinSkills[skill] || 0;
+	const spent = thePointsSpent();
+	const current = Number(joinSkills[skill]) || 0;
 	if (delta > 0) {
 		if (spent >= 4 || current >= 2) return;
 	} else if (current <= 0) return;
 	joinSkills[skill] = current + delta;
-	if (joinSkills[skill] === 0) delete joinSkills[skill];
+	if (joinSkills[skill] === 0) Reflect.deleteProperty(joinSkills, skill);
 	renderSkillGrid();
 }
 async function joinGame() {
-	const kingName = document.getElementById("join-king-name").value.trim();
-	const kingdomName = document.getElementById("join-kingdom-name").value.trim();
-	document.getElementById("join-race").value;
-	document.getElementById("join-alignment").value;
-	document.getElementById("join-temper").value;
+	const kingName = theElementWithTheId("join-king-name", HTMLInputElement).value.trim();
+	const kingdomName = theElementWithTheId("join-kingdom-name", HTMLInputElement).value.trim();
+	theElementWithTheId("join-race", HTMLSelectElement);
+	theElementWithTheId("join-alignment", HTMLSelectElement);
+	theElementWithTheId("join-temper", HTMLSelectElement);
 	const msg = document.getElementById("join-msg");
 	if (!kingName) {
-		msg.innerHTML = "<div class=\"msg-error\">Please enter your King's name.</div>";
+		theMessageBox(msg).innerHTML = "<div class=\"msg-error\">Please enter your King's name.</div>";
 		return;
 	}
 	if (!kingdomName) {
-		msg.innerHTML = "<div class=\"msg-error\">Please name your Realm.</div>";
+		theMessageBox(msg).innerHTML = "<div class=\"msg-error\">Please name your Realm.</div>";
 		return;
 	}
-	const spent = Object.values(joinSkills).reduce((s, v) => s + v, 0);
+	const spent = thePointsSpent();
 	if (spent < 4) {
-		msg.innerHTML = kcHtml`<div class="msg-warning">You still have ${4 - spent} skill point${4 - spent !== 1 ? "s" : ""} to spend. Are you sure? <button class="btn btn-gold" style="padding:4px 10px;margin-left:8px" onclick="doJoinGame(${kcArg(String(joiningGame.id))})">Join Anyway</button></div>`;
+		theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-warning">You still have ${4 - spent} skill point${4 - spent !== 1 ? "s" : ""} to spend. Are you sure? <button class="btn btn-gold" style="padding:4px 10px;margin-left:8px" onclick="doJoinGame(${kcArg(theGameBeingJoined().id)})">Join Anyway</button></div>`);
 		return;
 	}
-	await doJoinGame(joiningGame.id);
+	await doJoinGame(theGameBeingJoined().id);
 }
 var _joinInFlight = false;
 var JOIN_DUP_MSG = kcHtml`You have already joined this game — a player may hold only one realm in any game. Open it from <strong>My Games</strong> instead.`;
 async function doJoinGame(gameId) {
 	if (_joinInFlight) return;
-	const kingName = document.getElementById("join-king-name").value.trim();
-	const kingdomName = document.getElementById("join-kingdom-name").value.trim() || kingName;
-	const race = document.getElementById("join-race").value;
-	const alignment = document.getElementById("join-alignment").value;
-	const temper = document.getElementById("join-temper").value;
+	const kingName = theElementWithTheId("join-king-name", HTMLInputElement).value.trim();
+	const kingdomName = theElementWithTheId("join-kingdom-name", HTMLInputElement).value.trim() || kingName;
+	const race = theElementWithTheId("join-race", HTMLSelectElement).value;
+	const alignment = theElementWithTheId("join-alignment", HTMLSelectElement).value;
+	const temper = theElementWithTheId("join-temper", HTMLSelectElement).value;
 	const msg = document.getElementById("join-msg");
 	if (["Divine", "Undead"].includes(alignment)) {
 		const { data: slots2 } = await fetchGameSlots([gameId]);
-		if (new Set((slots2 || []).map((s) => s.alignment).filter(Boolean)).has(alignment)) {
-			msg.innerHTML = kcHtml`<div class="msg-error">⚠ The <strong>${alignment}</strong> alignment is already taken in this game. Only one player per game may choose Divine or Undead. Please choose a different alignment.</div>`;
+		if (new Set(slots2.map((s) => s.alignment).filter(Boolean)).has(alignment)) {
+			theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">⚠ The <strong>${alignment}</strong> alignment is already taken in this game. Only one player per game may choose Divine or Undead. Please choose a different alignment.</div>`);
 			return;
 		}
 	}
 	{
-		const { data: mine, error: meErr } = await sb.from("game_players").select("id,player_index").eq("game_id", gameId).eq("user_id", currentUser.id);
+		const { data: mine, error: meErr } = await thePagesDb.thePlayersRealms.thisAccountsRealmsInThisGame(gameId, theSignedInAccountsId());
 		if (meErr) {
-			msg.innerHTML = kcHtml`<div class="msg-error">${meErr.message}</div>`;
+			theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">${meErr.message}</div>`);
 			return;
 		}
-		if (mine && mine.length) {
-			msg.innerHTML = kcHtml`<div class="msg-error">${JOIN_DUP_MSG}</div>`;
+		if (mine?.length) {
+			theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">${JOIN_DUP_MSG}</div>`);
 			setTimeout(() => {
 				show("sec-games");
 				loadAllGames();
@@ -9889,17 +10184,18 @@ async function doJoinGame(gameId) {
 		}
 	}
 	_joinInFlight = true;
-	msg.innerHTML = "<div class=\"msg-info\">Joining game…</div>";
+	theMessageBox(msg).innerHTML = "<div class=\"msg-info\">Joining game…</div>";
 	{
-		const { data: gRow } = await sb.from("games").select("game_state,status").eq("id", gameId).single();
+		const { data: gRow } = await thePagesDb.thePlayersGames.thisGamesWorldAndState(gameId);
 		let cfg = {};
 		try {
-			cfg = typeof gRow?.game_state === "string" ? JSON.parse(gRow.game_state) : gRow?.game_state || {};
-		} catch (e) {}
-		if (gRow?.status === "setup" && cfg.visibility === "private") {
-			if (!(Array.isArray(cfg.invited) ? cfg.invited : []).includes(currentUser.id)) {
+			cfg = typeof gRow?.game_state === "string" ? theStateParsed(gRow.game_state) : thisOrElse$1(gRow?.game_state, {});
+		} catch {}
+		if (gRow?.status === "setup" && theField(cfg, "visibility") === "private") {
+			const invited = theField(cfg, "invited");
+			if (!(isAList(invited) ? invited : []).includes(theSignedInAccountsId())) {
 				_joinInFlight = false;
-				msg.innerHTML = "<div class=\"msg-error\">This is a private game and you are not on its invite list. Ask the GM to invite you.</div>";
+				theMessageBox(msg).innerHTML = "<div class=\"msg-error\">This is a private game and you are not on its invite list. Ask the GM to invite you.</div>";
 				return;
 			}
 		}
@@ -9907,17 +10203,17 @@ async function doJoinGame(gameId) {
 	const { data: existingSlots, error: slotsErr } = await fetchGameSlots([gameId]);
 	if (slotsErr) {
 		_joinInFlight = false;
-		msg.innerHTML = "<div class=\"msg-error\"></div>";
-		msg.firstChild.textContent = slotsErr.message;
+		theMessageBox(msg).innerHTML = "<div class=\"msg-error\"></div>";
+		theFirstChildOf(theMessageBox(msg)).textContent = slotsErr.message;
 		return;
 	}
-	const takenIndices = new Set((existingSlots || []).map((s) => s.player_index));
-	const maxP = joiningGame.maxP || 4;
+	const takenIndices = new Set(existingSlots.map((s) => s.player_index));
+	const maxP = theGameBeingJoined().maxP || 4;
 	let nextIndex = 0;
 	while (takenIndices.has(nextIndex) && nextIndex < maxP) nextIndex++;
 	if (nextIndex >= maxP) {
 		_joinInFlight = false;
-		msg.innerHTML = "<div class=\"msg-error\">This game is now full.</div>";
+		theMessageBox(msg).innerHTML = "<div class=\"msg-error\">This game is now full.</div>";
 		return;
 	}
 	const playerSetup = {
@@ -9928,9 +10224,9 @@ async function doJoinGame(gameId) {
 		temper,
 		skills: joinSkills
 	};
-	const { data: slot, error } = await sb.from("game_players").insert({
+	const { error } = await thePagesDb.thePlayersRealms.joinWithThisRealm({
 		game_id: gameId,
-		user_id: currentUser.id,
+		user_id: theSignedInAccountsId(),
 		player_index: nextIndex,
 		display_name: kingdomName,
 		orders_submitted: false,
@@ -9939,29 +10235,81 @@ async function doJoinGame(gameId) {
 			status: "joined",
 			waitingForTurn0: true
 		})
-	}).select().single();
+	});
 	_joinInFlight = false;
 	if (error) {
-		if (/one_per_number/.test(error.message || "")) {
-			msg.innerHTML = "<div class=\"msg-error\">Another player joined this game at the same moment. Please press Join again.</div>";
+		if ((error.message || "").includes("one_per_number")) {
+			theMessageBox(msg).innerHTML = "<div class=\"msg-error\">Another player joined this game at the same moment. Please press Join again.</div>";
 			return;
 		}
-		if (error.code === "23505" || /duplicate key|unique constraint|one_per_user/i.test(error.message || "")) {
-			msg.innerHTML = kcHtml`<div class="msg-error">${JOIN_DUP_MSG}</div>`;
+		if (Reflect.get(error, "code") === "23505" || /duplicate key|unique constraint|one_per_user/i.test(error.message || "")) {
+			theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">${JOIN_DUP_MSG}</div>`);
 			setTimeout(() => {
 				show("sec-games");
 				loadAllGames();
 			}, 2500);
 			return;
 		}
-		msg.innerHTML = kcHtml`<div class="msg-error">${error.message}<br><small>If this keeps happening, try refreshing the page and joining again.</small></div>`;
+		theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">${error.message}<br><small>If this keeps happening, try refreshing the page and joining again.</small></div>`);
 		return;
 	}
-	msg.innerHTML = "<div class=\"msg-success\">You have joined the game! Waiting for the GM to start Turn 0.</div>";
+	theMessageBox(msg).innerHTML = "<div class=\"msg-success\">You have joined the game! Waiting for the GM to start Turn 0.</div>";
 	setTimeout(() => {
 		show("sec-games");
 		loadAllGames();
 	}, 2e3);
+}
+/** Whether a value parsed from a marker line can be read for its fields (anything but none). */
+function aValueReadByItsFields(v) {
+	return v !== null && v !== void 0;
+}
+/** A battle's side, parsed from its marker line's words: for none, the TypeError reading its first field threw. */
+function theForceTheMarkerHolds(words, firstField) {
+	const parsed = theStateParsed(words);
+	if (!aValueReadByItsFields(parsed)) throw new TypeError(`Cannot read properties of ${String(parsed)} (reading '${firstField}')`);
+	return parsed;
+}
+/** A list a marker's side holds (its armies), as `.forEach` and `.map` read it: any other value throws the TypeError
+*  the call threw. */
+function theListOfTheMarker(value) {
+	if (isAList(value)) return value;
+	throw new TypeError("the value read is not a list");
+}
+/** Whether a value a marker's side lists can be read as a company (anything but none: its label reads its fields). */
+function aCompanyTheMarkerLists(a) {
+	return a !== null && a !== void 0;
+}
+/** A company of a marker's side, as its label reads it: for none, the TypeError reading its first field threw. */
+function theCompanyTheMarkerLists(a) {
+	if (!aCompanyTheMarkerLists(a)) throw new TypeError(`Cannot read properties of ${String(a)} (reading 'phantom')`);
+	return a;
+}
+/** A line of the log read for its fields: for none, the TypeError that read threw. */
+function theLineRead(e) {
+	if (e === null || e === void 0) throw new TypeError(`Cannot read properties of ${String(e)} (reading 'text')`);
+	return e;
+}
+/** The log the chronicle draws, read for its length: for none, the TypeError that read threw. */
+function theLogRead(log) {
+	if (log === null || log === void 0) throw new TypeError(`Cannot read properties of ${String(log)} (reading 'length')`);
+	return log;
+}
+/** One of a section's lists, at a place the code has made sure of: none throws the TypeError the read threw. */
+function theListAt(lists, i) {
+	const l = lists[i];
+	if (l === void 0) throw new TypeError(`Cannot read properties of undefined (reading 'push')`);
+	return l;
+}
+/** A hero's section of the chronicle, by a key the code has just found in the table: none throws the TypeError the
+*  read threw. */
+function theHerosEntries(table, k) {
+	const entries = table[k];
+	if (entries === void 0) throw new TypeError(`Cannot read properties of undefined (reading 'phases')`);
+	return entries;
+}
+/** A name's length, as `name.length` read it (the names tinted longest first). */
+function theLengthOf(name) {
+	return Number(Reflect.get(Object(name), "length"));
 }
 function intelSectionShell(inner) {
 	const host = viewedTurn == null ? kcHtml`<div id="report-intel"></div>` : "";
@@ -9977,10 +10325,10 @@ function intelSectionShell(inner) {
 function buildChronicle(log, chars_for_log) {
 	const PHASE_NAMES = KC_PHASE_NAMES.slice();
 	const PHASE_COLORS = KC_PHASE_COLORS.slice();
-	const _goActive = !!(currentReport && currentReport.titles && currentReport.titles.gameOver);
+	const _goActive = Boolean(currentReport?.titles?.gameOver);
 	const _GE_HEAD_RE = /^\s*(👑 THE RECKONING IS CALLED —|🏆 THE GAME IS DECIDED —)/;
 	const _GE_STAND_RE = /^\s+\d+\.\s.+ — -?\d+ Legacy\b/;
-	const _isGameEnd = (e) => !!e && (e.gameEnd || _goActive && e.charId == null && (_GE_HEAD_RE.test(e.text || "") || _GE_STAND_RE.test(e.text || "")));
+	const _isGameEnd = (e) => !!e && (Boolean(e.gameEnd) || _goActive && e.charId == null && (_GE_HEAD_RE.test(e.text ?? "") || _GE_STAND_RE.test(e.text ?? "")));
 	const _markRuns = (nodes, re, wrap) => nodes.flatMap((n) => {
 		if (typeof n !== "string") return [{
 			wrap: n.wrap,
@@ -10005,29 +10353,29 @@ function buildChronicle(log, chars_for_log) {
 	});
 	const _showRuns = (nodes) => nodes.map((n) => typeof n === "string" ? n : n.wrap(_showRuns(n.kids)));
 	const _reText = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const _gameEndLines = (log || []).filter(_isGameEnd);
-	if (_gameEndLines.length) log = log.filter((e) => !_isGameEnd(e));
+	const _gameEndLines = (log ?? []).filter((e) => _isGameEnd(e));
+	if (_gameEndLines.length) log = theLogRead(log).filter((e) => !_isGameEnd(e));
 	const _gameEndHtml = (() => {
 		if (!_gameEndLines.length) return "";
-		const _realms = (currentReport && currentReport.allKingdoms || []).filter((k) => k && k.name).sort((a, b) => b.name.length - a.name.length);
+		const _realms = (currentReport?.allKingdoms ?? []).filter((k) => Boolean(k?.name)).sort((a, b) => b.name.length - a.name.length);
 		const _tint = (txt) => {
-			let h = [String(txt == null ? "" : txt)];
+			let h = [txt ?? ""];
 			_realms.forEach((k) => {
 				if (!k.color) return;
 				h = _markRuns(h, new RegExp(_reText(k.name), "g"), (x) => kcHtml`<strong style="color:${reportColour(k.color)}">${x}</strong>`);
 			});
 			return _showRuns(h);
 		};
-		const heads = _gameEndLines.filter((e) => !_GE_STAND_RE.test(e.text || ""));
-		const rows = _gameEndLines.filter((e) => _GE_STAND_RE.test(e.text || ""));
-		return kcHtml`${heads.map((e) => kcHtml`<div style="font-size:.8rem;color:#231e16;margin-top:6px;line-height:1.5">${_tint((e.text || "").trim())}</div>`)}${rows.length ? kcHtml`<div style="margin-top:8px;border-top:1px solid #d9c48f;padding-top:6px"><div style="font-family:'Cinzel',serif;font-size:.8rem;color:#5a4410;margin-bottom:3px">Final Legacy standings</div>${rows.map((e, i) => kcHtml`<div style="font-size:.8rem;color:#231e16;line-height:1.55;${i === 0 ? "font-weight:600;" : ""}">${_tint((e.text || "").trim())}</div>`)}</div>` : ""}`;
+		const heads = _gameEndLines.filter((e) => !_GE_STAND_RE.test(e.text ?? ""));
+		const rows = _gameEndLines.filter((e) => _GE_STAND_RE.test(e.text ?? ""));
+		return kcHtml`${heads.map((e) => kcHtml`<div style="font-size:.8rem;color:#231e16;margin-top:6px;line-height:1.5">${_tint((e.text ?? "").trim())}</div>`)}${rows.length ? kcHtml`<div style="margin-top:8px;border-top:1px solid #d9c48f;padding-top:6px"><div style="font-family:'Cinzel',serif;font-size:.8rem;color:#5a4410;margin-bottom:3px">Final Legacy standings</div>${rows.map((e, i) => kcHtml`<div style="font-size:.8rem;color:#231e16;line-height:1.55;${i === 0 ? "font-weight:600;" : ""}">${_tint((e.text ?? "").trim())}</div>`)}</div>` : ""}`;
 	})();
 	const _reckoningBanner = (() => {
-		const t = currentReport && currentReport.titles || {};
+		const t = currentReport?.titles ?? {};
 		if (t.gameOver) {
 			const go = t.gameOver;
 			return kcHtml`<div style="background:#fdf3d8;border:2px solid var(--gold);border-radius:3px;padding:9px 12px;margin-bottom:12px">
-        <div style="font-family:'Cinzel',serif;font-size:.92rem;color:var(--crimson)">🏆 ${go.byConcession ? "The game is decided" : "The Reckoning is complete"} — ${go.winnerName || "No-one"} ${go.byElimination ? "is the last realm standing" : go.byConcession ? "holds the field as every rival concedes" : "is judged supreme"}!</div>
+        <div style="font-family:'Cinzel',serif;font-size:.92rem;color:var(--crimson)">🏆 ${go.byConcession ? "The game is decided" : "The Reckoning is complete"} — ${(go.winnerName ?? "") || "No-one"} ${go.byElimination ? "is the last realm standing" : go.byConcession ? "holds the field as every rival concedes" : "is judged supreme"}!</div>
         ${_gameEndHtml || kcHtml`<div style="font-size:.76rem;color:#231e16;margin-top:3px">The game is over. See Titles &amp; Victory for the final standings.</div>`}
       </div>`;
 		}
@@ -10042,8 +10390,11 @@ function buildChronicle(log, chars_for_log) {
 		}
 		return "";
 	})();
-	if (!log.length) document.getElementById("report-log").innerHTML = kcHtml`${_reckoningBanner}<em style="color:#3a3224;font-size:.85rem">No events yet.</em>${viewedTurn == null ? intelSectionShell("") : ""}`;
-	else {
+	const lines = theLogRead(log);
+	if (!lines.length) {
+		const theEmptyChronicle = String(kcHtml`${_reckoningBanner}<em style="color:#3a3224;font-size:.85rem">No events yet.</em>${viewedTurn == null ? intelSectionShell("") : ""}`);
+		theElementWithTheId("report-log", HTMLElement).innerHTML = theEmptyChronicle;
+	} else {
 		const charEntries = {};
 		const systemByPhase = {
 			0: [],
@@ -10066,7 +10417,7 @@ function buildChronicle(log, chars_for_log) {
 		const TITLE_INTEL_RE = /^\[(The [^\]]+)\]\s*/;
 		const orderedChars = [...chars_for_log].sort((a, b) => (b.isKing ? 1 : 0) - (a.isKing ? 1 : 0));
 		orderedChars.forEach((c) => {
-			charEntries[c.id] = {
+			charEntries[String(c.id)] = {
 				id: c.id,
 				name: c.name,
 				isKing: c.isKing,
@@ -10080,23 +10431,26 @@ function buildChronicle(log, chars_for_log) {
 				]
 			};
 		});
-		log.forEach((e) => {
-			if (e.env && !(e.charId != null && e.charId in charEntries)) return;
+		lines.forEach((eOrNone) => {
+			const e = theLineRead(eOrNone);
+			if (e.env && !(e.charId != null && inWords(e.charId) in charEntries)) return;
 			const ph = e.phase != null && e.phase >= 0 && e.phase <= 4 ? e.phase : 99;
-			const _txt = e.text || "";
+			const _txt = e.text ?? "";
 			const isIntel = _txt.startsWith("[Intelligence]");
 			const isTitleIntel = TITLE_INTEL_RE.test(_txt);
-			let _secCharId = e.charId != null && e.charId in charEntries ? e.charId : Array.isArray(e.charIds) ? e.charIds.find((id) => id in charEntries) : void 0;
-			const hasChar = _secCharId != null && _secCharId !== void 0;
+			const _secCharId = e.charId != null && inWords(e.charId) in charEntries ? e.charId : isAList(e.charIds) ? e.charIds.find((id) => String(id) in charEntries) : void 0;
+			const hasChar = _secCharId != null;
 			if (e.type === "message") dispatches.push(e);
 			else if (isTitleIntel) titleIntel.push(e);
 			else if (isIntel) {
-				intelByPhase[ph] = intelByPhase[ph] || [];
-				intelByPhase[ph].push(e);
-			} else if (hasChar) charEntries[_secCharId].phases[ph >= 0 && ph <= 4 ? ph : e.phase === 99 ? 5 : 0].push(e);
+				const here = intelByPhase[ph] ?? [];
+				intelByPhase[ph] = here;
+				here.push(e);
+			} else if (hasChar) theListAt(theHerosEntries(charEntries, inWords(_secCharId)).phases, ph >= 0 && ph <= 4 ? ph : e.phase === 99 ? 5 : 0).push(e);
 			else {
-				systemByPhase[ph] = systemByPhase[ph] || [];
-				systemByPhase[ph].push(e);
+				const here = systemByPhase[ph] ?? [];
+				systemByPhase[ph] = here;
+				here.push(e);
 			}
 		});
 		const NEUTRAL_COLOR = "#555";
@@ -10110,54 +10464,61 @@ function buildChronicle(log, chars_for_log) {
 				});
 			};
 			add(nm);
-			add(String(nm).replace(/\s*\(.*?\)\s*$/, "").trim());
-			const km = String(nm).match(/\(([^)]+)\)\s*$/);
+			add(inWords(nm).replace(/\s*\(.*?\)\s*$/, "").trim());
+			const km = /\(([^)]+)\)\s*$/.exec(inWords(nm));
 			if (km) add(km[1]);
 		}
-		log.forEach((e) => {
-			const t = e.text || "";
+		lines.forEach((eOrNone) => {
+			const t = theLineRead(eOrNone).text ?? "";
 			if (t.startsWith("⚑FORCE⚑")) try {
-				const f = JSON.parse(t.slice(7));
+				const f = theForceTheMarkerHolds(t.slice(7), "name");
 				_registerName(f.name, f.color, f.neutral, !!f.guard);
-				(f.armies || []).forEach((a) => {
-					const un = a && a.unitName;
-					if (un && un !== a.type && !String(un).startsWith("undefined")) _registerName(un, f.color, f.neutral, !!f.guard);
+				theListOfTheMarker(thisOrElse$1(f.armies, [])).forEach((a) => {
+					const un = a && theField(a, "unitName");
+					if (un && un !== theField(a, "type") && !inWords(un).startsWith("undefined")) _registerName(un, f.color, f.neutral, !!f.guard);
 				});
-			} catch (_) {}
+			} catch {}
 		});
-		const _ownColor = viewingReport && viewingReport.kingdom && viewingReport.kingdom.color || null;
-		if (_ownColor) (chars_for_log || []).forEach((c) => _registerName(c.name, _ownColor, false));
-		const _chronRep = viewingReport || currentReport || {};
+		const _ownColor = (viewingReport?.kingdom?.color ?? "") || null;
+		if (_ownColor) (asItsGuardReadsIt(chars_for_log) ?? []).forEach((c) => {
+			_registerName(c.name, _ownColor, false);
+		});
+		const _chronRep = viewingReport ?? currentReport ?? {};
 		const _GUARD_POWER_COLORS = { ...GUARD_POWER_COLORS_P };
-		(_chronRep.knownFeatures || []).forEach((f) => {
+		(_chronRep.knownFeatures ?? []).forEach((f) => {
 			if (!f) return;
-			const _pcol = _GUARD_POWER_COLORS[f.monsterPower] || null;
+			const _pcol = (_GUARD_POWER_COLORS[String(f.monsterPower)] ?? "") || null;
 			if (!_pcol) return;
 			if (f.monster && f.monster !== "unknown guardian") _registerName(f.monster, _pcol, false);
 			if (f.name) _registerName(f.name, _pcol, false);
 		});
-		(_chronRep.heroSightings || []).forEach((s) => {
-			if (s.type === "enemy") _registerName(s.name, s.kingdomColor || null, false);
+		(_chronRep.heroSightings ?? []).forEach((s) => {
+			if (s.type === "enemy") _registerName(s.name, thisOrElse$1(s.kingdomColor, null), false);
 			else _registerName(s.name, null, true, s.type === "neutral_guard");
 		});
-		(_chronRep.worldMeta && _chronRep.worldMeta.provinces || []).forEach((p) => {
-			(p.characters || []).forEach((ch) => {
+		(_chronRep.worldMeta?.provinces ?? []).forEach((p) => {
+			(p.characters ?? []).forEach((ch) => {
 				if (ch.isOwn) return;
 				if (ch.ownerColor && !ch.isWanderer && !ch.isNeutralGuard) _registerName(ch.name, ch.ownerColor, false);
 				else _registerName(ch.name, null, true, !!ch.isNeutralGuard);
 			});
 		});
-		(_chronRep.allKingdoms || []).forEach((k) => {
-			if (k && k.name && k.color) _registerName(k.name, k.color, false);
+		(_chronRep.allKingdoms ?? []).forEach((k) => {
+			if (k?.name && k.color) _registerName(k.name, k.color, false);
 		});
-		(_chronRep.nameColors || []).forEach((n) => {
-			if (n && n.name) _registerName(n.name, n.color || null, !!n.neutral, !!n.guard);
+		(_chronRep.nameColors ?? []).forEach((n) => {
+			if (n?.name) _registerName(n.name, thisOrElse$1(n.color, null), !!n.neutral, !!n.guard);
 		});
-		const _nameKeys = [...nameColors.keys()].filter(Boolean).sort((a, b) => b.length - a.length);
+		const _nameKeys = [...nameColors.keys()].filter(Boolean).sort((a, b) => theLengthOf(b) - theLengthOf(a));
+		const theTintOf = (nm) => {
+			const info = nameColors.get(nm);
+			if (info === void 0) throw new TypeError("Cannot read properties of undefined (reading 'neutral')");
+			return info;
+		};
 		function colorizeNames(nodes, bold) {
 			const wt = bold ? ";font-weight:700" : "";
 			_nameKeys.forEach((nm) => {
-				const info = nameColors.get(nm);
+				const info = theTintOf(nm);
 				const col = info.neutral ? NEUTRAL_COLOR : info.color;
 				if (!col) return;
 				const re = new RegExp("\\b" + _reText(nm) + "\\b", "g");
@@ -10166,27 +10527,30 @@ function buildChronicle(log, chars_for_log) {
 			return nodes;
 		}
 		function renderForceBlock(f, compact) {
-			const col = f.guard ? CHIEFTAIN_MARKER_COLOR : f.neutral ? NEUTRAL_COLOR : reportColour(f.color) || NEUTRAL_COLOR;
+			const col = f.guard ? CHIEFTAIN_MARKER_COLOR : f.neutral ? NEUTRAL_COLOR : thisOrElse$1(reportColour(f.color), NEUTRAL_COLOR);
 			if (compact) {
 				const cnt = {};
-				(f.armies || []).forEach((a) => {
-					const k = a.type || "unit";
-					cnt[k] = (cnt[k] || 0) + 1;
+				theListOfTheMarker(thisOrElse$1(f.armies, [])).forEach((a) => {
+					const k = inWords(thisOrElse$1(theField(a, "type"), "unit"));
+					cnt[k] = (cnt[k] ?? 0) + 1;
 				});
-				const n = (f.armies || []).length;
-				const verb = String(f.verb || "").replace(/,\s*(with|leading)\s*$/, "").replace(/\s*—\s*\d+ defending units?\s*$/, "");
-				const kinds = Object.keys(cnt).map((k) => `${unitEmoji(k)} ${cnt[k] > 1 ? cnt[k] + "× " : ""}${k}`).join(", ");
-				return kcHtml`<div class="log-entry combat" style="border-left-width:4px;background:#fdf0f0;margin-top:3px;font-size:.8rem">⚔ <span style="color:${col};font-weight:700">${f.name}</span> ${verb} — ${n ? `${n} unit${n !== 1 ? "s" : ""}: ${kinds}` : "no armies"}</div>`;
+				const n = theField(thisOrElse$1(f.armies, []), "length");
+				const verb = inWords(thisOrElse$1(f.verb, "")).replace(/,\s*(with|leading)\s*$/, "").replace(/\s*—\s*\d+ defending units?\s*$/, "");
+				const kinds = Object.entries(cnt).map(([k, c]) => `${unitEmoji(k)} ${Number(c) > 1 ? `${String(c)}× ` : ""}${k}`).join(", ");
+				return kcHtml`<div class="log-entry combat" style="border-left-width:4px;background:#fdf0f0;margin-top:3px;font-size:.8rem">⚔ <span style="color:${col};font-weight:700">${f.name}</span> ${verb} — ${n ? `${inWords(n)} unit${n !== 1 ? "s" : ""}: ${kinds}` : "no armies"}</div>`;
 			}
-			return kcHtml`<div class="log-entry combat" style="border-left-width:4px;background:#fdf0f0;margin-top:6px"><div>${kcHtml`⚔ <span style="color:${col};font-weight:700">${f.name}</span> ${f.verb || ""}:`}</div>${(f.armies || []).length ? f.armies.map((a) => kcHtml`<div style="padding-left:16px;font-size:.82rem${a.phantom ? ";opacity:.75;font-style:italic" : ""}">${a.phantom ? "✨" : unitEmoji(a.type)} <span style="color:${col}">${armyLabel(a)}</span></div>`) : kcHtml`<div style="padding-left:16px;font-size:.82rem;opacity:.7">— no armies —</div>`}</div>`;
+			return kcHtml`<div class="log-entry combat" style="border-left-width:4px;background:#fdf0f0;margin-top:6px"><div>${kcHtml`⚔ <span style="color:${col};font-weight:700">${f.name}</span> ${thisOrElse$1(f.verb, "")}:`}</div>${theField(thisOrElse$1(f.armies, []), "length") ? theListOfTheMarker(f.armies).map((each) => {
+				const a = theCompanyTheMarkerLists(each);
+				return kcHtml`<div style="padding-left:16px;font-size:.82rem${a.phantom ? ";opacity:.75;font-style:italic" : ""}">${a.phantom ? "✨" : unitEmoji(a.type)} <span style="color:${col}">${armyLabel(a)}</span></div>`;
+			}) : kcHtml`<div style="padding-left:16px;font-size:.82rem;opacity:.7">— no armies —</div>`}</div>`;
 		}
 		function renderEntry(e, opt) {
-			opt = opt || {};
-			const raw0 = e.text || "";
+			opt ??= {};
+			const raw0 = e.text ?? "";
 			if (raw0.startsWith("⚑FORCE⚑")) try {
-				return renderForceBlock(JSON.parse(raw0.slice(7)), !!opt.compact);
-			} catch (_) {}
-			const _ind = (raw0.match(/^ +/) || [""])[0].length;
+				return renderForceBlock(theForceTheMarkerHolds(raw0.slice(7), "guard"), !!opt.compact);
+			} catch {}
+			const _ind = (/^ +/.exec(raw0) ?? [""])[0].length;
 			const rawText = roundReportNumbers(raw0.replace(/^ +/, ""));
 			const isStat = rawText.startsWith("📊");
 			const isTally = rawText.startsWith("⚰");
@@ -10199,19 +10563,19 @@ function buildChronicle(log, chars_for_log) {
 			const tail = opt.tail ? kcHtml`<span style="flex:1"></span>${opt.tail}` : "";
 			const flex = opt.tail ? "display:flex;align-items:flex-start;gap:6px;" : "";
 			const inner = opt.tail ? kcHtml`<span style="min-width:0">${text}</span>${tail}` : text;
-			const sub = _ind > 0 && !opt.compact ? `margin-left:${Math.min(4, Math.ceil(_ind / 2)) * 12}px;font-size:.76rem;padding-top:2px;padding-bottom:2px;margin-bottom:1px;` : "";
-			const _gridLine = /│/.test(rawText) ? "white-space:pre;overflow-x:auto;" : "";
+			const sub = _ind > 0 && !opt.compact ? `margin-left:${String(Math.min(4, Math.ceil(_ind / 2)) * 12)}px;font-size:.76rem;padding-top:2px;padding-bottom:2px;margin-bottom:1px;` : "";
+			const _gridLine = rawText.includes("│") ? "white-space:pre;overflow-x:auto;" : "";
 			if (isStat) return kcHtml`<div class="log-entry stat" style="${flex}${sub}${_gridLine}">${inner}</div>`;
 			if (isTally) return kcHtml`<div class="log-entry combat" style="${flex}border-left-width:4px;background:#f6ecdf;font-weight:600">${inner}</div>`;
 			if (isBattleHeader && !sub) return kcHtml`<div class="log-entry combat" style="${flex}border-left-width:4px;background:#fdf0f0;margin-top:6px;font-weight:600">${inner}</div>`;
-			return kcHtml`<div class="log-entry ${e.type || ""}" style="${flex}${sub}">${inner}</div>`;
+			return kcHtml`<div class="log-entry ${e.type ?? ""}" style="${flex}${sub}">${inner}</div>`;
 		}
 		function renderBattleGroup(g) {
 			if (!g.some((e) => e.bTier === "d")) return g.filter((e) => e.bTier !== "t").map((e) => renderEntry(e));
 			const shortE = g.filter((e) => e.bTier === "k" || e.bTier === "t"), fullE = g.filter((e) => e.bTier !== "t" && e.bTier !== "s");
 			const btn = (open) => kcHtml`<button type="button" class="secall-btn bf-toggle" style="flex-shrink:0;font-weight:400" aria-expanded="${open ? "true" : "false"}" onclick="toggleBattleFold(this)">${open ? "▾ short summary" : "▸ full report"}</button>`;
 			const view = (list, open, compact) => {
-				let hi = list.findIndex((e) => /^\s*⚔ \*\*Battle for /.test(e.text || ""));
+				let hi = list.findIndex((e) => /^\s*⚔ \*\*Battle for /.test(e.text ?? ""));
 				if (hi < 0) hi = 0;
 				return list.map((e, i) => renderEntry(e, {
 					compact,
@@ -10221,33 +10585,33 @@ function buildChronicle(log, chars_for_log) {
 			return kcHtml`<div class="battle-fold"><div class="bf-short">${view(shortE, false, true)}</div><div class="bf-full" style="display:none">${view(fullE, true, false)}</div></div>`;
 		}
 		function renderEntryList(list) {
-			let out = [];
+			const out = [];
 			for (let i = 0; i < list.length;) {
 				const e = list[i];
-				if (e && e.battleId != null) {
+				if (e?.battleId != null) {
 					let j = i;
-					while (j < list.length && list[j] && list[j].battleId === e.battleId) j++;
+					while (j < list.length && list[j]?.battleId === e.battleId) j++;
 					out.push(renderBattleGroup(list.slice(i, j)));
 					i = j;
 					continue;
 				}
-				out.push(renderEntry(e));
+				out.push(renderEntry(theLineRead(e)));
 				i++;
 			}
 			return out;
 		}
 		function phaseHeader(ph, color) {
-			return kcHtml`<div style="font-family:'Cinzel',serif;font-size:.68rem;color:${color || "var(--stone)"};
+			return kcHtml`<div style="font-family:'Cinzel',serif;font-size:.68rem;color:${(color ?? "") || "var(--stone)"};
         text-transform:uppercase;letter-spacing:.1em;padding:3px 8px;
         border-bottom:1px dotted var(--parchment-dark);margin:6px 0 4px;
         display:flex;align-items:center;gap:6px">
-        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color || "var(--stone)"}"></span>
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${(color ?? "") || "var(--stone)"}"></span>
         ${PHASE_NAMES[ph]}
       </div>`;
 		}
 		let html = [];
 		orderedChars.forEach((c) => {
-			const ce = charEntries[c.id];
+			const ce = charEntries[String(c.id)];
 			if (!ce) return;
 			if (!ce.phases.some((ph) => ph.length > 0)) return;
 			const accentColor = c.isKing ? "var(--crimson)" : "var(--forest)";
@@ -10262,13 +10626,13 @@ function buildChronicle(log, chars_for_log) {
         </div>
         <div style="padding:6px 8px">`);
 			let hasContent = false;
-			ce.phases.forEach((entries, ph) => {
-				if (!entries.length) return;
+			for (const [ph, entries] of ce.phases.entries()) {
+				if (!entries.length) continue;
 				hasContent = true;
 				const ordered = [...entries].sort((a, b) => (b.pinNotice ? 1 : 0) - (a.pinNotice ? 1 : 0));
 				html.push(phaseHeader(ph, PHASE_COLORS[ph]));
 				html.push(renderEntryList(ordered));
-			});
+			}
 			if (!hasContent) html.push(kcHtml`<em style="color:#aaa;font-size:.8rem;padding:4px 8px;display:block">No activity this turn.</em>`);
 			html.push(kcHtml`</div></div>`);
 		});
@@ -10282,7 +10646,7 @@ function buildChronicle(log, chars_for_log) {
         </div>
         <div style="padding:6px 10px">`);
 			dispatches.forEach((e) => {
-				html.push(kcHtml`<div class="log-entry" style="padding:5px 4px;border-bottom:1px dotted var(--parchment-dark)">${e.text || ""}</div>`);
+				html.push(kcHtml`<div class="log-entry" style="padding:5px 4px;border-bottom:1px dotted var(--parchment-dark)">${e.text ?? ""}</div>`);
 			});
 			html.push(kcHtml`</div></div>`);
 		}
@@ -10303,12 +10667,12 @@ function buildChronicle(log, chars_for_log) {
 				3,
 				4
 			].forEach((ph) => {
-				const entries = systemByPhase[ph] || [];
+				const entries = systemByPhase[ph] ?? [];
 				if (!entries.length) return;
 				html.push(phaseHeader(ph, PHASE_COLORS[ph]));
 				html.push(renderEntryList(entries));
 			});
-			const unphased = systemByPhase[99] || [];
+			const unphased = systemByPhase[99] ?? [];
 			if (unphased.length) {
 				html.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.68rem;color:var(--stone);
           text-transform:uppercase;letter-spacing:.1em;padding:3px 8px;
@@ -10320,7 +10684,7 @@ function buildChronicle(log, chars_for_log) {
 			html.push(kcHtml`</div></div>`);
 		}
 		if (Object.values(intelByPhase).some((a) => a.length > 0) || titleIntel.length > 0 || viewedTurn == null) {
-			let html0 = html;
+			const html0 = html;
 			html = [];
 			const _intelLine = (t) => {
 				const i = t.indexOf("[Intelligence]");
@@ -10333,10 +10697,11 @@ function buildChronicle(log, chars_for_log) {
 				html.push(_subHead("👑 Imperial Titles"));
 				const byTitle = /* @__PURE__ */ new Map();
 				titleIntel.forEach((e) => {
-					const m = TITLE_INTEL_RE.exec(e.text || "");
-					const k = m ? m[1] : "Titles";
-					if (!byTitle.has(k)) byTitle.set(k, []);
-					byTitle.get(k).push((e.text || "").replace(TITLE_INTEL_RE, ""));
+					const m = TITLE_INTEL_RE.exec(e.text ?? "");
+					const k = m ? String(m[1]) : "Titles";
+					const here = byTitle.get(k) ?? [];
+					byTitle.set(k, here);
+					here.push((e.text ?? "").replace(TITLE_INTEL_RE, ""));
 				});
 				byTitle.forEach((parts, k) => {
 					const tag = kcHtml`<span style="color:#9a6a1a;font-family:Cinzel,serif;font-weight:700;font-size:.72rem">[${k}]</span>`;
@@ -10351,25 +10716,26 @@ function buildChronicle(log, chars_for_log) {
 				3,
 				4
 			].forEach((ph) => {
-				const entries = intelByPhase[ph] || [];
+				const entries = intelByPhase[ph] ?? [];
 				if (!entries.length) return;
 				html.push(phaseHeader(ph, "#c8922a"));
 				entries.forEach((e) => {
-					html.push(kcHtml`<div class="log-entry system">${_intelLine(e.text || "")}</div>`);
+					html.push(kcHtml`<div class="log-entry system">${_intelLine(e.text ?? "")}</div>`);
 				});
 			});
-			const unphased = intelByPhase[99] || [];
+			const unphased = intelByPhase[99] ?? [];
 			if (unphased.length) {
 				html.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.68rem;color:#c8922a;
           text-transform:uppercase;letter-spacing:.1em;padding:3px 8px;
           border-bottom:1px dotted var(--parchment-dark);margin:6px 0 4px">General</div>`);
 				unphased.forEach((e) => {
-					html.push(kcHtml`<div class="log-entry system">${_intelLine(e.text || "")}</div>`);
+					html.push(kcHtml`<div class="log-entry system">${_intelLine(e.text ?? "")}</div>`);
 				});
 			}
 			html = [...html0, intelSectionShell(html)];
 		}
-		document.getElementById("report-log").innerHTML = kcHtml`${_reckoningBanner}${html.length ? html : kcHtml`<em style="color:#3a3224;font-size:.85rem">No events yet.</em>`}`;
+		const theChronicle = String(kcHtml`${_reckoningBanner}${html.length ? html : kcHtml`<em style="color:#3a3224;font-size:.85rem">No events yet.</em>`}`);
+		theElementWithTheId("report-log", HTMLElement).innerHTML = theChronicle;
 	}
 }
 // src/ui/player/the-hints-the-order-form-shows-below-each-spell.ts
@@ -11778,21 +12144,7 @@ function updateRecruitTarget(charId, ph) {
 	if (hidden instanceof HTMLInputElement) hidden.value = checked.join(",");
 	setTimeout(refreshAllMoveModeNotes, 0);
 }
-// src/ui/shared/the-pages-element-with-the-id.ts
-/** The element of `page` with the id `id`, of the kind `kind`. Throws a TypeError naming the id when the page holds no
-*  element with it, or holds one of another kind. `page` is the page's own document unless a test hands another. */
-function theElementWithTheId(id, kind, page = document) {
-	const found = page.getElementById(id);
-	if (found === null) throw new TypeError(`the page holds no element with the id "${id}"`);
-	if (!(found instanceof kind)) throw new TypeError(`the page's element with the id "${id}" is a <${found.tagName.toLowerCase()}>, not of the kind asked for`);
-	return found;
-}
 // src/ui/player/pre-orders.ts
-/** The value of the page's field with the id `id`, as `document.getElementById(id)?.value` read it. */
-function theValueOfThePagesField(id) {
-	const el = document.getElementById(id);
-	return el ? theValueOfAField(el) : void 0;
-}
 var ONCE_PER_TURN_ACTIONS = /* @__PURE__ */ new Set([...Object.keys(L79_ORDERS), theNameTheFormWritesOfTheAlignmentOrder("call-to-arms")]);
 function refreshOncePerTurnOptions(charId) {
 	const taken = /* @__PURE__ */ new Set();
@@ -13416,7 +13768,7 @@ async function allocateHeirSkill(charId, skill, delta) {
 async function reviseOrders() {
 	const gp = currentGamePlayer;
 	if (!gp) return;
-	const { error } = await sb.from("game_players").update({ orders_submitted: false }).eq("id", String(gp.id));
+	const { error } = await thePagesDb.theOrders.reopenThisRealmsOrders(String(gp.id));
 	if (error) {
 		console.error(error);
 		return;
@@ -13439,12 +13791,12 @@ async function openReport(gamePlayerId) {
 		if (_ntb) _ntb.style.display = "none";
 	}
 	document.getElementById("report-title").textContent = "Loading…";
-	const { data: gp, error } = await sb.from("game_players").select("*").eq("id", gamePlayerId).single();
+	const { data: gp, error } = await thePagesDb.thePlayersRealms.thisRealm(gamePlayerId);
 	if (error) {
 		document.getElementById("report-title").textContent = "Error: " + error.message;
 		return;
 	}
-	const { data: g, error: gErr } = await sb.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", gp.game_id).single();
+	const { data: g, error: gErr } = await thePagesDb.thePlayersGames.thisGameForItsReport(gp.game_id);
 	if (gErr) {
 		document.getElementById("report-title").textContent = "Error loading game: " + gErr.message;
 		return;
@@ -14000,7 +14352,7 @@ async function loadPastReport(gameId, playerIndex, turn) {
 	document.getElementById("save-msg").style.display = "none";
 	let snapshot = null;
 	try {
-		const { data: snapRows } = await sb.from("turn_logs").select("*").eq("game_id", gameId).eq("turn", turn).eq("player_index", pi).limit(1);
+		const { data: snapRows } = await thePagesDb.theChroniclesLogs.theLogOfThisRealmInThisTurn(gameId, turn, pi);
 		if (snapRows && snapRows[0] && snapRows[0].entries) {
 			const e = snapRows[0].entries;
 			snapshot = typeof e === "string" ? JSON.parse(e) : e;
@@ -14014,8 +14366,8 @@ async function loadPastReport(gameId, playerIndex, turn) {
 		renderReportView(snapshot);
 		return;
 	}
-	const { data: logs } = await sb.from("turn_logs").select("*").eq("game_id", gameId).eq("turn", turn).eq("player_index", -1).limit(1);
-	const { data: g } = await sb.from("games").select("*").eq("id", gameId).single();
+	const { data: logs } = await thePagesDb.theChroniclesLogs.theLogOfThisRealmInThisTurn(gameId, turn, -1);
+	const { data: g } = await thePagesDb.thePlayersGames.thisGameEveryColumn(gameId);
 	const allChars = (g?.game_state || {}).characters || [];
 	const ownCharIds = new Set(allChars.filter((c) => c.player === pi).map((c) => c.id));
 	const entries = (logs && logs[0]?.entries || []).filter((e) => {
@@ -14051,17 +14403,44 @@ function returnToCurrentReport() {
 	if (currentReport) renderReportView(currentReport);
 }
 // src/ui/player/sign-in.ts
+/** What was thrown's message, in words, as `'…' + err.message` wrote it: an error's message; `undefined` for a value
+*  with none; nothing thrown (`null`, `undefined`) throws the TypeError reading its message threw. */
+function theMessageOf(err) {
+	return String(theMessageReadOff(err));
+}
+/** What was thrown's message, as `err.message` read it: an error's message; `undefined` for a value with none; nothing
+*  thrown (`null`, `undefined`) throws the TypeError reading its message threw, in its words. */
+function theMessageReadOff(err) {
+	if (err === null || err === void 0) throw new TypeError(`Cannot read properties of ${String(err)} (reading 'message')`);
+	return Reflect.get(Object(err), "message");
+}
+/** The signed-in account, as a read of one of its fields read it: none throws the TypeError that read threw. */
+function theAccountSignedIn(field) {
+	if (currentUser === null) throw new TypeError(`Cannot read properties of null (reading '${field}')`);
+	return currentUser;
+}
+/** The name a player is shown by, as `name || <the address's first part>` gave it: the address is read only for no
+*  name. */
+function theNameOrTheAddress(name) {
+	if (name) return name;
+	return theAddressOf(theAccountSignedIn("email")).split("@")[0];
+}
+/** The account's address, as `.split` read it: none throws the TypeError that read threw. */
+function theAddressOf(account) {
+	if (account.email === void 0) throw new TypeError("Cannot read properties of undefined (reading 'split')");
+	return account.email;
+}
 function setAuthTab(tab) {
-	document.getElementById("tab-signin").classList.toggle("active", tab === "signin");
-	document.getElementById("tab-signup").classList.toggle("active", tab === "signup");
-	document.getElementById("auth-signin").style.display = tab === "signin" ? "block" : "none";
-	document.getElementById("auth-signup").style.display = tab === "signup" ? "block" : "none";
-	document.getElementById("auth-msg").innerHTML = "";
+	theElementWithTheId("tab-signin", HTMLElement).classList.toggle("active", tab === "signin");
+	theElementWithTheId("tab-signup", HTMLElement).classList.toggle("active", tab === "signup");
+	theElementWithTheId("auth-signin", HTMLElement).style.display = tab === "signin" ? "block" : "none";
+	theElementWithTheId("auth-signup", HTMLElement).style.display = tab === "signup" ? "block" : "none";
+	theElementWithTheId("auth-msg", HTMLElement).innerHTML = "";
 }
 async function doSignIn() {
-	const email = document.getElementById("si-email").value.trim();
-	const pwd = document.getElementById("si-password").value;
-	const msg = document.getElementById("auth-msg");
+	const email = theElementWithTheId("si-email", HTMLInputElement).value.trim();
+	const pwd = theElementWithTheId("si-password", HTMLInputElement).value;
+	const msg = theElementWithTheId("auth-msg", HTMLElement);
 	if (!email || !pwd) {
 		msg.innerHTML = "<div class=\"msg-error\">Please enter your email and password.</div>";
 		return;
@@ -14072,18 +14451,18 @@ async function doSignIn() {
 		let m = error.message;
 		if (m.includes("Email not confirmed")) m = "Account not confirmed yet. Ask your GM, or check your email for a confirmation link.";
 		if (m.includes("Invalid login")) m = "Email or password incorrect. Check your details and try again.";
-		msg.innerHTML = kcHtml`<div class="msg-error">${m}</div>`;
+		msg.innerHTML = String(kcHtml`<div class="msg-error">${m}</div>`);
 		return;
 	}
 	currentUser = data.user;
 	await onSignedIn();
 }
 async function doSignUp() {
-	const name = document.getElementById("su-name").value.trim();
-	const email = document.getElementById("su-email").value.trim();
-	const pwd = document.getElementById("su-password").value;
-	const pwd2 = document.getElementById("su-password2").value;
-	const msg = document.getElementById("auth-msg");
+	const name = theElementWithTheId("su-name", HTMLInputElement).value.trim();
+	const email = theElementWithTheId("su-email", HTMLInputElement).value.trim();
+	const pwd = theElementWithTheId("su-password", HTMLInputElement).value;
+	const pwd2 = theElementWithTheId("su-password2", HTMLInputElement).value;
+	const msg = theElementWithTheId("auth-msg", HTMLElement);
 	if (!name || !email || !pwd) {
 		msg.innerHTML = "<div class=\"msg-error\">Please fill in all fields.</div>";
 		return;
@@ -14099,12 +14478,14 @@ async function doSignUp() {
 	msg.innerHTML = "<div class=\"msg-info\">Creating account…</div>";
 	const { data, error } = await thePagesDb.signingIn.signUpWithEmailPasswordAndName(email, pwd, name);
 	if (error) {
-		msg.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		msg.innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 		return;
 	}
 	if (data.user && !data.session) {
 		msg.innerHTML = "<div class=\"msg-success\">Account created! Check your email for a confirmation link, then sign in.</div>";
-		setTimeout(() => setAuthTab("signin"), 3e3);
+		setTimeout(() => {
+			setAuthTab("signin");
+		}, 3e3);
 	} else if (data.user) {
 		currentUser = data.user;
 		await onSignedIn();
@@ -14114,7 +14495,7 @@ async function doSignOut() {
 	try {
 		stopMessagePolling();
 		await saveMessageReads();
-	} catch (e) {}
+	} catch {}
 	await thePagesDb.signingIn.signOut();
 	currentUser = null;
 	currentProfile = null;
@@ -14124,11 +14505,11 @@ async function doSignOut() {
 }
 function changeDisplayName() {
 	if (document.getElementById("dn-overlay")) return;
-	const cur = currentProfile && currentProfile.name || currentUser?.user_metadata?.display_name || "";
+	const cur = thisOrElse$1((currentProfile?.name ?? "") || currentUser?.user_metadata?.["display_name"], "");
 	const ov = document.createElement("div");
 	ov.id = "dn-overlay";
 	ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999";
-	ov.innerHTML = kcHtml`
+	ov.innerHTML = String(kcHtml`
     <div style="background:#f5ecd8;color:#1a1208;border:2px solid #c8922a;border-radius:6px;padding:20px;max-width:380px;width:90%">
       <div style="font-family:'Cinzel',serif;font-size:1rem;margin-bottom:6px;color:#7a1c1c">✏ Change Display Name</div>
       <div style="font-size:.8rem;margin-bottom:12px;color:#4a3a22">This is <strong>you</strong>, not your realm. Your realm is named afresh in every game you join; this name follows you across all of them and is what the Hall of Fame records your wins under. Changing it updates your name on every game you have played.</div>
@@ -14139,9 +14520,9 @@ function changeDisplayName() {
         <button onclick="closeDisplayName()" style="padding:7px 14px;border:1px solid #999;background:#eee;border-radius:3px;cursor:pointer">Cancel</button>
         <button onclick="submitDisplayName()" style="padding:7px 14px;border:none;background:#7a1c1c;color:#fff;border-radius:3px;cursor:pointer">Save Name</button>
       </div>
-    </div>`;
+    </div>`);
 	document.body.appendChild(ov);
-	const f = document.getElementById("dn-name");
+	const f = theElementWithTheId("dn-name", HTMLInputElement);
 	f.focus();
 	f.select();
 }
@@ -14150,24 +14531,24 @@ function closeDisplayName() {
 	if (o) o.remove();
 }
 async function submitDisplayName() {
-	const msg = document.getElementById("dn-msg");
-	const name = (document.getElementById("dn-name").value || "").trim();
+	const msg = theElementWithTheId("dn-msg", HTMLElement);
+	const name = (theElementWithTheId("dn-name", HTMLInputElement).value || "").trim();
 	if (name.length < 2) {
 		msg.innerHTML = "<span style=\"color:#c00\">Please give a name of at least two characters.</span>";
 		return;
 	}
 	msg.innerHTML = "<span style=\"color:#231e16\">Saving…</span>";
 	try {
-		const { error } = await thePagesDb.theAccountsNames.giveThisAccountItsName(currentUser.id, name);
+		const { error } = await thePagesDb.theAccountsNames.giveThisAccountItsName(theSignedInAccountsId(), name);
 		if (error) {
-			msg.innerHTML = kcHtml`<span style="color:#c00">${error.message}</span>`;
+			msg.innerHTML = String(kcHtml`<span style="color:#c00">${error.message}</span>`);
 			return;
 		}
 		try {
 			await thePagesDb.signingIn.changeTheNameKeptWithTheSignIn(name);
-		} catch (e) {}
-		currentProfile = Object.assign({}, currentProfile || {}, {
-			id: currentUser.id,
+		} catch {}
+		currentProfile = Object.assign({}, currentProfile ?? {}, {
+			id: theSignedInAccountsId(),
 			name
 		});
 		const el = document.getElementById("player-name-display");
@@ -14175,7 +14556,7 @@ async function submitDisplayName() {
 		msg.innerHTML = "<span style=\"color:#1d5a1d\">✓ Saved — this is your name on every game you have played.</span>";
 		setTimeout(closeDisplayName, 1400);
 	} catch (e) {
-		msg.innerHTML = kcHtml`<span style="color:#c00">${e.message || "Could not save the name."}</span>`;
+		msg.innerHTML = String(kcHtml`<span style="color:#c00">${thisOrElse$1(theMessageReadOff(e), "Could not save the name.")}</span>`);
 	}
 }
 function changePassword() {
@@ -14197,16 +14578,16 @@ function changePassword() {
       </div>
     </div>`;
 	document.body.appendChild(ov);
-	document.getElementById("cp-new").focus();
+	theElementWithTheId("cp-new", HTMLElement).focus();
 }
 function closeChangePassword() {
 	const o = document.getElementById("cp-overlay");
 	if (o) o.remove();
 }
 async function submitChangePassword() {
-	const p1 = document.getElementById("cp-new").value;
-	const p2 = document.getElementById("cp-new2").value;
-	const msg = document.getElementById("cp-msg");
+	const p1 = theElementWithTheId("cp-new", HTMLInputElement).value;
+	const p2 = theElementWithTheId("cp-new2", HTMLInputElement).value;
+	const msg = theElementWithTheId("cp-msg", HTMLElement);
 	if (!p1 || p1.length < 6) {
 		msg.innerHTML = "<span style=\"color:#c00\">Password must be at least 6 characters.</span>";
 		return;
@@ -14219,24 +14600,26 @@ async function submitChangePassword() {
 	try {
 		const { error } = await thePagesDb.signingIn.changeThePassword(p1);
 		if (error) {
-			msg.innerHTML = kcHtml`<span style="color:#c00">${error.message}</span>`;
+			msg.innerHTML = String(kcHtml`<span style="color:#c00">${error.message}</span>`);
 			return;
 		}
 		msg.innerHTML = "<span style=\"color:#1d5a1d\">✓ Password updated.</span>";
 		setTimeout(closeChangePassword, 1200);
 	} catch (e) {
-		msg.innerHTML = kcHtml`<span style="color:#c00">${e.message || "Update failed."}</span>`;
+		msg.innerHTML = String(kcHtml`<span style="color:#c00">${thisOrElse$1(theMessageReadOff(e), "Update failed.")}</span>`);
 	}
 }
 async function onSignedIn() {
-	const { data: profile } = await thePagesDb.theAccountsNames.theNameOfThisAccount(currentUser.id);
+	const { data: profile } = await thePagesDb.theAccountsNames.theNameOfThisAccount(theSignedInAccountsId());
 	currentProfile = profile;
-	const displayName = profile?.name || currentUser.user_metadata?.display_name || currentUser.email.split("@")[0];
-	document.getElementById("player-name-display").textContent = displayName;
-	const _gm = (location.hash || "").match(/^#game=([A-Za-z0-9_-]+)$/);
+	const displayName = theNameOrTheAddress((profile?.name ?? "") || theAccountSignedIn("user_metadata").user_metadata?.["display_name"]);
+	Reflect.set(theElementWithTheId("player-name-display", HTMLElement), "textContent", displayName);
+	const _gm = /^#game=([A-Za-z0-9_-]+)$/.exec(location.hash || "");
 	if (_gm) {
 		show("sec-report");
-		loadAllGames().then(() => startUpdatePolling()).catch(() => {});
+		loadAllGames().then(() => {
+			startUpdatePolling();
+		}).catch(() => {});
 		await openReport(_gm[1]);
 		return;
 	}
@@ -14247,14 +14630,15 @@ async function onSignedIn() {
 function openGameFresh(gamePlayerId) {
 	try {
 		history.replaceState(null, "", location.pathname + location.search + "#game=" + encodeURIComponent(gamePlayerId));
-	} catch (e) {}
+	} catch {}
 	location.reload();
 }
 async function answerGmOffer(fn) {
-	const ask = document.getElementById("gm-offer-ask"), msg = document.getElementById("gm-offer-msg");
+	const ask = theElementWithTheId("gm-offer-ask", HTMLElement);
 	ask.querySelectorAll("button").forEach((b) => {
 		b.disabled = true;
 	});
+	const msg = theElementWithTheId("gm-offer-msg", HTMLElement);
 	msg.innerHTML = "";
 	const { error } = await thePagesDb.theRoles.answerTheGameMasterOffer(fn);
 	ask.querySelectorAll("button").forEach((b) => {
@@ -14269,25 +14653,25 @@ async function answerGmOffer(fn) {
 }
 async function acceptGmOffer() {
 	if (!await answerGmOffer("gm_accept_offer")) return;
-	document.getElementById("gm-offer-ask").style.display = "none";
-	document.getElementById("gm-offer-done").style.display = "block";
+	theElementWithTheId("gm-offer-ask", HTMLElement).style.display = "none";
+	theElementWithTheId("gm-offer-done", HTMLElement).style.display = "block";
 }
 async function declineGmOffer() {
 	if (!confirm("Turn down the offer to become a Game Master? The Overlord would have to offer again.")) return;
-	if (await answerGmOffer("gm_decline_offer")) document.getElementById("gm-offer-banner").style.display = "none";
+	if (await answerGmOffer("gm_decline_offer")) theElementWithTheId("gm-offer-banner", HTMLElement).style.display = "none";
 }
 async function init() {
 	try {
-		document.getElementById("spinner").style.display = "none";
+		theElementWithTheId("spinner", HTMLElement).style.display = "none";
 		const { data: { session }, error } = await thePagesDb.signingIn.theSessionKeptInThisBrowser();
-		if (error) throw error;
+		if (error) throw theRefusalAsThrown(error);
 		if (session) {
 			currentUser = session.user;
 			await onSignedIn();
 		} else show("sec-auth");
 	} catch (e) {
-		document.getElementById("spinner").style.display = "block";
-		document.getElementById("spinner").textContent = "Connection error: " + e.message + ". Check your internet connection and refresh.";
+		theElementWithTheId("spinner", HTMLElement).style.display = "block";
+		theElementWithTheId("spinner", HTMLElement).textContent = "Connection error: " + theMessageOf(e) + ". Check your internet connection and refresh.";
 		console.error("Init failed:", e);
 	}
 }
@@ -14296,12 +14680,6 @@ kcDbGuard(thePagesDb, KC_DB_MIN).then(() => init().catch((err) => {
 	console.error("Init error:", err);
 	theElementWithTheId("spinner", HTMLElement).textContent = "Error loading — please refresh. (" + theMessageOf(err) + ")";
 }));
-/** What was thrown's message, in words, as `'…' + err.message` wrote it: an error's message; `undefined` for a value
-*  with none; nothing thrown (`null`, `undefined`) throws the TypeError reading its message threw. */
-function theMessageOf(err) {
-	if (err === null || err === void 0) throw new TypeError(`reading the message of ${String(err)}`);
-	return String(Reflect.get(Object(err), "message"));
-}
 // src/ui/shared/a-newer-version-of-this-page.ts
 /** The file each deploy publishes beside the pages. */
 var VERSION_FILE = "version.json";

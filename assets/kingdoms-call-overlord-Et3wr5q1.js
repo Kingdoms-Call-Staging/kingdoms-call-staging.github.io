@@ -1,4 +1,4 @@
-//#region src/ui/shared/kc-safe.ts
+// src/ui/shared/kc-safe.ts
 function kcEsc(v) {
 	return String(typeof v === "undefined" || v === null ? "" : v).replace(/[&<>"']/g, (c) => String({
 		"&": "&amp;",
@@ -23,8 +23,7 @@ function kcHtml(strings, ...values) {
 	for (let i = 0; i < values.length; i++) out += show(values[i]) + String(strings[i + 1]);
 	return new KcSafeHtml(out);
 }
-//#endregion
-//#region src/db/kc-db-guard.ts
+// src/db/kc-db-guard.ts
 /** A thrown value as `(e && e.message) || e` reads it: its message when it is an object or a function with a truthy
 *  one, else the value itself. */
 function itsMessageOrItself(e) {
@@ -56,8 +55,9 @@ async function kcDbGuard(db, min) {
 	document.dispatchEvent(new CustomEvent("kc-db-version", { detail: v }));
 	return v;
 }
-//#endregion
-//#region src/db/the-db-interface-and-its-areas.ts
+// src/db/the-db-interface-and-its-areas.ts
+var A_GAME_IN_THE_GAME_MASTERS_LIST = "id,name,gm_user_id,status,turn,max_players,max_turns,created_at,meta, game_players(id,game_id,user_id,player_index,display_name,orders_submitted)";
+var EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST = "*, game_players(*)";
 /** The page's Db, on its own client: each function sends the query the page sent on that client before. */
 function makeTheDbFromItsClient(client) {
 	return {
@@ -112,11 +112,159 @@ function makeTheDbFromItsClient(client) {
 				p_new_gm: gameMaster
 			}),
 			theRealmsNamesOfTheseGames: (games) => client.from("game_players").select("game_id,player_index,display_name").in("game_id", games)
+		},
+		theHallOfFame: {
+			oneEntrysGame: () => client.from("game_records").select("game_id").limit(1),
+			everyEntryNewestFinishedFirstFromRowToRow: (from, to) => client.from("game_records").select("*").order("finished_at", { ascending: false }).range(from, to),
+			theGameOfEveryEntry: () => client.from("game_records").select("game_id"),
+			theGameMastersNotesOnThisGamesEntry: (game) => client.from("game_records").select("note,hidden,game_name").eq("game_id", game).maybeSingle(),
+			writeTheseEntries: (entries) => client.from("game_records").upsert([...entries], { onConflict: "game_id" }),
+			changeThisGamesEntry: (game, change) => client.from("game_records").update(change).eq("game_id", game),
+			deleteThisGamesEntry: (game) => client.from("game_records").delete().eq("game_id", game),
+			deleteTheseGamesEntries: (games) => client.from("game_records").delete().in("game_id", games),
+			renameThisPlayer: (user, name) => client.rpc("rename_player", {
+				p_user: user,
+				p_name: name
+			})
+		},
+		theStatistics: {
+			oneTurnRecordsId: () => client.from("turn_events").select("id").limit(1),
+			oneGameResultsId: () => client.from("game_results").select("id").limit(1),
+			theResultsOfThisGame: (game) => client.from("game_results").select("*").eq("game_id", game),
+			thisGamesTurnRecordsForItsEntryFromRowToRow: (game, from, to) => client.from("turn_events").select("turn,player_index,is_bot,realm,race,alignment,post,outcomes").eq("game_id", game).order("turn").order("player_index").range(from, to),
+			theGameOfEveryResultFromRowToRow: (from, to) => client.from("game_results").select("game_id").order("game_id").order("player_index").range(from, to),
+			everyTurnRecordFromRowToRow: (from, to) => client.from("turn_events").select("game_id,turn,player_index,is_bot,bot_difficulty,realm,race,alignment,orders,pre,post,outcomes").order("game_id").order("turn").order("player_index").range(from, to),
+			everyResultFromRowToRow: (from, to) => client.from("game_results").select("*").range(from, to),
+			deleteThisGamesResults: (game) => client.from("game_results").delete().eq("game_id", game),
+			deleteThisGamesTurnRecords: (game) => client.from("turn_events").delete().eq("game_id", game),
+			deleteTheseGamesResults: (games) => client.from("game_results").delete().in("game_id", games),
+			deleteTheseGamesTurnRecords: (games) => client.from("turn_events").delete().in("game_id", games),
+			writeTheseResults: (results) => client.from("game_results").upsert(results, { onConflict: "game_id,player_index" }),
+			writeTheseTurnRecords: (records) => client.from("turn_events").upsert(records, { onConflict: "game_id,turn,player_index" }),
+			theGamesOfTheseGamesResults: (games) => client.from("game_results").select("game_id").in("game_id", games)
+		},
+		theHallOfFamesGames: {
+			oneGameThisGameMasterRuns: (gameMaster) => client.from("games").select("id").eq("gm_user_id", gameMaster).limit(1),
+			thisGameWithItsWorldAndRealms: (game) => client.from("games").select("id,name,gm_user_id,created_at,max_turns,meta,game_state,game_players(id,player_index,user_id,display_name)").eq("id", game).maybeSingle(),
+			theFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,gm_user_id,created_at,max_turns,meta").eq("gm_user_id", gameMaster).eq("status", "complete"),
+			everyGamesNameStatusAndTurn: () => client.from("games").select("id,name,status,turn"),
+			theNameStatusAndTurnOfTheGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status,turn").eq("gm_user_id", gameMaster),
+			whichOfTheseGamesStillExist: (games) => client.from("games").select("id").in("id", games),
+			theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status").eq("gm_user_id", gameMaster).eq("status", "complete"),
+			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(*)").eq("id", game).single()
+		},
+		theDispatches: {
+			oneDispatchsId: () => client.from("game_messages").select("id").limit(1),
+			oneReadMarksGame: () => client.from("game_message_reads").select("game_id").limit(1),
+			theNewestDispatchesOfThisGame: (game, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).order("id", { ascending: false }).limit(count),
+			theDispatchesOfThisGameAfterThisOne: (game, after, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).gt("id", after).order("id", { ascending: true }).limit(count),
+			theDispatchesOfThisGameBeforeThisOne: (game, before, count) => client.from("game_messages").select("id,turn,from_index,to_indexes,scope,body,created_at").eq("game_id", game).lt("id", before).order("id", { ascending: false }).limit(count),
+			theNewestDispatchesOfTheseGamesGamesAndRealms: (games) => client.from("game_messages").select("id,game_id,from_index,to_indexes,scope").in("game_id", games).order("id", { ascending: false }).limit(3e3),
+			sendThisDispatch: (dispatch) => client.from("game_messages").insert(dispatch),
+			deleteThisDispatch: (id) => client.from("game_messages").delete().eq("id", id),
+			thisRealmsReadMarksInThisGame: (game, realm) => client.from("game_message_reads").select("reads").eq("game_id", game).eq("player_index", realm).maybeSingle(),
+			thisAccountsReadMarksInTheseGames: (games, account) => client.from("game_message_reads").select("game_id,player_index,reads").in("game_id", games).eq("user_id", account),
+			writeTheseReadMarks: (marks) => client.from("game_message_reads").upsert(marks, { onConflict: "game_id,player_index" })
+		},
+		theReportedDispatches: {
+			theDispatchesThisAccountReportedInThisGame: (game) => client.from("message_reports").select("message_id").eq("game_id", game),
+			reportThisDispatch: (report) => client.from("message_reports").insert(report),
+			theDispatchesReportedToThisAccount: (game) => client.rpc("gm_reported_messages", { p_game: game })
+		},
+		thePlayersRealms: {
+			thisAccountsRealmsAndTheirOrdersFlags: (account) => client.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", account),
+			everyRealmOfThisAccount: (account) => client.from("game_players").select("*").eq("user_id", account),
+			theGamesOfThisAccountsRealms: (account) => client.from("game_players").select("game_id").eq("user_id", account),
+			thisAccountsRealmsInThisGame: (game, account) => client.from("game_players").select("id,player_index").eq("game_id", game).eq("user_id", account),
+			thisRealm: (id) => client.from("game_players").select("*").eq("id", id).single(),
+			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			theSlotsOfTheseGames: (games) => client.rpc("get_game_slots", { p_games: games })
+		},
+		thePlayersGames: {
+			theTurnAndStateOfTheseGames: (games) => client.from("games").select("id,turn,status").in("id", games),
+			theseGamesForTheirCards: (games) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,created_at,meta").in("id", games),
+			theseGamesEveryColumn: (games) => client.from("games").select("*").in("id", games),
+			theGamesInSetup: () => client.from("games").select("*").eq("status", "setup"),
+			thisGamesWorldAndState: (game) => client.from("games").select("game_state,status").eq("id", game).single(),
+			thisGameForItsReport: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", game).single(),
+			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single()
+		},
+		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
+		theOrders: {
+			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
+				orders,
+				orders_submitted: false
+			}).eq("id", realm),
+			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
+			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
+			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
+				orders,
+				orders_submitted: true,
+				last_submitted_at: submittedAt
+			}).eq("id", realm),
+			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+		},
+		theGameMastersGames: {
+			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
+			theGamesThisGameMasterRunsNewestFirst: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).order("created_at", { ascending: false }),
+			theGamesThisGameMasterRunsNewestFirstEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).order("created_at", { ascending: false }),
+			everyGameNewestFirstFromRowToRow: (from, to) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
+			everyGameNewestFirstFromRowToRowEveryColumn: (from, to) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
+			theActiveGamesThisGameMasterRuns: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
+			theActiveGamesThisGameMasterRunsEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
+			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single(),
+			makeThisGame: (game) => client.from("games").insert(game).select().single(),
+			thisGamesTurnAndWorld: (game) => client.from("games").select("id,turn,game_state").eq("id", game).single(),
+			theGamesThisGameMasterRunsWithNoMeta: (gameMaster) => client.from("games").select("id,game_state").eq("gm_user_id", gameMaster).is("meta", null),
+			changeThisGame: (game, change) => client.from("games").update(change).eq("id", game),
+			changeThisGameAndAnswerItsId: (game, change) => client.from("games").update(change).eq("id", game).select("id").maybeSingle(),
+			changeThisGameWhileOnThisTurnAndAnswerItsId: (game, turn, change) => client.from("games").update(change).eq("id", game).eq("turn", turn).select("id").maybeSingle(),
+			keepTheRealmsThatAreOutOfThisGameFromSendingDispatches: (game, keep) => client.from("games").update({ block_eliminated_msgs: keep }).eq("id", game).select("id,block_eliminated_msgs").maybeSingle()
+		},
+		theGameMastersRealms: { removeThisRealm: (realm) => client.from("game_players").delete().eq("id", realm) },
+		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
+		theDeletionOfAGame: {
+			removeThisGamesTurnLogs: (game) => client.from("turn_logs").delete().eq("game_id", game),
+			removeThisGamesDispatches: (game) => client.from("game_messages").delete().eq("game_id", game),
+			removeThisGamesReadMarks: (game) => client.from("game_message_reads").delete().eq("game_id", game),
+			removeThisGamesTurnEvents: (game) => client.from("turn_events").delete().eq("game_id", game),
+			removeThisGamesResults: (game) => client.from("game_results").delete().eq("game_id", game),
+			removeThisGamesHallOfFameEntry: (game) => client.from("game_records").delete().eq("game_id", game),
+			removeThisGamesRealms: (game) => client.from("game_players").delete().eq("game_id", game),
+			removeThisGame: (game) => client.from("games").delete().eq("id", game)
+		},
+		theTurnAsTheGameMasterRunsIt: {
+			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single(),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			clearTheOrdersOfEveryRealmOfThisGame: (game) => client.from("game_players").update({
+				orders: null,
+				orders_submitted: false
+			}).eq("game_id", game),
+			saveThisGameWhileOnThisTurnAndAnswerItsId: (game, turn, change) => client.from("games").update(change).eq("id", game).eq("turn", turn).select("id").maybeSingle(),
+			giveThisRealmItsTurnReport: (realm, report) => client.from("game_players").update({ turn_report: report }).eq("id", realm),
+			writeThisLog: (log) => client.from("turn_logs").insert(log),
+			theTurnOfThisGameIfItIsThere: (game) => client.from("games").select("turn").eq("id", game).maybeSingle(),
+			putBackThisRealmsOrders: (realm, orders, submitted) => client.from("game_players").update({
+				orders,
+				orders_submitted: submitted
+			}).eq("id", realm)
+		},
+		theTurnZeroAsTheGameMasterRunsIt: {
+			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			removeEveryBotsRealmOfThisGame: (game) => client.from("game_players").delete().eq("game_id", game).is("user_id", null),
+			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			startThisGame: (game, change) => client.from("games").update(change).eq("id", game),
+			giveThisRealmItsFirstReport: (realm, report) => client.from("game_players").update({
+				turn_report: report,
+				orders: null,
+				orders_submitted: false
+			}).eq("id", realm),
+			writeThisLog: (log) => client.from("turn_logs").insert(log),
+			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single()
 		}
 	};
 }
-//#endregion
-//#region src/db/the-pages-database-client.ts
+// src/db/the-pages-database-client.ts
 /** The name, on the page's window, of the Db a test hands the page. */
 var THE_NAME_A_TEST_HANDS_THE_PAGE_ITS_DB_UNDER = "kcTheDbATestHandsThePage";
 /** A value a test handed in, taken as a Db when it has the version guard's area (the first area: every page has it). */
@@ -133,12 +281,18 @@ function makeThePagesDatabase(url, key, options) {
 		db: isADbHandedIn(handed) ? handed : makeTheDbFromItsClient(client)
 	};
 }
-//#endregion
-//#region src/ui/overlord/main.ts
+// src/ui/shared/the-pages-element-with-the-id.ts
+/** The element of `page` with the id `id`, of the kind `kind`. Throws a TypeError naming the id when the page holds no
+*  element with it, or holds one of another kind. `page` is the page's own document unless a test hands another. */
+function theElementWithTheId(id, kind, page = document) {
+	const found = page.getElementById(id);
+	if (found === null) throw new TypeError(`the page holds no element with the id "${id}"`);
+	if (!(found instanceof kind)) throw new TypeError(`the page's element with the id "${id}" is a <${found.tagName.toLowerCase()}>, not of the kind asked for`);
+	return found;
+}
+// src/ui/overlord/main.ts
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
-var thePagesDatabase = makeThePagesDatabase(KC_CONFIG.supabaseUrl, KC_CONFIG.supabaseKey, { auth: { storageKey: "kc-overlord-auth" } });
-var sb = thePagesDatabase.client;
-var thePagesDb = thePagesDatabase.db;
+var thePagesDb = makeThePagesDatabase(KC_CONFIG.supabaseUrl, KC_CONFIG.supabaseKey, { auth: { storageKey: "kc-overlord-auth" } }).db;
 var KC_DB_MIN = "20261015051826";
 var ME = null;
 var ACCOUNTS = [];
@@ -149,24 +303,56 @@ var REPORTS = [];
 var REALMS = {};
 var REVOKING = null;
 var DELETING = null;
-var $ = (id) => document.getElementById(id);
+var $ = (id) => theElementWithTheId(id, HTMLElement);
+/** A value of any kind handed to el() as a child (a summary's turn mode), as el() reads it: a list's items each in turn,
+*  any other object or a symbol as its words. */
+function theChildAsElReadsIt(v) {
+	if (Array.isArray(v)) return v.map(theChildAsElReadsIt);
+	if (v instanceof Node || v == null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+	return theWordsOf(v);
+}
+/** A value of any kind in words, as String() writes it. */
+function theWordsOf(v) {
+	return String(v);
+}
+/** Whether a child is a list of children. */
+function isAListOfChildren(c) {
+	return Array.isArray(c);
+}
+/** The listener an `on…` attribute holds; for anything else, the TypeError addEventListener threw for it. */
+function theListenerIn(v) {
+	if (typeof v === "function") return v;
+	throw new TypeError("Failed to execute 'addEventListener' on 'EventTarget': parameter 2 is not of type 'Object'.");
+}
+/** The children handed in, flattened, nothing left out, each a node or its words (what append and replaceChildren
+*  make of a child that isn't a node). */
+function theNodesAndWordsOf(kids) {
+	const out = [];
+	const add = (c) => {
+		if (isAListOfChildren(c)) c.forEach(add);
+		else if (c instanceof Node) out.push(c);
+		else if (c != null && c !== false) out.push(String(c));
+	};
+	kids.forEach(add);
+	return out;
+}
 function el(tag, props, ...kids) {
 	const e = document.createElement(tag);
-	for (const [k, v] of Object.entries(props || {})) {
+	for (const [k, v] of Object.entries(props ?? {})) {
 		if (v == null || v === false) continue;
-		if (k === "class") e.className = v;
-		else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+		if (k === "class") e.className = String(v);
+		else if (k.startsWith("on")) e.addEventListener(k.slice(2), theListenerIn(v));
 		else e.setAttribute(k, v === true ? "" : String(v));
 	}
-	kids.flat(Infinity).forEach((c) => {
-		if (c != null && c !== false) e.append(c instanceof Node ? c : String(c));
+	theNodesAndWordsOf(kids).forEach((c) => {
+		e.append(c);
 	});
 	return e;
 }
 var fill = (id, ...kids) => {
-	$(id).replaceChildren(...kids.flat(Infinity).filter((c) => c != null && c !== false));
+	$(id).replaceChildren(...theNodesAndWordsOf(kids));
 };
-var day = (v) => v ? String(v).slice(0, 10) : "—";
+var day = (v) => v ? theWordsOf(v).slice(0, 10) : "—";
 function say(kind, text) {
 	fill("msg", text ? el("div", { class: "msg-" + kind }, text) : null);
 }
@@ -180,13 +366,13 @@ function section(id) {
 async function init() {
 	$("spinner").style.display = "none";
 	const { data: { session } } = await thePagesDb.signingIn.theSessionKeptInThisBrowser();
-	if (session && session.user) {
+	if (session?.user) {
 		ME = session.user;
 		onSignedIn();
 	} else section("sec-auth");
 }
 async function doSignIn() {
-	const email = $("si-email").value.trim(), password = $("si-password").value;
+	const email = theElementWithTheId("si-email", HTMLInputElement).value.trim(), password = theElementWithTheId("si-password", HTMLInputElement).value;
 	if (!email || !password) {
 		fill("auth-msg", el("div", { class: "msg-error" }, "Enter your email and password."));
 		return;
@@ -194,11 +380,11 @@ async function doSignIn() {
 	fill("auth-msg", el("div", { class: "msg-info" }, "Signing in…"));
 	const { data, error } = await thePagesDb.signingIn.signInWithEmailAndPassword(email, password);
 	if (error) {
-		fill("auth-msg", el("div", { class: "msg-error" }, /Invalid login/.test(error.message) ? "Email or password incorrect." : error.message));
+		fill("auth-msg", el("div", { class: "msg-error" }, error.message.includes("Invalid login") ? "Email or password incorrect." : error.message));
 		return;
 	}
 	fill("auth-msg");
-	ME = data && data.user || ((await thePagesDb.signingIn.theSessionKeptInThisBrowser()).data.session || {}).user || null;
+	ME = theAccountSignedIn(data) ?? (await thePagesDb.signingIn.theSessionKeptInThisBrowser()).data.session?.user ?? null;
 	if (ME) onSignedIn();
 }
 async function doSignOut() {
@@ -221,9 +407,16 @@ async function onSignedIn() {
 		section("sec-denied");
 		return;
 	}
-	$("me-email").textContent = ME.email || "";
+	$("me-email").textContent = theSignedInAccount().email ?? "";
 	section("sec-main");
 	await loadAll();
+}
+function theAccountSignedIn(answer) {
+	return answer?.user ?? null;
+}
+function theSignedInAccount() {
+	if (ME === null) throw new TypeError("Cannot read properties of null (reading 'email')");
+	return ME;
 }
 async function loadAll() {
 	fill("accounts", el("div", { class: "msg-info" }, "Loading…"));
@@ -236,7 +429,7 @@ async function loadAll() {
 }
 async function loadAccounts() {
 	const { data, error } = await thePagesDb.theOverlordsAccounts.everyAccountAsTheOverlordSeesIt();
-	ACCOUNTS = error ? null : data || [];
+	ACCOUNTS = error ? null : data ?? [];
 	ACCOUNTS_ERROR = error ? error.message : "";
 }
 async function loadGames() {
@@ -248,13 +441,13 @@ async function loadGames() {
 			GAMES_ERROR = error.message;
 			return;
 		}
-		rows.push(...data || []);
+		rows.push(...data ?? []);
 		if (!data || data.length < 200) break;
 	}
 	GAMES = rows;
 }
 async function loadReports() {
-	const { data, error } = await sb.rpc("gm_reported_messages", { p_game: null });
+	const { data, error } = await thePagesDb.theReportedDispatches.theDispatchesReportedToThisAccount(null);
 	if (error) {
 		fill("reports", el("div", { class: "msg-error" }, error.message));
 		return;
@@ -264,24 +457,24 @@ async function loadReports() {
 	REALMS = {};
 	if (ids.length) {
 		const { data: slots } = await thePagesDb.theOverlordsGames.theRealmsNamesOfTheseGames(ids);
-		(slots || []).forEach((s) => {
-			(REALMS[s.game_id] = REALMS[s.game_id] || {})[s.player_index] = s.display_name;
+		(slots ?? []).forEach((s) => {
+			(REALMS[s.game_id] ??= {})[s.player_index] = s.display_name;
 		});
 	}
 	renderReports();
 }
-var account = (id) => (ACCOUNTS || []).find((a) => a.user_id === id) || null;
+var account = (id) => (ACCOUNTS ?? []).find((a) => a.user_id === id) ?? null;
 var nameOf = (id) => {
 	const a = account(id);
-	return a ? a.name || a.email || "(no name)" : id ? "(unknown account)" : "(no GM)";
+	return a ? (a.name ?? "") || (a.email ?? "") || "(no name)" : id ? "(unknown account)" : "(no GM)";
 };
-var gameMasters = (except) => (ACCOUNTS || []).filter((a) => a.gm_status === "game_master" && a.user_id !== except).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-var unfinished = (gm) => (GAMES || []).filter((g) => g.gm_user_id === gm && g.status !== "complete");
+var gameMasters = (except) => (ACCOUNTS ?? []).filter((a) => a.gm_status === "game_master" && a.user_id !== except).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+var unfinished = (gm) => (GAMES ?? []).filter((g) => g.gm_user_id === gm && g.status !== "complete");
 function metaOf$1(g) {
 	try {
 		const m = typeof g.meta === "string" ? JSON.parse(g.meta) : g.meta;
 		return m && typeof m === "object" ? m : {};
-	} catch (e) {
+	} catch {
 		return {};
 	}
 }
@@ -295,14 +488,14 @@ function renderAccounts() {
 		fill("accounts", el("div", { class: "msg-error" }, ACCOUNTS_ERROR));
 		return;
 	}
-	const q = $("acct-q").value.trim().toLowerCase();
-	const list = ACCOUNTS.filter((a) => !q || String(a.name || "").toLowerCase().includes(q) || String(a.email || "").toLowerCase().includes(q));
+	const q = theElementWithTheId("acct-q", HTMLInputElement).value.trim().toLowerCase();
+	const list = ACCOUNTS.filter((a) => !q || (a.name ?? "").toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q));
 	if (!list.length) {
 		fill("accounts", el("div", { class: "muted" }, q ? "No account matches." : "No accounts."));
 		return;
 	}
 	const rows = list.map((a) => {
-		const self = ME && a.user_id === ME.id;
+		const self = a.user_id === ME?.id;
 		const status = self ? el("span", { class: "pill pill-blue" }, "Overlord") : a.gm_status === "game_master" ? el("span", { class: "pill pill-green" }, "Game Master") : a.gm_status === "offered" ? el("span", { class: "pill pill-amber" }, "Offered") : el("span", { class: "pill pill-grey" }, "Player");
 		const gmAction = self ? null : a.gm_status === "game_master" ? el("button", {
 			class: "btn btn-crimson btn-sm",
@@ -321,7 +514,7 @@ function renderAccounts() {
 			"data-act": "offer",
 			onclick: () => offerGm(a)
 		}, "Offer GM");
-		const tr = el("tr", { "data-user": a.user_id }, el("td", null, a.name || "(no name)"), el("td", null, a.email || ""), el("td", null, day(a.joined)), el("td", null, day(a.last_sign_in)), el("td", null, status, a.suspended_until ? [" ", el("span", {
+		const tr = el("tr", { "data-user": a.user_id }, el("td", null, (a.name ?? "") || "(no name)"), el("td", null, a.email ?? ""), el("td", null, day(a.joined)), el("td", null, day(a.last_sign_in)), el("td", null, status, a.suspended_until ? [" ", el("span", {
 			class: "pill pill-red",
 			"data-suspended": ""
 		}, suspendedText(a))] : null), el("td", { class: "num" }, a.games_run || 0), el("td", { class: "num" }, a.games_played || 0), el("td", null, el("div", { class: "actions" }, gmAction, self ? null : accountActions(a))));
@@ -343,10 +536,10 @@ function revokePanel(a) {
 	return el("div", {
 		class: "revoke",
 		id: "revoke-panel"
-	}, el("div", { style: "margin-bottom:6px" }, "Revoke Game Master from ", el("strong", null, a.name || a.email || ""), "."), left.length ? [el("div", {
+	}, el("div", { style: "margin-bottom:6px" }, "Revoke Game Master from ", el("strong", null, (a.name ?? "") || (a.email ?? "")), "."), left.length ? [el("div", {
 		class: "muted",
 		style: "margin-bottom:6px"
-	}, `They run ${left.length} unfinished game${left.length > 1 ? "s" : ""}. Hand ${left.length > 1 ? "each" : "it"} to another Game Master first.`), el("table", { class: "kc" }, el("tbody", null, left.map((g) => el("tr", { "data-game": g.id }, el("td", null, g.name), el("td", null, handOver(g))))))] : el("div", {
+	}, `They run ${String(left.length)} unfinished game${left.length > 1 ? "s" : ""}. Hand ${left.length > 1 ? "each" : "it"} to another Game Master first.`), el("table", { class: "kc" }, el("tbody", null, left.map((g) => el("tr", { "data-game": g.id }, el("td", null, g.name), el("td", null, handOver(g))))))] : el("div", {
 		class: "muted",
 		style: "margin-bottom:6px"
 	}, "They run no unfinished game."), el("div", {
@@ -365,9 +558,9 @@ function revokePanel(a) {
 		}
 	}, "Cancel")));
 }
-var label = (a) => a.name || a.email || "(no name)";
+var label = (a) => (a.name ?? "") || (a.email ?? "") || "(no name)";
 function suspendedText(a) {
-	const t = new Date(a.suspended_until);
+	const t = new Date(a.suspended_until ?? 0);
 	return t.getTime() - Date.now() > 15768e8 ? "Suspended until lifted" : "Suspended until " + t.toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 var SUSPEND_FOR = {
@@ -398,7 +591,7 @@ function accountActions(a) {
 	}, "Delete…")];
 }
 async function suspend(a, how) {
-	const [words, ms] = SUSPEND_FOR[how] || SUSPEND_FOR.day;
+	const [words, ms] = SUSPEND_FOR[how] ?? SUSPEND_FOR.day;
 	if (!confirm(`Suspend ${label(a)} ${words}? They can't sign in until then. If they're signed in now, that session lasts until it expires, up to an hour. They keep their realms and games.`)) return;
 	await act(thePagesDb.theOverlordsAccounts.suspendThisAccountUntil(a.user_id, ms == null ? null : new Date(Date.now() + ms).toISOString()), `${label(a)} is suspended ${words}.`);
 }
@@ -406,7 +599,7 @@ async function unsuspend(a) {
 	await act(thePagesDb.theOverlordsAccounts.liftThisAccountsSuspension(a.user_id), `${label(a)} can sign in again.`);
 }
 function deletePanel(a) {
-	const word = a.email || a.name || "";
+	const word = (a.email ?? "") || (a.name ?? "");
 	const runs = unfinished(a.user_id);
 	const typed = el("input", {
 		type: "text",
@@ -430,7 +623,7 @@ function deletePanel(a) {
 	}, el("div", { style: "margin-bottom:6px" }, "Delete ", el("strong", null, label(a)), ". This can't be undone."), el("div", { class: "muted" }, "Goes: their sign-in, their profile, any Game Master role or offer, and their unread-dispatch markers."), el("div", {
 		class: "muted",
 		style: "margin-bottom:6px"
-	}, "Stays: their finished games, with their realms in them (no longer linked to an account), any game they ran (with no GM), their dispatches and their Hall of Fame records."), runs.length ? el("div", { class: "msg-info" }, `They run ${runs.length} unfinished game${runs.length > 1 ? "s" : ""}: hand ${runs.length > 1 ? "them" : "it"} over first (Revoke GM… lists them).`) : null, el("div", {
+	}, "Stays: their finished games, with their realms in them (no longer linked to an account), any game they ran (with no GM), their dispatches and their Hall of Fame records."), runs.length ? el("div", { class: "msg-info" }, `They run ${String(runs.length)} unfinished game${runs.length > 1 ? "s" : ""}: hand ${runs.length > 1 ? "them" : "it"} over first (Revoke GM… lists them).`) : null, el("div", {
 		class: "muted",
 		style: "margin-bottom:6px"
 	}, "An account playing in an unfinished game can't be deleted either: suspend it until the game ends."), el("label", { for: "delete-typed" }, `Type ${a.email ? "their email" : "their name"} to confirm`), typed, el("div", {
@@ -449,18 +642,18 @@ async function deleteAccount(a) {
 	await act(thePagesDb.theOverlordsAccounts.deleteThisAccount(a.user_id), `${label(a)}'s account is deleted.`);
 }
 async function offerGm(a) {
-	await act(thePagesDb.theOverlordsAccounts.offerThisAccountGameMaster(a.user_id), `Offered Game Master to ${a.name || a.email}. They'll see it at the top of their player portal.`);
+	await act(thePagesDb.theOverlordsAccounts.offerThisAccountGameMaster(a.user_id), `Offered Game Master to ${String((a.name ?? "") || a.email)}. They'll see it at the top of their player portal.`);
 }
 async function withdrawOffer(a) {
-	await act(thePagesDb.theOverlordsAccounts.withdrawTheGameMasterOfferToThisAccount(a.user_id), `Withdrew the offer to ${a.name || a.email}.`);
+	await act(thePagesDb.theOverlordsAccounts.withdrawTheGameMasterOfferToThisAccount(a.user_id), `Withdrew the offer to ${String((a.name ?? "") || a.email)}.`);
 }
 async function revokeGm(a) {
-	if (!confirm(`Revoke Game Master from ${a.name || a.email}? They can still play.`)) return;
+	if (!confirm(`Revoke Game Master from ${String((a.name ?? "") || a.email)}? They can still play.`)) return;
 	REVOKING = null;
-	await act(thePagesDb.theOverlordsAccounts.revokeThisAccountsGameMaster(a.user_id), `${a.name || a.email} is no longer a Game Master.`);
+	await act(thePagesDb.theOverlordsAccounts.revokeThisAccountsGameMaster(a.user_id), `${String((a.name ?? "") || a.email)} is no longer a Game Master.`);
 }
 function handOver(g) {
-	const pick = el("select", { "data-act": "pick" }, el("option", { value: "" }, "Hand over to…"), gameMasters(g.gm_user_id).map((a) => el("option", { value: a.user_id }, a.name || a.email || "(no name)")));
+	const pick = el("select", { "data-act": "pick" }, el("option", { value: "" }, "Hand over to…"), gameMasters(g.gm_user_id).map((a) => el("option", { value: a.user_id }, (a.name ?? "") || (a.email ?? "") || "(no name)")));
 	return el("div", { class: "actions" }, pick, el("button", {
 		class: "btn btn-gold btn-sm",
 		"data-act": "handover",
@@ -474,6 +667,10 @@ async function reassign(g, to) {
 	}
 	if (!confirm(`Hand ${g.name} to ${nameOf(to)}? Their GM portal picks it up; ${nameOf(g.gm_user_id)}'s can no longer save it.`)) return;
 	await act(thePagesDb.theOverlordsGames.handThisGameToThisGameMaster(g.id, to), `${g.name} is now run by ${nameOf(to)}.`);
+}
+function theModeOrByHand(held) {
+	if (held) return held;
+	return "manual";
 }
 function renderGames() {
 	if (GAMES == null) {
@@ -492,11 +689,11 @@ function renderGames() {
 		"Turns run",
 		""
 	].map((h) => el("th", null, h)))), el("tbody", null, GAMES.map((g) => {
-		const m = metaOf$1(g), mode = m.turnMode && m.turnMode.mode || "manual";
-		return el("tr", { "data-game": g.id }, el("td", null, g.name), el("td", null, nameOf(g.gm_user_id)), el("td", null, g.status, m.archived ? el("span", {
+		const m = metaOf$1(g), turnMode = Reflect.get(m, "turnMode"), mode = theModeOrByHand(turnMode ? Reflect.get(Object(turnMode), "mode") : turnMode);
+		return el("tr", { "data-game": g.id }, el("td", null, g.name), el("td", null, nameOf(g.gm_user_id)), el("td", null, g.status, Reflect.get(m, "archived") ? el("span", {
 			class: "pill pill-grey",
 			style: "margin-left:5px"
-		}, "Archived") : null), el("td", { class: "num" }, g.status === "setup" ? "—" : g.turn), el("td", null, TURN_MODES[mode] || mode), el("td", null, el("div", { class: "actions" }, handOver(g), el("a", {
+		}, "Archived") : null), el("td", { class: "num" }, g.status === "setup" ? "—" : g.turn), el("td", null, TURN_MODES[String(mode)] ?? theChildAsElReadsIt(mode)), el("td", null, el("div", { class: "actions" }, handOver(g), el("a", {
 			class: "btn btn-ghost btn-sm",
 			href: "kingdoms-call-gm-portal.html?game=" + encodeURIComponent(g.id),
 			target: "_blank",
@@ -509,12 +706,12 @@ function renderReports() {
 		fill("reports", el("div", { class: "muted" }, "No dispatches reported."));
 		return;
 	}
-	const gameName = (id) => ((GAMES || []).find((g) => String(g.id) === String(id)) || {}).name || "(a deleted game)";
-	const realm = (gid, i) => (REALMS[gid] || {})[i] || "Realm " + (Number(i) + 1);
+	const gameName = (id) => ((GAMES ?? []).find((g) => g.id === id)?.name ?? "") || "(a deleted game)";
+	const realm = (gid, i) => (REALMS[gid]?.[i] ?? "") || "Realm " + String(i + 1);
 	fill("reports", REPORTS.map((r) => el("div", {
 		class: "report",
 		"data-message": r.message_id
-	}, el("div", { class: "muted" }, el("strong", null, gameName(r.game_id)), " · ", r.turn != null ? `Turn ${r.turn} · ` : "", "from ", el("strong", null, realm(r.game_id, r.from_index)), " to ", r.scope === "public" ? "every realm" : (r.to_indexes || []).map((i) => realm(r.game_id, i)).join(", "), " · reported by ", el("strong", null, realm(r.game_id, r.reporter_index)), r.reason ? [
+	}, el("div", { class: "muted" }, el("strong", null, gameName(r.game_id)), " · ", r.turn != null ? `Turn ${String(r.turn)} · ` : "", "from ", el("strong", null, realm(r.game_id, r.from_index)), " to ", r.scope === "public" ? "every realm" : (r.to_indexes ?? []).map((i) => realm(r.game_id, i)).join(", "), " · reported by ", el("strong", null, realm(r.game_id, r.reporter_index)), r.reason ? [
 		" · “",
 		r.reason,
 		"”"
@@ -526,7 +723,7 @@ function renderReports() {
 }
 async function deleteDispatch(r) {
 	if (!confirm("Delete this dispatch for everyone in the game? Its reports go with it.")) return;
-	const { error } = await sb.from("game_messages").delete().eq("id", r.message_id);
+	const { error } = await thePagesDb.theDispatches.deleteThisDispatch(r.message_id);
 	if (error) {
 		say("error", error.message);
 		return;
@@ -545,8 +742,7 @@ async function act(call, done) {
 	return true;
 }
 kcDbGuard(thePagesDb, KC_DB_MIN).then(() => init());
-//#endregion
-//#region src/ui/shared/a-newer-version-of-this-page.ts
+// src/ui/shared/a-newer-version-of-this-page.ts
 /** The file each deploy publishes beside the pages. */
 var VERSION_FILE = "version.json";
 /** How often an open page checks it. */
@@ -642,8 +838,7 @@ function watchForANewerVersion(whenANewerVersionCounts) {
 		if (document.visibilityState === "visible" && Date.now() - lastCheckedAt >= CHECK_WHEN_SHOWN_AT_MOST_EVERY_MS) check();
 	});
 }
-//#endregion
-//#region src/ui/shared/the-reload-banner.ts
+// src/ui/shared/the-reload-banner.ts
 /** The bar's id: there is never more than one. */
 var RELOAD_BANNER_ID = "kc-reload-banner";
 /** Shows the bar at the top of the page, once; a second call leaves the one there. */
@@ -661,16 +856,11 @@ function showTheReloadBanner() {
 	document.body.prepend(bar);
 }
 watchForANewerVersion(showTheReloadBanner);
-//#endregion
-//#region src/ui/overlord/globals.ts
+// src/ui/overlord/globals.ts
 Object.assign(window, {
 	doSignIn,
 	doSignOut,
 	loadAll,
 	renderAccounts
 });
-Object.assign(window, {
-	$,
-	sb
-});
-//#endregion
+Object.assign(window, { $ });
