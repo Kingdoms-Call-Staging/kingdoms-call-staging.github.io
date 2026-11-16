@@ -20030,23 +20030,462 @@ function theStrengthAUnitsCommandersMinorTitlesLiftItTo(strength, unitType, heHo
 		liftedBy
 	};
 }
-// src/content/alignment-orders-their-keys-names-creeds-numbers-and-words.ts
-/** The alignment orders, by slug, in the order of ALIGNMENT_ORDER_KEYS. */
-var THE_ALIGNMENT_ORDERS = {
+// src/content/alignment-abilities-their-keys-names-numbers-and-words.ts
+/** The alignment abilities the registry holds, by slug. */
+var ALIGNMENT_ABILITIES = {
+	"neutral-trade": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theShareOfTheProvincesIncome: {
+			value: 20,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Trade: province tax income is +{N}",
+			inTheRulebooksParagraphOnGold: "Neutral realms add a +{N} trade bonus (rounded down)",
+			inTheIntrosTable: "+{N} tax",
+			inTheReportsSummary: "Province tax income flows {N} richer",
+			inTheJoinForm: "+{N} tax from every province"
+		} }
+	},
+	"consecrated-ground-tax": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theShareMoreTax: {
+			value: 50,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Consecrated ground gives +{N} tax",
+			inTheRulebooksOrdersTable: "+{N} tax, stauncher defenders",
+			inTheIntrosTable: "+{N} tax and holy ground",
+			inTheReportsSummary: "Consecrated ground yields +{N} tax",
+			inTheJoinForm: "Consecrate provinces: +{N} tax"
+		} }
+	},
+	"zeal-of-a-divine-realm": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			theChanceOfZeal: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Fanatical zeal {N}",
+				inTheIntrosTable: "Divine {N}",
+				inTheReportsSummary: "Your armies fight with a {N} chance of fanatical zeal",
+				inTheJoinForm: "({N} chance your host fights fanatically)"
+			},
+			theStrengthOfZeal: {
+				value: 1.3,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "zeal = your force fights at {N}0 for that battle"
+			}
+		}
+	},
+	"zeal-of-a-good-realm": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { theChanceOfZeal: {
+			value: 40,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Good {N}",
+			inTheReportsSummary: "Your armies fight with a solid {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-druidic-realm": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: { theChanceOfZeal: {
+			value: 20,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Druidic {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-neutral-realm": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theChanceOfZeal: {
+			value: 10,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Neutral {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-pagan-realm": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: { theChanceOfZeal: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Pagan {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theChanceOfZeal: {
+			value: 25,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Evil {N}",
+			inTheReportsSummary: "Your armies fight with a {N} base chance of fanaticism"
+		} }
+	},
+	"zeal-of-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: { theChanceOfZeal: {
+			value: 0,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Undead — zeal {N}"
+		} }
+	},
+	"consecrated-ground-doubles-a-defenders-zeal": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theTimesTheChance: {
+			value: 2,
+			writtenAs: "as a multiple",
+			inItsCreedsSection: "defenders there roll zeal at {N} chance"
+		} }
+	},
+	"savage-fury": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theStrengthOfTheHost: {
+			value: 1.25,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "fights at {N} in every battle",
+			inTheIntrosTable: "a host with a Monster fights {N}",
+			inTheReportsSummary: "a host with any of them in it fights at {N} in every battle",
+			inTheJoinForm: "lifts the whole host to {N} in every battle"
+		} }
+	},
+	"skeletal-fervour": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {
+			underTheKing: {
+				value: 1.5,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "fights at {N} when the King leads it in person",
+				inTheIntrosTable: "({N} under the king)",
+				inTheReportsSummary: "{N} (+50%) when the king leads them in person"
+			},
+			underAnyOtherCommander: {
+				value: 1.3,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "and {N} under any other commander",
+				inTheIntrosTable: "Skeletal hosts fight {N}",
+				inTheReportsSummary: "{N} (+30%) under any other commander"
+			}
+		}
+	},
+	"consecrated-ground-weakens-an-unholy-attacker": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theCreedsItActsAgainst: ["Undead", "Evil"],
+		theNumbers: { theShareWeaker: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Undead and Evil hosts attacking it fight at −{N}",
+			inTheReportsSummary: "Undead and Evil hosts attacking it fight at −{N}"
+		} }
+	},
+	"righteous-defence": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { theShareStronger: {
+			value: 10,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Righteous Defence: any army defending a province you own fights at +{N}",
+			inTheIntrosTable: "+{N} when defending your own provinces",
+			inTheReportsSummary: "Righteous Defence: any army defending a province you own fights at +{N}",
+			inTheJoinForm: "+{N} strength defending land you own"
+		} }
+	},
+	"banner-of-fellowship": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { thePointsMoreReadily: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "allied contingents converging on the same battle unify +{N} more readily",
+			inTheReportsSummary: "allied contingents converging on the same battle unify {N} more readily"
+		} }
+	},
+	"home-of-the-wild": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: { theStrengthOfACreature: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Home of the Wild: in forest and jungle your Creature armies fight at {N}",
+			inTheIntrosTable: "Creatures fight {N} in forest and jungle",
+			inTheReportsSummary: "your Creature armies fight at {N} strength",
+			inTheJoinForm: "Creature armies fight at {N} in forest and jungle"
+		} }
+	},
+	"reign-of-fear": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theStrengthOfAMonster: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Reign of Fear: your Monsters fight at {N} when they attack a province",
+			inTheIntrosTable: "Monsters {N} attacking ground under your Terror",
+			inTheReportsSummary: "your Monsters fight at {N} when they attack a province your own Terror still grips",
+			inTheJoinForm: "your Monsters fight {N} attacking ground your Terror grips"
+		} }
+	},
+	"the-deathless-march": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"the-neutral-mercenary-discount": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theGoldLess: {
+			value: 2,
+			writtenAs: "as it is",
+			inItsCreedsSection: "mercenary bands cost {N}g less than the going rate",
+			inTheReportsSummary: "Mercenary bands cost {N}g less to hire than the going rate"
+		} }
+	},
+	"the-divine-blessing": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			byTheRealmsCasters: {
+				value: 80,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Bless Province adds {N} of a province's tax value (others 60%)",
+				inTheReportsSummary: "Bless Province adds {N} of a province's tax value rather than 60%"
+			},
+			byTheKingInPerson: {
+				value: 100,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "when the King casts it the province yields +{N}",
+				inTheReportsSummary: "the province yields a full {N} more"
+			}
+		}
+	},
+	"creatures-follow-without-a-druid": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: {}
+	},
+	"monsters-follow-without-a-druid": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"neutral-scholars": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { thePointsASageLevelAdds: {
+			value: 5,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "each Sage level adds a further +{N} discovery chance"
+		} }
+	},
+	"divine-grace": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			theFullTurnsInDeath: {
+				value: 1,
+				writtenAs: "as a word",
+				inItsCreedsSection: "spends {N} full turn in death"
+			},
+			theShareOfHealthTheFallenRiseWith: {
+				value: .5,
+				writtenAs: "as a fraction",
+				inItsCreedsSection: "returns to life at the start of the turn after that, at {N} health"
+			}
+		}
+	},
+	"the-divine-rest": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theFactorOfTheHeal: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Rest heals {N}"
+		} }
+	},
+	"a-pagan-victors-blood-harvest": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: { theGoldForEachFoeDestroyed: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Blood Harvest: +{N}g per enemy unit"
+		} }
+	},
+	"plunder-or-enslave": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {
+			theShareOfTheTaxPlundered: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Terror plunders {N} of the province's tax value"
+			},
+			theGradeOfTheEnslavedGarrison: {
+				value: "Green",
+				writtenAs: "as it is",
+				inItsCreedsSection: "presses the beaten folk into a free {N} garrison unit"
+			},
+			theTurnsTheEnslavedProvincePaysLess: {
+				value: 3,
+				writtenAs: "as it is",
+				inItsCreedsSection: "1g less tax for {N} turns"
+			}
+		}
+	},
+	"graves-keep-on-undead-land": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: { theShareOfTheGravesThatRotEachTurn: {
+			value: 5,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Battlefield graves in your provinces decay at {N} per turn instead of 10%"
+		} }
+	},
+	"war-without-warning-of-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"war-without-warning-of-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-broken-alliance-means-war-for-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"a-broken-alliance-means-war-for-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"the-risen-dead-follow-only-the-undead": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"an-undead-hero-is-undead-in-personal-combat": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-divine-king-starts-with-white-magic": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theSkillItGives: "white",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with White Magic +{N}"
+		} }
+	},
+	"a-druidic-king-starts-with-druid": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theSkillItGives: "druid",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Druid +{N} (heirs too), and ALL Creature"
+		} }
+	},
+	"an-evil-king-starts-with-druid": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theSkillItGives: "druid",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Druid +{N} (heirs too), and ALL Monster"
+		} }
+	},
+	"a-pagan-king-starts-with-explorer": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theSkillItGives: "explorer",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Explorer +{N} (heirs too)"
+		} }
+	},
+	"an-undead-king-starts-with-necromancy": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theSkillItGives: "necromancy",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Necromancy +{N} (heirs too)"
+		} }
+	},
+	"an-undead-king-starts-with-a-skeletal-company": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-pagan-capital-opens-beside-the-ritual-stones": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: {}
+	},
+	"a-druidic-capital-opens-beside-creatures": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: {}
+	},
+	"an-evil-capital-opens-beside-monsters": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"a-druidic-wanderer-knows-the-druids-craft": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theSkillItGives: "druid",
+		theNumbers: {}
+	},
+	"one-divine-realm-a-game": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {}
+	},
+	"one-undead-realm-a-game": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
 	consecrate: {
+		howItIsUsed: "a king's order",
+		alignment: "Divine",
 		key: "consecrate",
 		name: "Consecrate",
 		theOtherNamesTheTurnReads: ["consecrate province"],
-		creed: "Divine",
-		theKingAlone: true,
 		theNumbers: {}
 	},
 	"call-to-arms": {
+		howItIsUsed: "a king's order",
+		alignment: "Good",
 		key: "call_to_arms",
 		name: "Call to Arms",
 		theOtherNamesTheTurnReads: [],
-		creed: "Good",
-		theKingAlone: true,
 		theNumbers: { theGradeMustered: {
 			value: "Green",
 			writtenAs: "as it is",
@@ -20055,11 +20494,11 @@ var THE_ALIGNMENT_ORDERS = {
 		} }
 	},
 	broker: {
+		howItIsUsed: "a king's order",
+		alignment: "Neutral",
 		key: "broker",
 		name: "Broker",
 		theOtherNamesTheTurnReads: [],
-		creed: "Neutral",
-		theKingAlone: true,
 		theNumbers: { thePriceOfWordFromAProvince: {
 			value: 2,
 			writtenAs: "as it is",
@@ -20068,11 +20507,11 @@ var THE_ALIGNMENT_ORDERS = {
 		} }
 	},
 	"harvest-the-field": {
+		howItIsUsed: "a hero's order",
+		alignment: "Undead",
 		key: "harvest_field",
 		name: "Harvest the Field",
 		theOtherNamesTheTurnReads: [],
-		creed: "Undead",
-		theKingAlone: false,
 		theNumbers: { thePrice: {
 			value: 2,
 			writtenAs: "as it is",
@@ -20083,11 +20522,11 @@ var THE_ALIGNMENT_ORDERS = {
 		} }
 	},
 	"perform-rite": {
+		howItIsUsed: "a hero's order",
+		alignment: "Pagan",
 		key: "rite",
 		name: "Perform Rite",
 		theOtherNamesTheTurnReads: [],
-		creed: "Pagan",
-		theKingAlone: false,
 		theNumbers: {
 			theWildHuntsBeasts: {
 				value: 2,
@@ -20111,6 +20550,140 @@ var THE_ALIGNMENT_ORDERS = {
 		}
 	}
 };
+/** The alignment orders: each row given as an order, and no other (one left out, or one that isn't, fails to compile),
+*  by slug, in the order of ALIGNMENT_ORDER_KEYS. */
+var THE_ALIGNMENT_ORDERS = {
+	consecrate: ALIGNMENT_ABILITIES.consecrate,
+	"call-to-arms": ALIGNMENT_ABILITIES["call-to-arms"],
+	broker: ALIGNMENT_ABILITIES.broker,
+	"harvest-the-field": ALIGNMENT_ABILITIES["harvest-the-field"],
+	"perform-rite": ALIGNMENT_ABILITIES["perform-rite"]
+};
+var AT_75 = "spared {N} of the time by a Good, Divine or Druidic foe";
+var AT_50 = "{N} by Neutral or Pagan";
+var AT_20 = "{N} by Evil or Undead";
+var THE_LADDER_OF_THE_ALIGNMENTS = {
+	theRungs: [
+		{
+			alignment: "Divine",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 1,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Good",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75,
+				inItsCreedsSection: "A felled Cowardly enemy who begs your mercy is spared {N} of the time"
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 2,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Druidic",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 4,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Neutral",
+			theChanceAFoeSparesAPlea: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_50
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 6,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Pagan",
+			theChanceAFoeSparesAPlea: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_50
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 4,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Evil",
+			theChanceAFoeSparesAPlea: {
+				value: 20,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_20,
+				inItsCreedsSection: "A felled Cowardly enemy begging your mercy is spared only {N} of the time"
+			},
+			aFoesRefusalIsLaughter: true,
+			theWanderersCardsInTheDeck: {
+				value: 2,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Undead",
+			theChanceAFoeSparesAPlea: {
+				value: 20,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_20
+			},
+			aFoesRefusalIsLaughter: true,
+			theWanderersCardsInTheDeck: {
+				value: 1,
+				writtenAs: "as it is"
+			}
+		}
+	],
+	theNumbers: {
+		theWageOfAHeroAtNoDistance: {
+			value: 2,
+			writtenAs: "as it is",
+			inTheRulebooksParagraphOnTheAlignments: "a wandering hero costs {N}g/turn",
+			inTheRulebooksParagraphOnHiring: "{N}g for a close match"
+		},
+		theStepsForEachGoldMore: {
+			value: 2,
+			writtenAs: "as a word",
+			inTheRulebooksParagraphOnTheAlignments: "+1g for every {N} steps between your alignment and theirs"
+		},
+		theStepsOfTheGulf: {
+			value: 6,
+			writtenAs: "as a word",
+			inTheRulebooksParagraphOnTheAlignments: "across the full gulf of {N} steps"
+		},
+		theStepsAKingsHeroesAreDealtWithin: {
+			value: 1,
+			writtenAs: "as it is"
+		}
+	}
+};
+/** The sites of the world, by kind: the ritual stones (the old gods' standing stones, where a Pagan realm performs its
+*  rites) first. */
+var THE_SITES_OF_THE_WORLD = { "the-ritual-stones": { theAlignmentThatMustBeInTheGame: "Pagan" } };
 // src/content/mastery-orders-their-keys-names-skills-and-levels.ts
 /** The mastery orders, by key, in the order of MASTERY_ORDER_KEYS. */
 var THE_MASTERY_ORDERS = {
@@ -20376,15 +20949,6 @@ var BATTLE_MAGIC_SPELL_NAMES = [
 	"Psychic Blast",
 	"Control Undead"
 ];
-var FANATIC_CHANCE_BY_ALIGN = {
-	Divine: .5,
-	Good: .4,
-	Druidic: .2,
-	Neutral: .1,
-	Pagan: .15,
-	Evil: .25,
-	Undead: 0
-};
 var GUARDIAN_POWER_RANK = {
 	"": 0,
 	Weak: 1,
@@ -21239,6 +21803,431 @@ function monsterCatLabel(m) {
 	if (!m) return "";
 	return MONSTER_CAT_LABELS[monsterCat(m)] ?? "";
 }
+// src/engine/rules/alignment-abilities/a-realms-alignment-at-the-turns-end.ts
+/** "turnEnd: a realm's alignment adds to its tax": the Neutral trade, its row's share of the provinces' income, rounded
+*  down. The share is a percentage, so the income is divided by 100 / 20 = 5 exactly: integer division, so Early
+*  Winter's collection and the report's forecast never part by a floating-point hair (`income * 0.2` would). */
+var A_REALMS_ALIGNMENT_ADDS_TO_ITS_TAX = { "neutral-trade": (facts) => Math.floor((Number(facts.theIncome) || 0) / (100 / ALIGNMENT_ABILITIES["neutral-trade"].theNumbers.theShareOfTheProvincesIncome.value)) };
+/** "turnEnd: a realm's consecrated ground raises a province's tax": the province pays its row's share more, rounded to
+*  the nearest gold. The factor is 1 + 50 / 100, exactly 1.5, so the sum is `Math.round(t * 1.5)` as before. */
+var A_REALMS_CONSECRATED_GROUND_RAISES_A_PROVINCES_TAX = { "consecrated-ground-tax": (facts) => Math.round(facts.theTax * (1 + ALIGNMENT_ABILITIES["consecrated-ground-tax"].theNumbers.theShareMoreTax.value / 100)) };
+// src/engine/rules/alignment-abilities/a-sides-zeal-and-fervour-in-a-battle.ts
+/** A creed's chance of zeal, its row's percentage as a share: 50 / 100 is exactly 0.5, as each of the seven is the
+*  number it was written as before (0.4, 0.25, 0.2, 0.15, 0.1, 0). */
+var theChanceOfZealOf = (slug) => ALIGNMENT_ABILITIES[slug].theNumbers.theChanceOfZeal.value / 100;
+/** "strength: a realm's alignment gives a side its chance of zeal": each creed's chance, before its discoveries'. */
+var A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL = {
+	"zeal-of-a-divine-realm": () => theChanceOfZealOf("zeal-of-a-divine-realm"),
+	"zeal-of-a-good-realm": () => theChanceOfZealOf("zeal-of-a-good-realm"),
+	"zeal-of-a-druidic-realm": () => theChanceOfZealOf("zeal-of-a-druidic-realm"),
+	"zeal-of-a-neutral-realm": () => theChanceOfZealOf("zeal-of-a-neutral-realm"),
+	"zeal-of-a-pagan-realm": () => theChanceOfZealOf("zeal-of-a-pagan-realm"),
+	"zeal-of-an-evil-realm": () => theChanceOfZealOf("zeal-of-an-evil-realm"),
+	"zeal-of-an-undead-realm": () => theChanceOfZealOf("zeal-of-an-undead-realm")
+};
+/** "strength: consecrated ground stirs a defender's zeal": the chance so far (after the discoveries') times the row's
+*  multiple, at most 1, as `Math.min(1, chance * 2)` was. */
+var CONSECRATED_GROUND_STIRS_A_DEFENDERS_ZEAL = { "consecrated-ground-doubles-a-defenders-zeal": (facts) => Math.min(1, facts.theChance * ALIGNMENT_ABILITIES["consecrated-ground-doubles-a-defenders-zeal"].theNumbers.theTimesTheChance.value) };
+/** "strength: a realm's alignment stirs a side's fervour": an Undead host with any skeletal unit in it, at its row's
+*  factor under the king in person and the other under any other commander; an Evil host with any Monster in it, at
+*  its row's factor. Neither rolls. */
+var A_REALMS_ALIGNMENT_STIRS_A_SIDES_FERVOUR = {
+	"skeletal-fervour": (facts) => {
+		if (!facts.theForce.some((a) => a._isSkeletal)) return null;
+		const { underTheKing, underAnyOtherCommander } = ALIGNMENT_ABILITIES["skeletal-fervour"].theNumbers;
+		return facts.isItLedByTheKing ? underTheKing.value : underAnyOtherCommander.value;
+	},
+	"savage-fury": (facts) => facts.theForce.some((a) => MONSTER_ARMIES.has(a.type)) ? ALIGNMENT_ABILITIES["savage-fury"].theNumbers.theStrengthOfTheHost.value : null
+};
+// src/engine/rules/alignment-abilities/the-other-battle-factors-of-a-realms-alignment.ts
+/** "strength: consecrated ground weakens an attacker's host": an attacker of a creed the row names fights at 1 less
+*  its share, as (100 − 15) / 100, exactly the 0.85 it was. */
+var CONSECRATED_GROUND_WEAKENS_AN_ATTACKERS_HOST = { "consecrated-ground-weakens-an-unholy-attacker": (facts) => {
+	const row = ALIGNMENT_ABILITIES["consecrated-ground-weakens-an-unholy-attacker"];
+	return row.theCreedsItActsAgainst.includes(facts.theAttackersAlignment) ? (100 - row.theNumbers.theShareWeaker.value) / 100 : null;
+} };
+/** "strength: a realm's alignment strengthens its defence of its own ground": 1 and its share, as 1 + 10 / 100,
+*  exactly the 1.1 it was. */
+var A_REALMS_ALIGNMENT_STRENGTHENS_ITS_DEFENCE_OF_ITS_OWN_GROUND = { "righteous-defence": () => 1 + ALIGNMENT_ABILITIES["righteous-defence"].theNumbers.theShareStronger.value / 100 };
+/** "strength: a realm's alignment strengthens a unit in the wild": a Creature unit in forest or jungle, at its row's
+*  factor. */
+var A_REALMS_ALIGNMENT_STRENGTHENS_A_UNIT_IN_THE_WILD = { "home-of-the-wild": (facts) => (facts.theTerrain === "forest" || facts.theTerrain === "jungle") && CREATURE_ARMIES.has(facts.theUnitType) ? ALIGNMENT_ABILITIES["home-of-the-wild"].theNumbers.theStrengthOfACreature.value : null };
+/** "strength: a realm's alignment strengthens a unit by its reign of fear": a Monster unit, at its row's factor (the
+*  caller asks only for an attacker on ground its realm's Terror grips). */
+var A_REALMS_ALIGNMENT_STRENGTHENS_A_UNIT_BY_ITS_REIGN_OF_FEAR = { "reign-of-fear": (facts) => MONSTER_ARMIES.has(facts.theUnitType) ? ALIGNMENT_ABILITIES["reign-of-fear"].theNumbers.theStrengthOfAMonster.value : null };
+/** "fate: a realm's alignment holds a beaten host on the field": a host of skeletons alone (at least one company). */
+var A_REALMS_ALIGNMENT_HOLDS_A_BEATEN_HOST_ON_THE_FIELD = { "the-deathless-march": (facts) => facts.theCompanies.length > 0 && facts.theCompanies.every((company) => company._isSkeletal) };
+/** "movementCost: a realm's alignment helps converging columns unite": its row's points. */
+var A_REALMS_ALIGNMENT_HELPS_CONVERGING_COLUMNS_UNITE = { "banner-of-fellowship": () => ALIGNMENT_ABILITIES["banner-of-fellowship"].theNumbers.thePointsMoreReadily.value };
+// src/engine/rules/alignment-abilities/the-prices-and-the-scholars-of-a-realms-alignment.ts
+/** "orderOutcome: a realm's alignment cuts a mercenary band's price": the Neutral discount, its row's gold. */
+var A_REALMS_ALIGNMENT_CUTS_A_MERCENARY_BANDS_PRICE = { "the-neutral-mercenary-discount": () => ALIGNMENT_ABILITIES["the-neutral-mercenary-discount"].theNumbers.theGoldLess.value };
+/** "orderOutcome: a realm's alignment raises a Bless's yield": the Divine blessing, the king's in person or the realm's
+*  casters', each `1 + its row's share / 100` (exactly 2 and 1.8, as the old literals). */
+var A_REALMS_ALIGNMENT_RAISES_A_BLESSS_YIELD = { "the-divine-blessing": (facts) => {
+	const theNumbers = ALIGNMENT_ABILITIES["the-divine-blessing"].theNumbers;
+	return 1 + (facts.isTheCasterTheKing ? theNumbers.byTheKingInPerson : theNumbers.byTheRealmsCasters).value / 100;
+} };
+/** "orderOutcome: a realm's alignment adds to research": the Neutral scholars, the Sage level times its row's points
+*  (`sageLevel * 5`, as before). */
+var A_REALMS_ALIGNMENT_ADDS_TO_RESEARCH = { "neutral-scholars": (facts) => facts.theSageLevel * ALIGNMENT_ABILITIES["neutral-scholars"].theNumbers.thePointsASageLevelAdds.value };
+// src/engine/rules/alignment-abilities/the-fallen-the-rest-the-harvest-and-the-conquests-of-a-realms-alignment.ts
+/** "turnStart: a realm's alignment raises its fallen on holy ground": Divine grace, its row's turns in death and share
+*  of health. */
+var A_REALMS_ALIGNMENT_RAISES_ITS_FALLEN_ON_HOLY_GROUND = { "divine-grace": () => {
+	const theNumbers = ALIGNMENT_ABILITIES["divine-grace"].theNumbers;
+	return {
+		theFullTurnsInDeath: theNumbers.theFullTurnsInDeath.value,
+		theShareOfHealth: theNumbers.theShareOfHealthTheFallenRiseWith.value
+	};
+} };
+/** "orderOutcome: a realm's alignment raises a rest's heal": the Divine Rest, its row's factor. */
+var A_REALMS_ALIGNMENT_RAISES_A_RESTS_HEAL = { "the-divine-rest": () => ALIGNMENT_ABILITIES["the-divine-rest"].theNumbers.theFactorOfTheHeal.value };
+/** "fate: a realm's alignment claims gold for each foe destroyed": the Blood Harvest, its row's gold. */
+var A_REALMS_ALIGNMENT_CLAIMS_GOLD_FOR_EACH_FOE_DESTROYED = { "a-pagan-victors-blood-harvest": () => ALIGNMENT_ABILITIES["a-pagan-victors-blood-harvest"].theNumbers.theGoldForEachFoeDestroyed.value };
+/** "fate: a realm's alignment conquers by a doctrine": plunder or enslave, its row's share (`50 / 100`: exactly 0.5, as
+*  the old literal), grade and turns. */
+var A_REALMS_ALIGNMENT_CONQUERS_BY_A_DOCTRINE = { "plunder-or-enslave": () => {
+	const theNumbers = ALIGNMENT_ABILITIES["plunder-or-enslave"].theNumbers;
+	return {
+		theShareOfTheTaxPlundered: theNumbers.theShareOfTheTaxPlundered.value / 100,
+		theGradeOfTheEnslavedGarrison: theNumbers.theGradeOfTheEnslavedGarrison.value,
+		theTurnsTheEnslavedProvincePaysLess: theNumbers.theTurnsTheEnslavedProvincePaysLess.value
+	};
+} };
+// src/engine/rules/alignment-abilities/the-graves-and-the-undead-of-a-realms-alignment.ts
+/** "turnEnd: a realm's alignment keeps the graves on its land": Undead land's, its row's share / 100 (exactly 0.05, as
+*  the old literal). */
+var A_REALMS_ALIGNMENT_KEEPS_THE_GRAVES_ON_ITS_LAND = { "graves-keep-on-undead-land": () => ALIGNMENT_ABILITIES["graves-keep-on-undead-land"].theNumbers.theShareOfTheGravesThatRotEachTurn.value / 100 };
+/** "aHerosStanding: a hero's own alignment makes him undead": an Undead hero. */
+var A_HEROS_OWN_ALIGNMENT_MAKES_HIM_UNDEAD = { "an-undead-hero-is-undead-in-personal-combat": () => true };
+// src/engine/rules-on-plain-values/the-alignment-orders-the-names-the-form-writes-and-who-may-give-each.ts
+/** Whether a realm of the creed `creed` (none: a realm whose creed isn't known) may give the order: its row's alignment
+*  alone may. */
+function aRealmOfThisCreedMayGiveTheAlignmentOrder(order, creed) {
+	return creed === order.alignment;
+}
+/** Whether a hero, the king or not (`isKing`; none: not the king), may give the order: any hero may, unless its row
+*  marks it the king's alone. */
+function aHeroMayGiveTheAlignmentOrderAsKingOrNot(order, isKing) {
+	return order.howItIsUsed !== "a king's order" || (isKing ?? false);
+}
+// src/engine/rules/alignment-abilities/who-may-give-an-alignment-order.ts
+/** Its creed: a realm of the order's creed alone may give it. */
+var ITS_CREED = (theOrder, facts) => aRealmOfThisCreedMayGiveTheAlignmentOrder(theOrder, facts.theAlignmentOfHisRealm) ? null : "his realm is not of its creed";
+/** The king: a hero who isn't the king may not give an order the king alone gives. */
+var THE_KING = (theOrder, facts) => aHeroMayGiveTheAlignmentOrderAsKingOrNot(theOrder, facts.isHeTheKing) ? null : "he is not the king";
+/** The first of the checks, in their order, that refuses the hero (each asked only once those before it passed him), or
+*  null. */
+var theFirstOf = (theOrder, theChecks) => (facts) => {
+	for (const check of theChecks) {
+		const theRefusal = check(theOrder, facts);
+		if (theRefusal !== null) return theRefusal;
+	}
+	return null;
+};
+var WHO_MAY_GIVE_AN_ALIGNMENT_ORDER = {
+	consecrate: theFirstOf(THE_ALIGNMENT_ORDERS.consecrate, [THE_KING, ITS_CREED]),
+	"call-to-arms": theFirstOf(THE_ALIGNMENT_ORDERS["call-to-arms"], [ITS_CREED, THE_KING]),
+	broker: theFirstOf(THE_ALIGNMENT_ORDERS.broker, [ITS_CREED, THE_KING]),
+	"harvest-the-field": theFirstOf(THE_ALIGNMENT_ORDERS["harvest-the-field"], [ITS_CREED]),
+	"perform-rite": theFirstOf(THE_ALIGNMENT_ORDERS["perform-rite"], [ITS_CREED])
+};
+// src/engine/rules/the-registry-of-alignment-abilities.ts
+/** One entry for each content row, and no other (a row with no entry fails to compile, TS1360; an entry with no row,
+*  TS2353). */
+var THE_REGISTRY_OF_ALIGNMENT_ABILITIES = {
+	"neutral-trade": { turnEnd: { "a realm's alignment adds to its tax": A_REALMS_ALIGNMENT_ADDS_TO_ITS_TAX["neutral-trade"] } },
+	"consecrated-ground-tax": { turnEnd: { "a realm's consecrated ground raises a province's tax": A_REALMS_CONSECRATED_GROUND_RAISES_A_PROVINCES_TAX["consecrated-ground-tax"] } },
+	"zeal-of-a-divine-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-a-divine-realm"] } },
+	"zeal-of-a-good-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-a-good-realm"] } },
+	"zeal-of-a-druidic-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-a-druidic-realm"] } },
+	"zeal-of-a-neutral-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-a-neutral-realm"] } },
+	"zeal-of-a-pagan-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-a-pagan-realm"] } },
+	"zeal-of-an-evil-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-an-evil-realm"] } },
+	"zeal-of-an-undead-realm": { strength: { "a realm's alignment gives a side its chance of zeal": A_REALMS_ALIGNMENT_GIVES_A_SIDE_ITS_CHANCE_OF_ZEAL["zeal-of-an-undead-realm"] } },
+	"consecrated-ground-doubles-a-defenders-zeal": { strength: { "consecrated ground stirs a defender's zeal": CONSECRATED_GROUND_STIRS_A_DEFENDERS_ZEAL["consecrated-ground-doubles-a-defenders-zeal"] } },
+	"savage-fury": { strength: { "a realm's alignment stirs a side's fervour": A_REALMS_ALIGNMENT_STIRS_A_SIDES_FERVOUR["savage-fury"] } },
+	"skeletal-fervour": { strength: { "a realm's alignment stirs a side's fervour": A_REALMS_ALIGNMENT_STIRS_A_SIDES_FERVOUR["skeletal-fervour"] } },
+	"consecrated-ground-weakens-an-unholy-attacker": { strength: { "consecrated ground weakens an attacker's host": CONSECRATED_GROUND_WEAKENS_AN_ATTACKERS_HOST["consecrated-ground-weakens-an-unholy-attacker"] } },
+	"righteous-defence": { strength: { "a realm's alignment strengthens its defence of its own ground": A_REALMS_ALIGNMENT_STRENGTHENS_ITS_DEFENCE_OF_ITS_OWN_GROUND["righteous-defence"] } },
+	"banner-of-fellowship": { movementCost: { "a realm's alignment helps converging columns unite": A_REALMS_ALIGNMENT_HELPS_CONVERGING_COLUMNS_UNITE["banner-of-fellowship"] } },
+	"home-of-the-wild": { strength: { "a realm's alignment strengthens a unit in the wild": A_REALMS_ALIGNMENT_STRENGTHENS_A_UNIT_IN_THE_WILD["home-of-the-wild"] } },
+	"reign-of-fear": { strength: { "a realm's alignment strengthens a unit by its reign of fear": A_REALMS_ALIGNMENT_STRENGTHENS_A_UNIT_BY_ITS_REIGN_OF_FEAR["reign-of-fear"] } },
+	"the-deathless-march": { fate: { "a realm's alignment holds a beaten host on the field": A_REALMS_ALIGNMENT_HOLDS_A_BEATEN_HOST_ON_THE_FIELD["the-deathless-march"] } },
+	"the-neutral-mercenary-discount": { orderOutcome: { "a realm's alignment cuts a mercenary band's price": A_REALMS_ALIGNMENT_CUTS_A_MERCENARY_BANDS_PRICE["the-neutral-mercenary-discount"] } },
+	"the-divine-blessing": { orderOutcome: { "a realm's alignment raises a Bless's yield": A_REALMS_ALIGNMENT_RAISES_A_BLESSS_YIELD["the-divine-blessing"] } },
+	"creatures-follow-without-a-druid": {},
+	"monsters-follow-without-a-druid": {},
+	"neutral-scholars": { orderOutcome: { "a realm's alignment adds to research": A_REALMS_ALIGNMENT_ADDS_TO_RESEARCH["neutral-scholars"] } },
+	"divine-grace": { turnStart: { "a realm's alignment raises its fallen on holy ground": A_REALMS_ALIGNMENT_RAISES_ITS_FALLEN_ON_HOLY_GROUND["divine-grace"] } },
+	"the-divine-rest": { orderOutcome: { "a realm's alignment raises a rest's heal": A_REALMS_ALIGNMENT_RAISES_A_RESTS_HEAL["the-divine-rest"] } },
+	"a-pagan-victors-blood-harvest": { fate: { "a realm's alignment claims gold for each foe destroyed": A_REALMS_ALIGNMENT_CLAIMS_GOLD_FOR_EACH_FOE_DESTROYED["a-pagan-victors-blood-harvest"] } },
+	"plunder-or-enslave": { fate: { "a realm's alignment conquers by a doctrine": A_REALMS_ALIGNMENT_CONQUERS_BY_A_DOCTRINE["plunder-or-enslave"] } },
+	"graves-keep-on-undead-land": { turnEnd: { "a realm's alignment keeps the graves on its land": A_REALMS_ALIGNMENT_KEEPS_THE_GRAVES_ON_ITS_LAND["graves-keep-on-undead-land"] } },
+	"war-without-warning-of-an-evil-realm": {},
+	"war-without-warning-of-an-undead-realm": {},
+	"a-broken-alliance-means-war-for-an-evil-realm": {},
+	"a-broken-alliance-means-war-for-an-undead-realm": {},
+	"the-risen-dead-follow-only-the-undead": {},
+	"an-undead-hero-is-undead-in-personal-combat": { aHerosStanding: { "a hero's own alignment makes him undead": A_HEROS_OWN_ALIGNMENT_MAKES_HIM_UNDEAD["an-undead-hero-is-undead-in-personal-combat"] } },
+	"a-divine-king-starts-with-white-magic": {},
+	"a-druidic-king-starts-with-druid": {},
+	"an-evil-king-starts-with-druid": {},
+	"a-pagan-king-starts-with-explorer": {},
+	"an-undead-king-starts-with-necromancy": {},
+	"an-undead-king-starts-with-a-skeletal-company": {},
+	"a-pagan-capital-opens-beside-the-ritual-stones": {},
+	"a-druidic-capital-opens-beside-creatures": {},
+	"an-evil-capital-opens-beside-monsters": {},
+	"a-druidic-wanderer-knows-the-druids-craft": {},
+	"one-divine-realm-a-game": {},
+	"one-undead-realm-a-game": {},
+	consecrate: { orderValidity: { "who may give an alignment order": WHO_MAY_GIVE_AN_ALIGNMENT_ORDER.consecrate } },
+	"call-to-arms": { orderValidity: { "who may give an alignment order": WHO_MAY_GIVE_AN_ALIGNMENT_ORDER["call-to-arms"] } },
+	broker: { orderValidity: { "who may give an alignment order": WHO_MAY_GIVE_AN_ALIGNMENT_ORDER.broker } },
+	"harvest-the-field": { orderValidity: { "who may give an alignment order": WHO_MAY_GIVE_AN_ALIGNMENT_ORDER["harvest-the-field"] } },
+	"perform-rite": { orderValidity: { "who may give an alignment order": WHO_MAY_GIVE_AN_ALIGNMENT_ORDER["perform-rite"] } }
+};
+/** Each stage's order: the entries with an effect at the stage, each once; the runner asks them in this order. */
+var THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES = {
+	strength: {
+		"a realm's alignment gives a side its chance of zeal": [
+			"zeal-of-a-divine-realm",
+			"zeal-of-a-good-realm",
+			"zeal-of-a-druidic-realm",
+			"zeal-of-a-neutral-realm",
+			"zeal-of-a-pagan-realm",
+			"zeal-of-an-evil-realm",
+			"zeal-of-an-undead-realm"
+		],
+		"consecrated ground stirs a defender's zeal": ["consecrated-ground-doubles-a-defenders-zeal"],
+		"a realm's alignment stirs a side's fervour": ["skeletal-fervour", "savage-fury"],
+		"consecrated ground weakens an attacker's host": ["consecrated-ground-weakens-an-unholy-attacker"],
+		"a realm's alignment strengthens its defence of its own ground": ["righteous-defence"],
+		"a realm's alignment strengthens a unit in the wild": ["home-of-the-wild"],
+		"a realm's alignment strengthens a unit by its reign of fear": ["reign-of-fear"]
+	},
+	fate: {
+		"a realm's alignment holds a beaten host on the field": ["the-deathless-march"],
+		"a realm's alignment claims gold for each foe destroyed": ["a-pagan-victors-blood-harvest"],
+		"a realm's alignment conquers by a doctrine": ["plunder-or-enslave"]
+	},
+	turnStart: { "a realm's alignment raises its fallen on holy ground": ["divine-grace"] },
+	movementCost: { "a realm's alignment helps converging columns unite": ["banner-of-fellowship"] },
+	orderValidity: { "who may give an alignment order": [
+		"consecrate",
+		"call-to-arms",
+		"broker",
+		"harvest-the-field",
+		"perform-rite"
+	] },
+	orderOutcome: {
+		"a realm's alignment cuts a mercenary band's price": ["the-neutral-mercenary-discount"],
+		"a realm's alignment raises a Bless's yield": ["the-divine-blessing"],
+		"a realm's alignment adds to research": ["neutral-scholars"],
+		"a realm's alignment raises a rest's heal": ["the-divine-rest"]
+	},
+	turnEnd: {
+		"a realm's alignment adds to its tax": ["neutral-trade"],
+		"a realm's consecrated ground raises a province's tax": ["consecrated-ground-tax"],
+		"a realm's alignment keeps the graves on its land": ["graves-keep-on-undead-land"]
+	},
+	aHerosStanding: { "a hero's own alignment makes him undead": ["an-undead-hero-is-undead-in-personal-combat"] }
+};
+var ROWS$4 = ALIGNMENT_ABILITIES;
+var ENTRIES$5 = THE_REGISTRY_OF_ALIGNMENT_ABILITIES;
+var TURN_END$1 = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.turnEnd;
+var STRENGTH$1 = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.strength;
+var FATE$1 = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.fate;
+var MOVEMENT_COST$1 = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.movementCost;
+var ORDER_OUTCOME$1 = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.orderOutcome;
+var ORDER_VALIDITY = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.orderValidity;
+var TURN_START = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.turnStart;
+var A_HEROS_STANDING = THE_ORDER_OF_EACH_STAGE_OF_THE_ALIGNMENT_ABILITIES.aHerosStanding;
+/** The abilities of a stage's order the alignment holds, in the order. */
+var theAbilitiesOfTheStageAnAlignmentHolds = (theAlignment, theOrder) => theOrder.filter((slug) => ROWS$4[slug].alignment === theAlignment);
+/** The runner of "turnEnd: a realm's alignment adds to its tax" (neutralTradeGold, which Early Winter's collection and
+*  the report's forecast ask): the gold the abilities the alignment holds add to the provinces' income, added. */
+function whatARealmsAlignmentAddsToItsTax(theAlignment, facts) {
+	const theStage = "a realm's alignment adds to its tax";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, TURN_END$1[theStage]).reduce((theGold, slug) => theGold + (ENTRIES$5[slug].turnEnd?.[theStage]?.(facts) ?? 0), 0);
+}
+/** The runner of "turnEnd: a realm's consecrated ground raises a province's tax" (Early Winter's collection and the
+*  report's forecast, for a province the realm's consecration list holds): the province's tax after each effect of the
+*  stage, in its order, each handed the tax the one before gave. It is handed no alignment: the consecration list gates
+*  it, as before. */
+function theTaxOfAProvinceOnConsecratedGround(facts) {
+	const theStage = "a realm's consecrated ground raises a province's tax";
+	return TURN_END$1[theStage].reduce((theTax, slug) => ENTRIES$5[slug].turnEnd?.[theStage]?.({ theTax }) ?? theTax, facts.theTax);
+}
+/** The alignment a side of a battle fights under: its realm's, or Neutral for a realm of none (or none given), as both
+*  battles read it before. */
+var theAlignmentASideFightsUnder = (theAlignment) => (theAlignment ?? "") || "Neutral";
+/** The runner of "strength: a realm's alignment gives a side its chance of zeal" (both battles, before the realm's
+*  fanaticism discoveries add theirs): the chance of the ability the side's alignment holds, or 0.1 for an alignment
+*  none holds, as the old table's `?? 0.1` gave. */
+function theChanceOfZealARealmsAlignmentGivesASide(theAlignment) {
+	const theStage = "a realm's alignment gives a side its chance of zeal";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignmentASideFightsUnder(theAlignment), STRENGTH$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].strength?.[theStage]?.()) ?? .1;
+}
+/** The runner of "strength: consecrated ground stirs a defender's zeal" (combatVsChar, for a defender on a province his
+*  realm owns and its consecration list holds, after the discoveries' share): the chance after each effect of the
+*  stage, in its order, each handed the chance the one before gave. It is handed no alignment: the consecration list
+*  gates it, as before. */
+function theChanceOfZealOfADefenderOnConsecratedGround(facts) {
+	const theStage = "consecrated ground stirs a defender's zeal";
+	return STRENGTH$1[theStage].reduce((theChance, slug) => ENTRIES$5[slug].strength?.[theStage]?.({ theChance }) ?? theChance, facts.theChance);
+}
+/** The runner of "strength: a realm's alignment stirs a side's fervour" (both battles, after the zeal rolls): the
+*  strongest counts, never stacked. As the old Math.max: 1, zeal's strength if the roll seized the side (the Divine
+*  row's, for every creed and a realm of none), then each fervour the side's alignment holds that stirs, in the stage's
+*  order. */
+function theFervourOfASide(theAlignment, facts) {
+	const theStage = "a realm's alignment stirs a side's fervour";
+	const stirred = theAbilitiesOfTheStageAnAlignmentHolds(theAlignmentASideFightsUnder(theAlignment), STRENGTH$1[theStage]).flatMap((slug) => {
+		const theFactor = ENTRIES$5[slug].strength?.[theStage]?.(facts) ?? null;
+		return theFactor === null ? [] : [{
+			slug,
+			theFactor
+		}];
+	});
+	const theStrengthOfZeal = ALIGNMENT_ABILITIES["zeal-of-a-divine-realm"].theNumbers.theStrengthOfZeal.value;
+	return {
+		theFactor: Math.max(1, facts.isItSeizedByZeal ? theStrengthOfZeal : 1, ...stirred.map((s) => s.theFactor)),
+		theAbilitiesThatStirredIt: stirred.map((s) => s.slug)
+	};
+}
+/** The runner of "strength: consecrated ground weakens an attacker's host" (both battles, for a province its owner
+*  consecrated: the force's factor among the whole-force factors, in its place): 1 times each factor of the stage's
+*  effects, in its order (1 when none weakens it). It is handed no alignment to gate it: the consecration list gates
+*  it, as before, and the attacker's own alignment is a fact. */
+function theFactorConsecratedGroundWeakensAnAttackersHostBy(facts) {
+	const theStage = "consecrated ground weakens an attacker's host";
+	return STRENGTH$1[theStage].reduce((theFactor, slug) => {
+		const f = ENTRIES$5[slug].strength?.[theStage]?.(facts) ?? null;
+		return f === null ? theFactor : theFactor * f;
+	}, 1);
+}
+/** The factors of the abilities of a stage's order the alignment holds, each one's in the order; none for an
+*  alignment that holds none. */
+var theFactorsOf = (theAbilities, theFactorOf) => theAbilities.flatMap((slug) => {
+	const f = theFactorOf(slug) ?? null;
+	return f === null ? [] : [f];
+});
+/** The runner of "strength: a realm's alignment strengthens its defence of its own ground" (both battles, for a
+*  province the defending realm owns, after the siegecraft): the factor the defenders' position is multiplied by, or
+*  null when the realm's alignment holds none (no line then). */
+function theFactorARealmsAlignmentStrengthensItsDefenceOfItsOwnGroundBy(theAlignment) {
+	const theStage = "a realm's alignment strengthens its defence of its own ground";
+	const fs = theFactorsOf(theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, STRENGTH$1[theStage]), (slug) => ENTRIES$5[slug].strength?.[theStage]?.());
+	return fs.length === 0 ? null : fs.reduce((theFactor, f) => theFactor * f, 1);
+}
+/** The runner of "strength: a realm's alignment strengthens a unit in the wild" (armStr, after the unit's abilities):
+*  the factor of the abilities the realm's alignment or its commander's own holds (either), or null (no step then). */
+function theFactorARealmsAlignmentStrengthensAUnitInTheWildBy(theRealmsAlignment, theCommandersAlignment, facts) {
+	const theStage = "a realm's alignment strengthens a unit in the wild";
+	const fs = theFactorsOf(STRENGTH$1[theStage].filter((slug) => ROWS$4[slug].alignment === theRealmsAlignment || ROWS$4[slug].alignment === theCommandersAlignment), (slug) => ENTRIES$5[slug].strength?.[theStage]?.(facts));
+	return fs.length === 0 ? null : fs.reduce((theFactor, f) => theFactor * f, 1);
+}
+/** The runner of "strength: a realm's alignment strengthens a unit by its reign of fear" (armStr, after Terror, for an
+*  attacker on ground its realm's Terror grips; both battles' lines ask it of each unit): the factor, or null. */
+function theFactorARealmsAlignmentStrengthensAUnitByItsReignOfFear(theAlignment, facts) {
+	const theStage = "a realm's alignment strengthens a unit by its reign of fear";
+	const fs = theFactorsOf(theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, STRENGTH$1[theStage]), (slug) => ENTRIES$5[slug].strength?.[theStage]?.(facts));
+	return fs.length === 0 ? null : fs.reduce((theFactor, f) => theFactor * f, 1);
+}
+/** The runner of "fate: a realm's alignment holds a beaten host on the field" (both battles' routs: each site hands
+*  its own list of companies): whether an ability the alignment holds holds it there. */
+function doesARealmsAlignmentHoldABeatenHostOnTheField(theAlignment, facts) {
+	const theStage = "a realm's alignment holds a beaten host on the field";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, FATE$1[theStage]).some((slug) => ENTRIES$5[slug].fate?.[theStage]?.(facts) ?? false);
+}
+/** The runner of "movementCost: a realm's alignment helps converging columns unite" (resolveMoveOrder, both its
+*  rolls): the points of the abilities the alignment holds, added (0 for none). */
+function whatARealmsAlignmentAddsToConvergingColumnsChanceToUnite(theAlignment) {
+	const theStage = "a realm's alignment helps converging columns unite";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, MOVEMENT_COST$1[theStage]).reduce((thePoints, slug) => thePoints + (ENTRIES$5[slug].movementCost?.[theStage]?.() ?? 0), 0);
+}
+/** The runner of "orderOutcome: a realm's alignment cuts a mercenary band's price" (resolveRecruitArmiesOrder, and the
+*  report's price, each before the discoveries' and under its own floor of 1g): the gold of the abilities the
+*  alignment holds, added (0 for none). */
+function theGoldARealmsAlignmentCutsFromAMercenaryBandsPrice(theAlignment) {
+	const theStage = "a realm's alignment cuts a mercenary band's price";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, ORDER_OUTCOME$1[theStage]).reduce((theGold, slug) => theGold + (ENTRIES$5[slug].orderOutcome?.[theStage]?.() ?? 0), 0);
+}
+/** The runner of "orderOutcome: a realm's alignment raises a Bless's yield" (workBlessProvince, before the discoveries
+*  add theirs): the whole yield of the first ability the caster's realm's alignment holds, or null when it holds none
+*  (the spell's own yield then; the line names a Divine realm's blessing by it). */
+function theYieldOfABlessARealmsAlignmentGives(theAlignment, facts) {
+	const theStage = "a realm's alignment raises a Bless's yield";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, ORDER_OUTCOME$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].orderOutcome?.[theStage]?.(facts)) ?? null;
+}
+/** The runner of "orderOutcome: a realm's alignment adds to research" (resolveResearchOrder, and the report's odds,
+*  after the Sage level's own points): the points of the abilities the scholar's realm's alignment holds, added (0
+*  for none). */
+function whatARealmsAlignmentAddsToResearch(theAlignment, facts) {
+	const theStage = "a realm's alignment adds to research";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, ORDER_OUTCOME$1[theStage]).reduce((thePoints, slug) => thePoints + (ENTRIES$5[slug].orderOutcome?.[theStage]?.(facts) ?? 0), 0);
+}
+/** The runner of "orderValidity: who may give an alignment order" (each alignment order's resolver, in
+*  src/engine/orders/alignment/, before it reads the hero's province or his target, and refuses with its own line): the
+*  check the order's entry asks first, in its own order, that refuses the hero, or null when he may give it. The order
+*  is handed as its row (THE_ALIGNMENT_ORDERS'), as the checks were handed it before. */
+function theCheckAnAlignmentOrderRefusesAHeroOn(theOrder, facts) {
+	const theStage = "who may give an alignment order";
+	const slug = ORDER_VALIDITY[theStage].find((s) => ROWS$4[s] === theOrder);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].orderValidity?.[theStage]?.(facts)) ?? null;
+}
+/** The runner of "turnStart: a realm's alignment raises its fallen on holy ground" (the turn's start, 7d, for each
+*  grave; a monarch's death, 7a-bis and the succession, 7b, ask whether it gives one): the return of the first ability
+*  the realm's alignment holds, or null when it holds none (its fallen stay dead, its king is succeeded). */
+function theReturnARealmsAlignmentGivesItsFallen(theAlignment) {
+	const theStage = "a realm's alignment raises its fallen on holy ground";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, TURN_START[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].turnStart?.[theStage]?.()) ?? null;
+}
+/** The runner of "orderOutcome: a realm's alignment raises a rest's heal" (resolveRestOrder, when Medical Arts doesn't
+*  heal him in full, before the Colossus and the discoveries add theirs): the factor of the first ability the resting
+*  hero's realm's alignment holds, or null when it holds none (the Rest's own heal then; the line names a Divine
+*  realm's Rest by it). */
+function theFactorARealmsAlignmentRaisesARestsHealBy(theAlignment) {
+	const theStage = "a realm's alignment raises a rest's heal";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, ORDER_OUTCOME$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].orderOutcome?.[theStage]?.()) ?? null;
+}
+/** The runner of "fate: a realm's alignment claims gold for each foe destroyed" (bloodHarvest, both battles' victories,
+*  before the discoveries add theirs): the gold of the first ability the victor's realm's alignment holds, or null when
+*  it holds none (no harvest then). */
+function theGoldARealmsAlignmentClaimsForEachFoeDestroyed(theAlignment) {
+	const theStage = "a realm's alignment claims gold for each foe destroyed";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, FATE$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].fate?.[theStage]?.()) ?? null;
+}
+/** The runner of "fate: a realm's alignment conquers by a doctrine" (applyEvilConquest, at every conquest site; both
+*  battles, whether a decisive victory under the Terror doctrine lays Terror): the doctrine of the first ability the
+*  conqueror's realm's alignment holds, or null when it holds none. */
+function theConquestDoctrineOfARealmsAlignment(theAlignment) {
+	const theStage = "a realm's alignment conquers by a doctrine";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, FATE$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].fate?.[theStage]?.()) ?? null;
+}
+/** The runner of "turnEnd: a realm's alignment keeps the graves on its land" (7e of the new turn, for a province a
+*  realm holds, before the discoveries keep them): the share of the graves that rots each turn, of the first ability
+*  the realm's alignment holds, or null when it holds none (the turn's own 0.1 then). */
+function theRateARealmsAlignmentLetsTheGravesOnItsLandRotAt(theAlignment) {
+	const theStage = "a realm's alignment keeps the graves on its land";
+	const [slug] = theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, TURN_END$1[theStage]);
+	return (slug === void 0 ? void 0 : ENTRIES$5[slug].turnEnd?.[theStage]?.()) ?? null;
+}
+/** The runner of "aHerosStanding: a hero's own alignment makes him undead" (personal combat's combatant of a hero):
+*  whether an ability his own alignment holds makes him one of the undead. */
+function isAHeroOfTheAlignmentUndeadInPersonalCombat(theAlignment) {
+	const theStage = "a hero's own alignment makes him undead";
+	return theAbilitiesOfTheStageAnAlignmentHolds(theAlignment, A_HEROS_STANDING[theStage]).some((slug) => ENTRIES$5[slug].aHerosStanding?.[theStage]?.() ?? false);
+}
 // src/engine/grand-design.ts
 var isAProvince = (p) => Boolean(p);
 function gdActiveFor(gs, playerIndex, align) {
@@ -21276,7 +22265,7 @@ function homeFounderOf(gs, provId) {
 	return null;
 }
 function neutralTradeGold(pl, income) {
-	return pl?.alignment === "Neutral" ? Math.floor((Number(income) || 0) / 5) : 0;
+	return whatARealmsAlignmentAddsToItsTax(pl?.alignment, { theIncome: income });
 }
 var HOME_FLEET_BY_RACE = {
 	Human: "Galleon Fleet",
@@ -23700,6 +24689,77 @@ function neighborInDir(turnContext, prov, dir) {
 	const { G } = turnContext;
 	return theProvinceNextToAProvinceInADirection(prov, dir, G.world.cols, G.world.rows, G.world.provinces);
 }
+// src/engine/rules-on-plain-values/the-terror-an-evil-victory-leaves-its-share-a-stack-and-its-most-stacks.ts
+var TERROR_PCT_PER_STACK = .1;
+var TERROR_MAX_STACKS = 3;
+// src/engine/world/the-marks-on-a-province-consecrated-ground-terror-and-enslave.ts
+function consecratedIds(pl) {
+	if (!pl) return [];
+	if (!Array.isArray(pl.consecratedProvIds)) pl.consecratedProvIds = [];
+	return pl.consecratedProvIds;
+}
+function isConsecrated(pl, provId) {
+	return consecratedIds(pl).includes(provId);
+}
+function provinceConsecrated(gs, prov) {
+	if (prov?.owner == null) return false;
+	const owner = gs?.players?.[prov.owner];
+	return !!owner && isConsecrated(owner, prov.id);
+}
+/** Lays consecrated ground: the province joins the list its realm holds (Consecrate's outcome, its checks passed). */
+function layConsecratedGround(theList, provId) {
+	theList.push(provId);
+}
+/** Lifts one consecrated province from a realm's list (its capture, or a Divine return spending it). Whether it was
+*  there. */
+function liftConsecratedGround(pl, provId) {
+	const list = consecratedIds(pl);
+	const at = list.indexOf(provId);
+	if (at < 0) return false;
+	list.splice(at, 1);
+	return true;
+}
+/** Fades the consecrated ground a realm no longer holds: its list becomes the provinces it keeps (as the season
+*  closes). */
+function keepOnlyTheConsecratedGroundARealmHolds(pl, kept) {
+	pl.consecratedProvIds = kept;
+}
+/** Whether Terror grips a province for a realm: its stacks are there, laid by that realm. */
+function reignOfFearHere(prov, playerIdx) {
+	return !!(prov && playerIdx != null && (prov._terrorStacks || 0) > 0 && prov._terrorisedBy === playerIdx);
+}
+/** Whether Terror lingers on a province, waiting for the next battle fought there. */
+function terrorLingersOnAProvince(prov) {
+	return !(!prov._terrorStacks || prov._terrorTurn === void 0);
+}
+/** Lays a stack of Terror on a province (at most TERROR_MAX_STACKS), by a realm, this turn, at its share a stack. */
+function layATerrorStackOnAProvince(tp, turn, byPlayer, theShareAStack) {
+	tp._terrorStacks = Math.min(TERROR_MAX_STACKS, (tp._terrorStacks || 0) + 1);
+	tp._terrorTurn = turn;
+	tp._terrorisedBy = byPlayer;
+	tp._terrorPct = theShareAStack;
+}
+/** Lifts the Terror from a province its own realm now holds, unspent (its share a stack is left as it is). */
+function liftTheTerrorFromAProvinceItsRealmHolds(prov) {
+	delete prov._terrorStacks;
+	delete prov._terrorTurn;
+	delete prov._terrorisedBy;
+}
+/** Spends the Terror on a province: the battle fought there has felt it. */
+function spendTheTerrorOnAProvince(prov) {
+	delete prov._terrorStacks;
+	delete prov._terrorTurn;
+	delete prov._terrorisedBy;
+	delete prov._terrorPct;
+}
+/** Lays Enslave on a province: it pays less until the turn given. */
+function enslaveAProvinceUntil(prov, theLastTurn) {
+	prov._enslavedUntil = theLastTurn;
+}
+/** Whether Enslave still holds a province on a turn (it fades once that turn is past its last). */
+function theEnslavedProvinceStillPaysLess(pv, turn) {
+	return pv._enslavedUntil != null && pv._enslavedUntil >= turn;
+}
 // src/engine/titles/perks.ts
 function TM(c) {
 	c.tm ??= {
@@ -23991,7 +25051,9 @@ var TAMED_FLYER_TYPES_D = new Set(KC_UNIT_CLASS.tamedFlyer);
 *  are driven, not led. (sd40 Dragon Taming's winged beasts are waived too: the caller knows the realm's discoveries,
 *  so it passes that on its own, to druidLevelALeaderNeeds.) */
 function druidNeedWaivedByAlignment(unitType, realmAlignment, leaderAlignment) {
-	return CREATURE_ARMIES.has(unitType) && (realmAlignment === "Druidic" || leaderAlignment === "Druidic") || MONSTER_ARMIES.has(unitType) && (realmAlignment === "Evil" || leaderAlignment === "Evil");
+	const creatures = ALIGNMENT_ABILITIES["creatures-follow-without-a-druid"].alignment;
+	const monsters = ALIGNMENT_ABILITIES["monsters-follow-without-a-druid"].alignment;
+	return CREATURE_ARMIES.has(unitType) && (realmAlignment === creatures || leaderAlignment === creatures) || MONSTER_ARMIES.has(unitType) && (realmAlignment === monsters || leaderAlignment === monsters);
 }
 /** The Druid a leader needs to lead a unit of this type at full strength, the waivers counted: none where his realm's
 *  alignment or his own waives it, or where the unit is a winged beast his realm has tamed (`tamed`: sd40 Dragon
@@ -24176,7 +25238,7 @@ var A_REALMS_DISCOVERIES_PROMOTE_A_UNIT = { promotion: (e, facts) => discUnitMat
 *  chance. */
 var A_REALMS_DISCOVERIES_CARRY_A_FALLEN_UNIT_HOME = { "homeward-flight": (e) => e.pct ?? 0 };
 /** "fate: a realm's discoveries drag a hero from the field" (Battlefield Surgery, `nearDeathSurvival`): its `pct`, or
-*  0.2 for a row that writes none (discParam's fallback, which no row reads: Parked "discParam's fallbacks"). */
+*  0.2 for a row that writes none (discParam's fallback, which no row reads: KD-193). */
 var A_REALMS_DISCOVERIES_DRAG_A_HERO_FROM_THE_FIELD = { "battlefield-surgery": (e) => e.pct ?? .2 };
 // src/engine/rules/discoveries/a-realms-discoveries-in-its-heroes-fights-and-their-rise.ts
 /** Whether an aim effect reaches the foe: every foe, or the foe it names (`vs`: a monster, a character, or an undead
@@ -24220,7 +25282,7 @@ var A_REALMS_DISCOVERIES_ADD_TO_SPYING_ON_A_HERO = { "spying-on-a-hero": (e, fac
 /** "orderOutcome: a realm's discoveries add to catching a spy" (`catchSpy`): its `pct`, where it reaches. */
 var A_REALMS_DISCOVERIES_ADD_TO_CATCHING_A_SPY = { "catching-a-spy": (e, facts) => doesItReachWhereTheSpyActs(e, facts) ? e.pct ?? 0 : null };
 /** "orderOutcome: a realm's discoveries keep a spy's success quiet" (Disguise Techniques, `spyDisguise`): its `pct`,
-*  0.5 for a row that writes none (discParam's fallback, which no row reads: Parked "discParam's fallbacks"). */
+*  0.5 for a row that writes none (discParam's fallback, which no row reads: KD-193). */
 var A_REALMS_DISCOVERIES_KEEP_A_SPYS_SUCCESS_QUIET = { "disguise-techniques": (e) => e.pct ?? .5 };
 /** "orderOutcome: a realm's discoveries add to exploring" (`explore`): its `mult` (1 for a row with none), on the ground
 *  it lists. */
@@ -24247,7 +25309,7 @@ var A_REALMS_DISCOVERIES_HEAL_A_RESTING_HERO_IN_FULL = { "medical-arts": () => t
 *  the home and the coast its row names, asked in that order. */
 var A_REALMS_DISCOVERIES_SPOT_A_HERO_LURKING_IN_ITS_PROVINCE = { "watching-for-lurkers": (e, facts) => doesItReachTheGround(e, facts.theGround) && (!e.home || facts.isItTheRealmsHome()) && (!e.coastal || facts.isItCoastal()) ? e.pct ?? 0 : null };
 /** "visibility: a realm's discoveries map the provinces around an explorer" (Ancient Lore, `adjacentReveal`): its
-*  `pct`, 10 for a row that writes none (discParam's fallback, which no row reads: Parked "discParam's fallbacks"). */
+*  `pct`, 10 for a row that writes none (discParam's fallback, which no row reads: KD-193). */
 var A_REALMS_DISCOVERIES_MAP_THE_PROVINCES_AROUND_AN_EXPLORER = { "ancient-lore": (e) => e.pct ?? 10 };
 /** The facts the report's odds hand a spy's effects (buildTurnReport): no province, so an effect scoped by ground or
 *  coast doesn't count, and one scoped to a home does (the report's rule as it was; no `spy` row names a home). */
@@ -24599,7 +25661,7 @@ function aRealmsDiscoveriesLetABeastFollowWithoutItsDruid(theRealm, facts) {
 /** The runner of "strength: a realm's discoveries add to the whole army" (both battles, beside the realm's other
 *  bonuses): what discoveries add to the whole army's strength. No entry holds the stage (sd02 War Drums is now an
 *  ordinary `unitStr` effect, armStr's, under the ×1.30 ceiling), so it adds nothing: discoveryArmyBonus's body, moved
-*  as it was (Parked "Three dead paths in discoveries.ts"). */
+*  as it was (KD-207). */
 function whatARealmsDiscoveriesAddToTheWholeArmy() {
 	return 0;
 }
@@ -25271,14 +26333,6 @@ var CONSEC_CAPTURE_XP_PCT_BY_ALIGNMENT = {
 function consecCaptureXpPct(pl) {
 	return (pl && CONSEC_CAPTURE_XP_PCT_BY_ALIGNMENT[pl.alignment]) ?? 0;
 }
-function consecratedIds(pl) {
-	if (!pl) return [];
-	if (!Array.isArray(pl.consecratedProvIds)) pl.consecratedProvIds = [];
-	return pl.consecratedProvIds;
-}
-function isConsecrated(pl, provId) {
-	return consecratedIds(pl).includes(provId);
-}
 function ownedConsecratedProvs(state, pi) {
 	const pl = (state.players ?? [])[pi];
 	if (!pl) return [];
@@ -25330,11 +26384,6 @@ function normaliseStrandedGuards(gs) {
 		}
 	});
 	return n;
-}
-function provinceConsecrated(gs, prov) {
-	if (prov?.owner == null) return false;
-	const owner = gs?.players?.[prov.owner];
-	return !!owner && isConsecrated(owner, prov.id);
 }
 function relOfReport(gs, a, b) {
 	if (a == null || b == null || a === b) return "neutral";
@@ -26264,7 +27313,8 @@ function theItemsASendItemOrderHandsOver(held, target) {
 /** Whether risen dead follow a hand-over to where it goes: into a garrison (no recipient) always; to a comrade only if
 *  he is Undead himself or serves an Undead realm. */
 function theRisenDeadFollowAHandOverTo(recipient) {
-	return !recipient || recipient.alignment === "Undead" || recipient.hisRealmsAlignment === "Undead";
+	const theUndead = ALIGNMENT_ABILITIES["the-risen-dead-follow-only-the-undead"].alignment;
+	return !recipient || recipient.alignment === theUndead || recipient.hisRealmsAlignment === theUndead;
 }
 /** Where a hand-over's companies go, by the risen dead among them: where they refuse to follow (theyFollow false),
 *  the skeletal companies go to their graves and the rest are handed; else every company is handed. Each list keeps
@@ -28056,7 +29106,6 @@ var WILD_HUNT_TURNS = THE_ALIGNMENT_ORDERS["perform-rite"].theNumbers.theWildHun
 function theTurnsAWildHuntServesBeyondThisOne(hisRealm) {
 	return WILD_HUNT_TURNS + theTurnsARealmsDiscoveriesLengthenTheWildHuntBy(hisRealm);
 }
-var BLOOD_HARVEST_PER_UNIT = 1;
 var FEATURE_POOLS_P = {
 	plain: [
 		"Ancient Battlefield",
@@ -31386,7 +32435,7 @@ function ensureLairHoard(f, gs, opts) {
 	if (kcRng() < (T.thirdItem || 0)) roll();
 }
 // src/engine/rules-on-plain-values/alignments-and-a-wandering-heros-hire-wage.ts
-var ALIGNMENTS_P = KC_ALIGNMENTS.slice();
+var ALIGNMENTS_P = THE_LADDER_OF_THE_ALIGNMENTS.theRungs.map((rung) => rung.alignment);
 function alignDistP(a, b) {
 	const i = ALIGNMENTS_P.indexOf(a), j = ALIGNMENTS_P.indexOf(b);
 	if (i < 0 || j < 0) return 0;
@@ -31399,9 +32448,23 @@ function heroSkillWage(ch) {
 	return Math.max(0, Math.ceil(heroSkillTotal(ch) / 4) - 1);
 }
 function heroHireWage(kingdomAlign, heroAlign, waiveBan, hero) {
+	const { theWageOfAHeroAtNoDistance, theStepsForEachGoldMore, theStepsOfTheGulf } = THE_LADDER_OF_THE_ALIGNMENTS.theNumbers;
 	const d = alignDistP(kingdomAlign, heroAlign);
-	if (d >= 6 && !waiveBan) return null;
-	return 2 + Math.floor(Math.min(d, 6) / 2) + (hero ? heroSkillWage(hero) : 0);
+	if (d >= theStepsOfTheGulf.value && !waiveBan) return null;
+	return theWageOfAHeroAtNoDistance.value + Math.floor(Math.min(d, theStepsOfTheGulf.value) / theStepsForEachGoldMore.value) + (hero ? heroSkillWage(hero) : 0);
+}
+/** The rung of an alignment, or none (no alignment, or one the ladder doesn't hold). */
+function theRungOf(alignment) {
+	return THE_LADDER_OF_THE_ALIGNMENTS.theRungs.find((rung) => rung.alignment === alignment);
+}
+/** The chance, in percent, a foe of this alignment spares a felled coward's plea; none for an alignment the ladder
+*  doesn't hold (the resolver's own 50% then). */
+function theChanceAFoeOfThisAlignmentSparesAPlea(alignment) {
+	return theRungOf(alignment)?.theChanceAFoeSparesAPlea.value;
+}
+/** Whether a foe of this alignment refuses a plea with laughter (no die drawn for its words); not one of none. */
+function aFoeOfThisAlignmentLaughsAtAPlea(alignment) {
+	return theRungOf(alignment)?.aFoesRefusalIsLaughter ?? false;
 }
 // src/engine/sight/heroes-in-sight-features-discovered-and-army-size-bands.ts
 function nearSpiedProvIds(gs, spiedIds) {
@@ -32585,18 +33648,30 @@ function makeTheDbFromItsClient(client) {
 		},
 		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
 		theOrders: {
-			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
-				orders,
-				orders_submitted: false
-			}).eq("id", realm),
-			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
-			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
-			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
-				orders,
-				orders_submitted: true,
-				last_submitted_at: submittedAt
-			}).eq("id", realm),
-			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+			saveThisRealmsDraft: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: false
+			}),
+			saveThisRealmsHeroOrder: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: null
+			}),
+			reopenThisRealmsOrders: (game, turn) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: null,
+				p_submitted: false
+			}),
+			submitThisRealmsOrders: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: true
+			})
 		},
 		theGameMastersGames: {
 			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
@@ -33211,8 +34286,8 @@ function ladderLines(role, name, rows, width, flank, forceMods, final, opt) {
 	return L;
 }
 var ARCHERY_MISSILE_PCT = .05;
-var UNDEAD_SKEL_KING_FAN = 1.5;
-var UNDEAD_SKEL_HERO_FAN = 1.3;
+var UNDEAD_SKEL_KING_FAN = ALIGNMENT_ABILITIES["skeletal-fervour"].theNumbers.underTheKing.value;
+var UNDEAD_SKEL_HERO_FAN = ALIGNMENT_ABILITIES["skeletal-fervour"].theNumbers.underAnyOtherCommander.value;
 var MISSILE_ARMIES_MASTER = new Set(KC_UNIT_CLASS.missile);
 var ARMY_SPEED_R = ARMY_SPEED_MASTER;
 // src/engine/units/movement.ts
@@ -33540,6 +34615,46 @@ function setAutoTurnStatus(html) {
 function runningBuildStamp() {
 	return thisPagesBuild();
 }
+// src/engine/rules-on-plain-values/the-world-each-creed-is-made-in-its-wild-country-its-first-skills-and-one-realm-a-game.ts
+/** The rows of the list of the alignment (as the old checks' `===`: an alignment no row holds, or none, holds none). */
+var theAbilitiesOfTheListOf = (theList, theAlignment) => theList.filter((slug) => ALIGNMENT_ABILITIES[slug].alignment === theAlignment);
+/** Whether a realm of the alignment in the game lets world creation place the ritual stones (with none, no die is
+*  drawn for them). */
+var doTheRitualStonesStandWithARealmOf = (theAlignment) => THE_SITES_OF_THE_WORLD["the-ritual-stones"].theAlignmentThatMustBeInTheGame === theAlignment;
+/** Whether a capital of the alignment opens beside a primal forest or jungle with ritual stones. */
+var doesACapitalOfTheAlignmentOpenBesideTheRitualStones = (theAlignment) => theAbilitiesOfTheListOf(["a-pagan-capital-opens-beside-the-ritual-stones"], theAlignment).length > 0;
+/** Whether a capital of the alignment opens beside Creatures (and has them within two provinces). */
+var doesACapitalOfTheAlignmentOpenBesideCreatures = (theAlignment) => theAbilitiesOfTheListOf(["a-druidic-capital-opens-beside-creatures"], theAlignment).length > 0;
+/** Whether a capital of the alignment opens beside Monsters (and has them within two provinces). */
+var doesACapitalOfTheAlignmentOpenBesideMonsters = (theAlignment) => theAbilitiesOfTheListOf(["an-evil-capital-opens-beside-monsters"], theAlignment).length > 0;
+/** The skill a king of the alignment, or an heir crowned later, starts with a level more, or none (a realm of no
+*  creed, or of one that gives none). */
+function theSkillAKingOfTheAlignmentStartsWith(theAlignment) {
+	const [slug] = theAbilitiesOfTheListOf([
+		"a-divine-king-starts-with-white-magic",
+		"a-druidic-king-starts-with-druid",
+		"an-evil-king-starts-with-druid",
+		"a-pagan-king-starts-with-explorer",
+		"an-undead-king-starts-with-necromancy"
+	], theAlignment);
+	if (slug === void 0) return void 0;
+	const row = ALIGNMENT_ABILITIES[slug];
+	return {
+		theSkill: row.theSkillItGives,
+		theLevelsMore: row.theNumbers.theLevelsMore.value
+	};
+}
+/** Whether a king of the alignment starts with a skeletal company besides his realm's own. */
+var doesAKingOfTheAlignmentStartWithASkeletalCompany = (theAlignment) => theAbilitiesOfTheListOf(["an-undead-king-starts-with-a-skeletal-company"], theAlignment).length > 0;
+/** The skill a wandering hero of the alignment is dealt if his deal didn't give it him, or none. */
+function theSkillAWandererOfTheAlignmentIsSureOf(theAlignment) {
+	const [slug] = theAbilitiesOfTheListOf(["a-druidic-wanderer-knows-the-druids-craft"], theAlignment);
+	return slug === void 0 ? void 0 : ALIGNMENT_ABILITIES[slug].theSkillItGives;
+}
+/** The wandering heroes' deck of alignments: each rung's cards, in the ladder's order (the deal draws by it). */
+var theWanderingHeroesDeckOfAlignments = () => THE_LADDER_OF_THE_ALIGNMENTS.theRungs.flatMap((rung) => Array(rung.theWanderersCardsInTheDeck.value).fill(rung.alignment));
+/** The alignments only one realm a game may hold, in their rows' order (Divine, then Undead). */
+var theAlignmentsOnlyOneRealmAGameMayHold = () => ["one-divine-realm-a-game", "one-undead-realm-a-game"].map((slug) => ALIGNMENT_ABILITIES[slug].alignment);
 // src/engine/orders/spells/what-an-action-spell-of-the-cast-spell-order-is-handed.ts
 /** Whether a hero serves a realm. */
 function servesARealm(h) {
@@ -33661,7 +34776,7 @@ var BOT_SKILL_BUILD = {
 		tactical: 1
 	}
 };
-var BOT_UNIQUE_ALIGNS = ["Divine", "Undead"];
+var BOT_UNIQUE_ALIGNS = theAlignmentsOnlyOneRealmAGameMayHold();
 var BOT_KINGDOM_NAME_UNIT = {
 	Human: "Free Lances",
 	Elven: "Elven Bowmen",
@@ -35615,7 +36730,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 	_usedHeroFirsts.add("Garreth");
 	_usedHeroEpithets.add("the Independent");
 	_usedHeroNames.add("Garreth the Independent");
-	const hasPaganPlayer = setupPlayers.some((sp) => sp.alignment === "Pagan");
+	const hasPaganPlayer = setupPlayers.some((sp) => doTheRitualStonesStandWithARealmOf(sp.alignment));
 	const humanoidRaces = HUMANOID_RACES_GEN;
 	const primalDefs = PRIMAL_ARMY_DEFS_P;
 	const armiesByTerrainAndRace = PROVINCE_ARMIES_P;
@@ -36675,7 +37790,8 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 		if (homeLandNbrs.length && !homeLandNbrs.some((n) => n.race === sp.race)) _reRaceProvince(theOneMadeSure(homeLandNbrs[0]), sp.race);
 		{
 			const _align = sp.alignment;
-			if (_align === "Pagan" || _align === "Druidic" || _align === "Evil") {
+			const _besideTheStones = doesACapitalOfTheAlignmentOpenBesideTheRitualStones(_align), _besideCreatures = doesACapitalOfTheAlignmentOpenBesideCreatures(_align), _besideMonsters = doesACapitalOfTheAlignmentOpenBesideMonsters(_align);
+			if (_besideTheStones || _besideCreatures || _besideMonsters) {
 				const _allFreeNbrs = getNeighborsP(best, cols, rows, provinces).filter((n) => n.terrain !== "sea" && n.owner == null);
 				const _protectedIds = new Set(best._homePairIds ?? []);
 				playerStarts.forEach((h) => {
@@ -36690,7 +37806,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 					return notOwn.length ? notOwn : list;
 				};
 				let cand;
-				if (_align === "Pagan") {
+				if (_besideTheStones) {
 					const pool = _pick(_freeNbrs);
 					cand = pool.find((n) => n.terrain === "forest" || n.terrain === "jungle") ?? pool[0];
 					if (cand) {
@@ -36698,7 +37814,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 					}
 				} else cand = _pick(_freeNbrs)[0];
 				if (cand) {
-					const bank = _align === "Druidic" ? creaturesByTerrain[cand.terrain] ?? ["Stone Giants"] : _align === "Evil" ? monstersByTerrain[cand.terrain] ?? ["Cave Trolls"] : (kcRng() < .5 ? creaturesByTerrain : monstersByTerrain)[cand.terrain] ?? ["Stone Giants"];
+					const bank = _besideCreatures ? creaturesByTerrain[cand.terrain] ?? ["Stone Giants"] : _besideMonsters ? monstersByTerrain[cand.terrain] ?? ["Cave Trolls"] : (kcRng() < .5 ? creaturesByTerrain : monstersByTerrain)[cand.terrain] ?? ["Stone Giants"];
 					const primalUnit = theOneMadeSure(bank[Math.floor(kcRng() * bank.length)]);
 					const candsRace = "Primal:" + ((primalDefs[primalUnit]?.race ?? "") || primalUnit);
 					cand.race = candsRace;
@@ -36711,7 +37827,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 						unitName: theOneMadeSure(armyUnitName(primalUnit))
 					}));
 					cand.npcArmies = cand.neutralDefenders.length;
-					if (_align === "Pagan" && !cand.features.some((f) => f.ritualSite)) cand.features.push({
+					if (_besideTheStones && !cand.features.some((f) => f.ritualSite)) cand.features.push({
 						name: theOneMadeSure(RITUAL_SITE_NAMES[Math.floor(kcRng() * RITUAL_SITE_NAMES.length)]),
 						ritualSite: true,
 						monster: null,
@@ -36772,11 +37888,8 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 			archery: 1,
 			sage: 1
 		};
-		if (sp.alignment === "Divine") kingSkills["white"] = (kingSkills["white"] ?? 0) + 1;
-		if (sp.alignment === "Druidic") kingSkills["druid"] = (kingSkills["druid"] ?? 0) + 1;
-		if (sp.alignment === "Evil") kingSkills["druid"] = (kingSkills["druid"] ?? 0) + 1;
-		if (sp.alignment === "Pagan") kingSkills["explorer"] = (kingSkills["explorer"] ?? 0) + 1;
-		if (sp.alignment === "Undead") kingSkills["necromancy"] = (kingSkills["necromancy"] ?? 0) + 1;
+		const _kingsSkill = theSkillAKingOfTheAlignmentStartsWith(sp.alignment);
+		if (_kingsSkill) kingSkills[_kingsSkill.theSkill] = (kingSkills[_kingsSkill.theSkill] ?? 0) + _kingsSkill.theLevelsMore;
 		const SKILL_NORM = {
 			Melee: "melee",
 			Archery: "archery",
@@ -36851,7 +37964,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 		ABILITIES_P.forEach((ab) => {
 			king.aptitude[ab] = rP(1, 4);
 		});
-		if (sp.alignment === "Undead") king.armies.push({
+		if (doesAKingOfTheAlignmentStartWithASkeletalCompany(sp.alignment)) king.armies.push({
 			type: "Shieldwall Levies",
 			quality: "Average",
 			race: "Undead",
@@ -36862,6 +37975,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 		best.characters.push(kingId);
 		const _RACE_RIVAL = { ...KC_RIVAL_RACE };
 		const heroIds = [];
+		const _within = THE_LADDER_OF_THE_ALIGNMENTS.theNumbers.theStepsAKingsHeroesAreDealtWithin.value;
 		for (let h = 0; h < 2; h++) {
 			const hid = allChars.length;
 			const hSkills = {};
@@ -36869,7 +37983,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 				const sk = theOneMadeSure(ABILITIES_P[Math.floor(kcRng() * ABILITIES_P.length)]);
 				hSkills[sk] = (hSkills[sk] ?? 0) + 1;
 			}
-			const heroAlign = theOneMadeSure(ALIGNMENTS_P[Math.max(0, Math.min(6, ALIGNMENTS_P.indexOf(sp.alignment) + rP(-1, 1)))]);
+			const heroAlign = theOneMadeSure(ALIGNMENTS_P[Math.max(0, Math.min(6, ALIGNMENTS_P.indexOf(sp.alignment) + rP(-_within, _within)))]);
 			const _hRace = h === 0 ? sp.race : (() => {
 				const opts = RACES_P.filter((r) => r !== _RACE_RIVAL[sp.race]);
 				return theOneMadeSure(opts[Math.floor(kcRng() * opts.length)]);
@@ -36949,7 +38063,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 		});
 		const _crowns = players.map((pl) => ({
 			pl,
-			want: pl.alignment === "Druidic" ? "creature" : pl.alignment === "Evil" ? "monster" : null,
+			want: doesACapitalOfTheAlignmentOpenBesideCreatures(pl.alignment) ? "creature" : doesACapitalOfTheAlignmentOpenBesideMonsters(pl.alignment) ? "monster" : null,
 			home: provinces[pl.homeProvinceId]
 		})).filter((x) => Boolean(x.want && x.home));
 		const _matches = (cr) => [..._within2(cr.home).keys()].filter((id) => {
@@ -37092,15 +38206,7 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 	};
 	const _dealPrimary = _mkDeck(NEUTRAL_SKILL_POOL);
 	const _dealSecondary = _mkDeck(NEUTRAL_SKILL_POOL);
-	const _dealAlign = _mkDeck([
-		...Array(1).fill("Divine"),
-		...Array(2).fill("Good"),
-		...Array(4).fill("Druidic"),
-		...Array(6).fill("Neutral"),
-		...Array(4).fill("Pagan"),
-		...Array(2).fill("Evil"),
-		...Array(1).fill("Undead")
-	]);
+	const _dealAlign = _mkDeck(theWanderingHeroesDeckOfAlignments());
 	const _dealRace = _mkDeck(RACES_P);
 	const _dealTemper = _mkDeck(TEMPERS_P.slice(0, 4));
 	const _garrethLandProvs = provinces.filter((p) => p.owner === null && p.terrain !== "sea" && p.neutralDefenders.length > 0);
@@ -37120,7 +38226,8 @@ function generateNewGame(setupPlayers, sz, maxTurns, genOpts) {
 		hSkills[_primary] = 2;
 		hSkills[_secondary] = (hSkills[_secondary] ?? 0) + 1;
 		let wAlign = _dealAlign();
-		if (wAlign === "Druidic" && !hSkills["druid"]) hSkills["druid"] = 1;
+		const _wanderersSkill = theSkillAWandererOfTheAlignmentIsSureOf(wAlign);
+		if (_wanderersSkill !== void 0 && !hSkills[_wanderersSkill]) hSkills[_wanderersSkill] = 1;
 		const _isGarreth = lp.id === _garrethProvId;
 		if (_isGarreth) wAlign = "Neutral";
 		const h = {
@@ -37994,10 +39101,20 @@ async function backfillGameMeta() {
 		return 0;
 	}
 }
+// src/engine/rules-on-plain-values/a-forces-row-on-a-page-its-kind-and-its-colour-of-six-hex-digits.ts
+/** The kind of a force drawn up for battle, as a realm's report and the GM's log store it beside the line (the views
+*  name it THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE, checked against the line facts' kinds). */
+var THE_KIND_A_FORCES_ROW_CARRIES = "a force drawn up for battle";
+/** `value` when it is a colour of six hex digits (`#rrggbb`, small or capital letters), else none. */
+function aColourOfSixHexDigitsOrNone(value) {
+	return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+}
 // src/views/the-kinds-of-line-the-spy-and-scrying-feeds-pass-over.ts
-/** A battle's force drawn up: its words are the record the pages read back (⚑FORCE⚑ and the force as JSON; the GM
-*  page's log finds it by this kind, src/ui/gm/turn-log.ts), no line to read in a feed. */
-var THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE = "a force drawn up for battle";
+/** A battle's force drawn up: its words are the record the pages read back (⚑FORCE⚑ and the force as JSON; the pages
+*  find it by this kind alone, src/ui/gm/turn-log.ts and the player portal's Chronicle, whose realm's report carries it
+*  on this line alone), no line to read in a feed. Its value is the one the player portal shares
+*  (src/engine/rules-on-plain-values/a-forces-row-on-a-page-its-kind-and-its-colour-of-six-hex-digits.ts). */
+var THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE = THE_KIND_A_FORCES_ROW_CARRIES;
 /** The roll lines: the kinds whose words show a roll or a battle's working, each opening with 📊 (a static test keeps
 *  this list and those words in step), by area. Too many for a scrying feed. */
 var THE_KINDS_OF_A_ROLL_LINE = /* @__PURE__ */ new Set([
@@ -38050,9 +39167,9 @@ async function loadTurnLog(gameId, turn) {
 	const PHASE_COLORS = KC_PHASE_COLORS.slice();
 	function renderEntry(e) {
 		const raw0 = e.text || "";
-		if (e.kind !== void 0 ? e.kind === THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE : raw0.startsWith("⚑FORCE⚑")) try {
+		if (e.kind === THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE) try {
 			const f = JSON.parse(raw0.slice(7));
-			const col = f.neutral ? "#555" : f.color || "#555";
+			const col = f.neutral ? "#555" : aColourOfSixHexDigitsOrNone(f.color) || "#555";
 			const rows = (f.armies || []).length ? f.armies.map((a) => kcHtml`<div style="padding-left:14px;font-size:.78rem">• ${a.unitName ? a.unitName + " — " : ""}${a.quality} ${a.type}</div>`) : kcHtml`<div style="padding-left:14px;font-size:.78rem;opacity:.7">— no armies —</div>`;
 			return kcHtml`<div class="log-entry combat" style="border-left:4px solid var(--crimson);background:#fdf0f0;padding:4px 8px;margin-top:4px"><div style="font-weight:600">⚔ <span style="color:${col}">${f.name}</span> ${f.verb || ""}:</div>${rows}</div>`;
 		} catch (_) {}
@@ -38522,9 +39639,6 @@ var _TITLE_LABEL = {
 	beast: "Beastlord",
 	wild: "Wildwarden"
 };
-// src/engine/rules-on-plain-values/the-terror-an-evil-victory-leaves-its-share-a-stack-and-its-most-stacks.ts
-var TERROR_PCT_PER_STACK = .1;
-var TERROR_MAX_STACKS = 3;
 // src/engine/realms/the-corpse-carters-price-for-a-realm.ts
 /** The corpse-carters' price for a realm, as Harvest the Field charges it and the report shows it: its row's price, plus
 *  what the realm's discoveries add (a cut is less than 0: az06 Corpse-Carters, the discoveries' registry's since plan
@@ -38706,7 +39820,7 @@ function buildTurnReport(view, itsLines = null) {
 					out.research = {
 						level: eff("sage"),
 						rawLevel: raw("sage"),
-						chance: Number(eff("sage")) * per + (pl.alignment === "Neutral" ? Number(eff("sage")) * 5 : 0) + ((_minT["loreseeker"] ?? view.titles.lastTurnsMinorHoldersOfItsHeroes["loreseeker"])?.charId === c.id ? per : 0) + whatARealmsDiscoveriesAddToResearch(pl, THE_REPORTS_RESEARCH_NAMES_NO_FIELD)
+						chance: Number(eff("sage")) * per + whatARealmsAlignmentAddsToResearch(pl.alignment, { theSageLevel: Number(eff("sage")) }) + ((_minT["loreseeker"] ?? view.titles.lastTurnsMinorHoldersOfItsHeroes["loreseeker"])?.charId === c.id ? per : 0) + whatARealmsDiscoveriesAddToResearch(pl, THE_REPORTS_RESEARCH_NAMES_NO_FIELD)
 					};
 				}
 				out.assassinate = {
@@ -38926,7 +40040,7 @@ function buildTurnReport(view, itsLines = null) {
 			quality: merc.quality,
 			unitName: merc.unitName,
 			race: (merc.race ?? "") || null,
-			cost: Math.max(1, ((ARMY_COST_MASTER[String(merc.type)] ?? 0) || 2) - (player.alignment === "Neutral" ? 2 : 0) + whatARealmsDiscoveriesAddToAMercenaryBandsPrice(player, { theUnitsType: theTypeEveryBandHolds(merc.type) })),
+			cost: Math.max(1, ((ARMY_COST_MASTER[String(merc.type)] ?? 0) || 2) - theGoldARealmsAlignmentCutsFromAMercenaryBandsPrice(player.alignment) + whatARealmsDiscoveriesAddToAMercenaryBandsPrice(player, { theUnitsType: theTypeEveryBandHolds(merc.type) })),
 			location: (p2?.name ?? "") || "unknown",
 			locationId: merc.location,
 			isSea: merc.isSea
@@ -39002,10 +40116,10 @@ function buildTurnReport(view, itsLines = null) {
 		_rawTaxBase += t;
 		if (isConsecrated(player, pv.id)) {
 			const _cb = t;
-			t = Math.round(t * 1.5);
+			t = theTaxOfAProvinceOnConsecratedGround({ theTax: t });
 			_consecG += t - _cb;
 		}
-		if (pv._enslavedUntil != null && pv._enslavedUntil >= _nextTurn) {
+		if (theEnslavedProvinceStillPaysLess(pv, _nextTurn)) {
 			const _e0 = t;
 			t = Math.max(0, t - 1);
 			_enslaveReduction += _e0 - t;
@@ -52250,10 +53364,7 @@ function breakConsecrationOnCapture(turnContext, prov, prev, newOwner, byChar, _
 	const { G } = turnContext;
 	const pl = G.players[prev];
 	if (!pl) return;
-	const list = consecratedIds(pl);
-	const at = list.indexOf(prov.id);
-	if (at < 0) return;
-	list.splice(at, 1);
+	if (!liftConsecratedGround(pl, prov.id)) return;
 	emit(turnContext, {
 		type: "system",
 		fact: {
@@ -52371,7 +53482,8 @@ function isFriendlyProvFor(turnContext, prov, pi) {
 function applyEvilConquest(turnContext, cc, prov, pl) {
 	const { G } = turnContext;
 	if (!cc || !prov || !pl) return;
-	if (G.players[cc.player]?.alignment !== "Evil") return;
+	const theDoctrine = theConquestDoctrineOfARealmsAlignment(G.players[cc.player]?.alignment);
+	if (theDoctrine === null) return;
 	if (prov._evilConqTurn === G.turn) return;
 	prov._evilConqTurn = G.turn;
 	const mode = (cc.encounterPlan?.evilMode ?? "") || "terror";
@@ -52381,11 +53493,11 @@ function applyEvilConquest(turnContext, cc, prov, pl) {
 		prov.garrisonArmies ??= [];
 		prov.garrisonArmies.push({
 			type: enType,
-			quality: "Green",
+			quality: theDoctrine.theGradeOfTheEnslavedGarrison,
 			race: (prov.race ?? "") || "Human",
 			unitName: armyUnitName(enType)
 		});
-		prov._enslavedUntil = G.turn + 3;
+		enslaveAProvinceUntil(prov, G.turn + theDoctrine.theTurnsTheEnslavedProvincePaysLess);
 		emit(turnContext, {
 			type: "combat",
 			fact: {
@@ -52419,7 +53531,7 @@ function applyEvilConquest(turnContext, cc, prov, pl) {
 			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
 			province: prov.id
 		});
-		const loot = Math.floor((Number(prov.tax) || 0) * (.5 + whatARealmsDiscoveriesAddToAConquestsPlunder(G.players[cc.player], { theGround: prov.terrain })));
+		const loot = Math.floor((Number(prov.tax) || 0) * (theDoctrine.theShareOfTheTaxPlundered + whatARealmsDiscoveriesAddToAConquestsPlunder(G.players[cc.player], { theGround: prov.terrain })));
 		if (loot > 0) {
 			pl.gold = (pl.gold || 0) + loot;
 			emit(turnContext, {
@@ -57619,11 +58731,12 @@ function armStr(turnContext, army, heroChar, playerAlignment, terrain, ctx, opts
 			multiplier: army._terrorMult
 		} });
 	}
-	if (ctx && ctx.reignOfFear && ctx.isAttacker && playerAlignment === "Evil" && MONSTER_ARMIES.has(army.type)) {
-		str = Math.round(str * REIGN_OF_FEAR_MULT);
+	const _reignOfFear = ctx && ctx.reignOfFear && ctx.isAttacker ? theFactorARealmsAlignmentStrengthensAUnitByItsReignOfFear(playerAlignment, { theUnitType: army.type }) : null;
+	if (_reignOfFear !== null) {
+		str = Math.round(str * _reignOfFear);
 		if (_tr) _tr.push({ reason: {
 			kind: "the reign of fear",
-			multiplier: REIGN_OF_FEAR_MULT
+			multiplier: _reignOfFear
 		} });
 	}
 	if (!opts?.deferDamage) {
@@ -57661,8 +58774,12 @@ function armStr(turnContext, army, heroChar, playerAlignment, terrain, ctx, opts
 			multiplier: abilityM
 		} });
 	}
-	if ((playerAlignment === "Druidic" || heroChar?.alignment === "Druidic") && (terrain === "forest" || terrain === "jungle") && CREATURE_ARMIES.has(army.type)) {
-		str = Math.round(str * 1.5);
+	const _homeOfTheWild = theFactorARealmsAlignmentStrengthensAUnitInTheWildBy(playerAlignment, heroChar?.alignment, {
+		theUnitType: army.type,
+		theTerrain: terrain
+	});
+	if (_homeOfTheWild !== null) {
+		str = Math.round(str * _homeOfTheWild);
 		if (_tr) _tr.push({ reason: { kind: "the home of the wild" } });
 	}
 	if (heroChar) {}
@@ -57728,7 +58845,7 @@ function finishSide(rows, width, flank, forceMods, opts) {
 	if (opts.out) opts.out.grid = g;
 	return g.total;
 }
-var REIGN_OF_FEAR_MULT = 1.5;
+var REIGN_OF_FEAR_MULT = ALIGNMENT_ABILITIES["reign-of-fear"].theNumbers.theStrengthOfAMonster.value;
 // src/engine/personal-combat/speed-encounter-plans-and-combatants.ts
 function pcSpeedOf(cbt) {
 	if (!cbt) return 2;
@@ -57907,7 +59024,7 @@ function pcCharCombatant(turnContext, ch) {
 		status: pcNewStatus(),
 		castSpells: [],
 		castSchool: {},
-		isUndead: ch.alignment === "Undead",
+		isUndead: isAHeroOfTheAlignmentUndeadInPersonalCombat(ch.alignment),
 		perkParry: perkTier(ch, "melee") >= 1,
 		perkCounter: perkTier(ch, "melee") >= 3,
 		perkImpale: perkTier(ch, "archery") >= 1,
@@ -61017,9 +62134,7 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 		if (cbt.hp <= 0 && cbt.kind === "character" && temperOf(cbt.temper).mercy && !state.fledBy && !cbt._begged) {
 			const theFoesHero = asItsGuardReadsIt(foe.ref);
 			const foeAlign = (foe.alignment ?? "") || (theFoesHero?.alignment ?? "");
-			let mercy = 50;
-			if (foeAlign === "Good" || foeAlign === "Divine" || foeAlign === "Druidic") mercy = 75;
-			else if (foeAlign === "Evil" || foeAlign === "Undead") mercy = 20;
+			const mercy = theChanceAFoeOfThisAlignmentSparesAPlea(foeAlign) ?? 50;
 			const _r = kcRng() * 100, _granted = _r < mercy, _shown = Math.floor(_r) + 1;
 			const fm = cbt._fatalMark;
 			const _blow = !!fm?.blow;
@@ -61161,7 +62276,7 @@ function resolvePersonalCombat(turnContext, A, B, opts) {
 					aBlowFalls: _blow,
 					strikeKind: _k,
 					strikeClass: _cls
-				} : foeAlign === "Evil" || foeAlign === "Undead" ? {
+				} : aFoeOfThisAlignmentLaughsAtAPlea(foeAlign) ? {
 					kind: "the foe laughs at the plea",
 					foeWho,
 					aBlowFalls: _blow,
@@ -61828,19 +62943,124 @@ function heroOfTheRealm(G, pi, charId) {
 	const ch = theCharactersOf$1(G).find((c) => c && String(c.id) === key);
 	return ch?.player === pi ? ch : null;
 }
+/** What the GM's line lists of the heroes a realm sent orders for outside its service, from the keys as it sent them (in
+*  the order met): each key that is a hero of the game (any realm's, or one with no realm) by the hero's name, then
+*  the rest counted ("Brannoc, and 2 more that name no hero in the game"). */
+function theHeroesNamedAndTheRestCounted(G, keys) {
+	const names = [];
+	let theRest = 0;
+	keys.forEach((key) => {
+		const ch = /^\d+$/.test(key) ? theCharactersOf$1(G).find((c) => c && String(c.id) === key) : void 0;
+		if (ch) names.push(ch.name);
+		else theRest++;
+	});
+	if (theRest === 0) return names.join(", ");
+	const nameOrNames = theRest === 1 ? "names" : "name";
+	const theRestCounted = names.length ? `and ${String(theRest)} more that ${nameOrNames} no hero in the game` : `${String(theRest)} that ${nameOrNames} no hero in the game`;
+	return [...names, theRestCounted].join(", ");
+}
+/** The actions of an encounter a plan may name by their code alone, beside those a duel keeps (`COMBAT_ONLY_TACTICS`:
+*  Melee, Fire Arrow, Cast Spell and Flee, with an older form's names for them): Talk, Steal and Scout, as personal
+*  combat reads them (pcAct), each by its code and its name. */
+var THE_ACTIONS_ONLY_AN_ENCOUNTER_TAKES = [
+	"TA",
+	"TALK",
+	"ST",
+	"STEAL",
+	"SC",
+	"SCOUT"
+];
+/** How many tactics a plan holds (the order form's six), beside one school for the pre-battle magic (`CS:<school>`). */
+var THE_TACTICS_A_PLAN_HOLDS = 6;
+/** The conquest doctrines an Evil hero may follow (the order form's two). */
+var THE_CONQUEST_DOCTRINES = ["terror", "enslave"];
+/** Whether a tactic is one the game offers: an action's code, `CA:<spell>` for a spell the game has, or `CS:<school>`
+*  for a school of magic. */
+function aTacticTheGameOffers(t) {
+	if (t.startsWith("CA:")) return Object.hasOwn(SPELL_DEFS_P, t.slice(3));
+	if (t.startsWith("CS:")) return KC_MAGIC_SCHOOLS.includes(t.slice(3));
+	return COMBAT_ONLY_TACTICS.has(t) || THE_ACTIONS_ONLY_AN_ENCOUNTER_TAKES.includes(t);
+}
+/** A plan's tactics as its realm sent them, kept to those the game offers, at most six and one school, the first sent
+*  in the order sent; and whether any was set aside. */
+function theTacticsThePlanHolds(sent) {
+	const tactics = [];
+	let actions = 0;
+	let aSchool = false;
+	let anySetAside = false;
+	for (const t of sent) {
+		const isASchool = typeof t === "string" && t.startsWith("CS:");
+		if (typeof t !== "string" || !aTacticTheGameOffers(t) || (isASchool ? aSchool : actions >= THE_TACTICS_A_PLAN_HOLDS)) {
+			anySetAside = true;
+			continue;
+		}
+		if (isASchool) aSchool = true;
+		else actions++;
+		tactics.push(t);
+	}
+	return {
+		tactics,
+		anySetAside
+	};
+}
 function encounterPlanAsAPlanHasIt(plan) {
 	if (!plan || typeof plan !== "object" || Array.isArray(plan)) return null;
 	const sent = itOrAnEmptyObject(plan);
 	const kept = {};
+	let anySetAside = false;
 	const tactics = sent["tactics"];
-	if (Array.isArray(tactics)) kept.tactics = tactics.filter((t) => typeof t === "string");
+	if (Array.isArray(tactics)) {
+		const held = theTacticsThePlanHolds(tactics);
+		kept.tactics = held.tactics;
+		anySetAside = held.anySetAside;
+	}
 	const notes = sent["notes"];
-	if (typeof notes === "string") kept.notes = notes;
+	if (typeof notes === "string") kept.notes = notes.slice(0, 200);
 	const duelStance = sent["duelStance"];
-	if (typeof duelStance === "string") kept.duelStance = duelStance;
+	if (typeof duelStance === "string" && DUEL_STANCES_P.includes(duelStance)) kept.duelStance = duelStance;
+	else if (duelStance !== void 0 && duelStance !== null) anySetAside = true;
 	const evilMode = sent["evilMode"];
-	if (typeof evilMode === "string") kept.evilMode = evilMode;
-	return kept;
+	if (typeof evilMode === "string" && THE_CONQUEST_DOCTRINES.includes(evilMode)) kept.evilMode = evilMode;
+	else if (evilMode !== void 0 && evilMode !== null) anySetAside = true;
+	return {
+		plan: kept,
+		anySetAside
+	};
+}
+/** A realm's order of its heroes in its column as it sent it, kept to its own living heroes (by id, as text), each
+*  once, in the order sent. */
+function theRealmsOwnLivingHeroesInTheOrderSent(G, pi, sent) {
+	const own = new Set(theCharactersOf$1(G).filter((c) => c?.alive && c.player === pi).map((c) => String(c?.id)));
+	const kept = /* @__PURE__ */ new Set();
+	for (const id of sent) if ((typeof id === "string" || typeof id === "number") && own.has(String(id))) kept.add(String(id));
+	return [...kept];
+}
+/** The fields of a phase's order the game reads as text: its name, target, extra choice and the form's line. */
+var THE_FIELDS_OF_AN_ORDER_READ_AS_TEXT = [
+	"action",
+	"target",
+	"extra",
+	"desc"
+];
+/** Whether a phase's order is in a form the game uses: an empty phase (`null` or none), or an order whose name, target,
+*  extra choice and line are each text or left out. */
+function anOrderInAFormTheGameUses(sent) {
+	if (sent === null || sent === void 0) return true;
+	if (typeof sent !== "object" || Array.isArray(sent)) return false;
+	const fields = itOrAnEmptyObject(sent);
+	return THE_FIELDS_OF_AN_ORDER_READ_AS_TEXT.every((k) => fields[k] === void 0 || typeof fields[k] === "string");
+}
+/** A hero's phases as his realm sent them, each order not in a form the game uses set aside (its phase left empty, so
+*  he Defends in it), and whether one was. The list as it was sent when every order is in a form the game uses. */
+function thePhasesWithEachOrderInAFormTheGameUses(phases) {
+	if (phases.every(anOrderInAFormTheGameUses)) return {
+		phases,
+		anySetAside: false
+	};
+	return {
+		phases: phases.map((o) => anOrderInAFormTheGameUses(o) ? o : null),
+		anySetAside: true
+	};
 }
 function heirsSkillsWithinHisPoints(ch, sent) {
 	if (!sent || typeof sent !== "object" || Array.isArray(sent)) return null;
@@ -61894,7 +63114,7 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 		const heroOrderSent = raw["heroOrder"];
 		if (Array.isArray(heroOrderSent)) {
 			const itsRealm = G.players[gp.player_index];
-			if (itsRealm) itsRealm.heroOrder = heroOrderSent.slice(0, 200).map(String);
+			if (itsRealm) itsRealm.heroOrder = theRealmsOwnLivingHeroesInTheOrderSent(G, gp.player_index, heroOrderSent);
 		}
 		if (raw["orders"] !== void 0 && raw["encounterPlans"] !== void 0) {
 			ordersObj = itOrAnEmptyObject(raw["orders"]);
@@ -61931,10 +63151,15 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 		const setAside = (charId) => {
 			if (!notItsOwn.includes(charId)) notItsOwn.push(charId);
 		};
+		const notInAFormTheGameUses = [];
 		const turnOrdersAsSent = G.turnOrders;
 		Object.entries(ordersObj).forEach(([charId, phaseOrders]) => {
 			if (charId === "heroOrder") return;
 			if (!Array.isArray(phaseOrders)) return;
+			const { phases, anySetAside } = thePhasesWithEachOrderInAFormTheGameUses(phaseOrders);
+			const noteTheOrdersSetAsideFor = (heroId) => {
+				if (anySetAside && !notInAFormTheGameUses.includes(heroId)) notInAFormTheGameUses.push(heroId);
+			};
 			const resMatch = /^resurrect_(\d+)_via_(\d+)_ph(\d+)$/.exec(charId);
 			if (resMatch) {
 				G._pendingResurrectOrders ??= [];
@@ -61943,8 +63168,9 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 					casterId: parseInt(String(resMatch[2])),
 					castPhase: parseInt(String(resMatch[3])),
 					player: gp.player_index,
-					orders: phaseOrders
+					orders: phases
 				});
+				noteTheOrdersSetAsideFor(String(parseInt(String(resMatch[1]))));
 				return;
 			}
 			const hiredMatch = /^hired_(\d+)_via_(.+)_ph(\d+)$/.exec(charId);
@@ -61955,8 +63181,9 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 					viaId: String(hiredMatch[2]),
 					plannedPhase: parseInt(String(hiredMatch[3])),
 					player: gp.player_index,
-					orders: phaseOrders
+					orders: phases
 				});
+				noteTheOrdersSetAsideFor(String(parseInt(String(hiredMatch[1]))));
 				return;
 			}
 			const charmMatch = /^charm_(\d+)_via_(\d+)_ph(\d+)$/.exec(charId);
@@ -61967,15 +63194,17 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 					casterId: parseInt(String(charmMatch[2])),
 					castPhase: parseInt(String(charmMatch[3])),
 					player: gp.player_index,
-					orders: phaseOrders
+					orders: phases
 				});
+				noteTheOrdersSetAsideFor(String(parseInt(String(charmMatch[1]))));
 				return;
 			}
 			if (!heroOfTheRealm(G, gp.player_index, charId)) {
 				setAside(charId);
 				return;
 			}
-			turnOrdersAsSent[charId] = phaseOrders;
+			turnOrdersAsSent[charId] = phases;
+			noteTheOrdersSetAsideFor(charId);
 		});
 		theRealmsOf$1(G).forEach((p, pi) => {
 			if (!p?.conceded) return;
@@ -61994,24 +63223,34 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 				}));
 			});
 		});
+		const planPartsSetAside = [];
+		const notePlanPartsSetAsideFor = (heroId) => {
+			if (!planPartsSetAside.includes(heroId)) planPartsSetAside.push(heroId);
+		};
 		Object.entries(epObj).forEach(([charId, plan]) => {
 			const syn = /^(?:hired|resurrect|charm)_(\d+)_via_.+_ph\d+$/.exec(charId);
 			if (syn) {
 				const kept = encounterPlanAsAPlanHasIt(plan);
 				if (!kept) return;
+				const heroId = parseInt(String(syn[1]));
 				G._pendingSynthPlans ??= [];
 				G._pendingSynthPlans.push({
-					heroId: parseInt(String(syn[1])),
+					heroId,
 					player: gp.player_index,
-					plan: kept
+					plan: kept.plan
 				});
+				if (kept.anySetAside) notePlanPartsSetAsideFor(String(heroId));
 				return;
 			}
 			const kept = encounterPlanAsAPlanHasIt(plan);
 			if (!kept) return;
 			const ch = heroOfTheRealm(G, gp.player_index, charId);
-			if (ch) ch.encounterPlan = kept;
-			else setAside(charId);
+			if (!ch) {
+				setAside(charId);
+				return;
+			}
+			ch.encounterPlan = kept.plan;
+			if (kept.anySetAside) notePlanPartsSetAsideFor(charId);
 		});
 		Object.entries(kingSkillsObj).forEach(([charId, allocSent]) => {
 			if (!allocSent) return;
@@ -62035,7 +63274,9 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 				delete ch._pendingSkillAllocation;
 			}
 		});
-		if (notItsOwn.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: what it sent for heroes not in its service (${notItsOwn.join(", ")}).`);
+		if (notItsOwn.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: what it sent for heroes not in its service (${theHeroesNamedAndTheRestCounted(G, notItsOwn)}).`);
+		if (notInAFormTheGameUses.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: orders not in a form the game uses, for heroes ${notInAFormTheGameUses.join(", ")}; each Defends in that phase instead.`);
+		if (planPartsSetAside.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: parts of encounter plans that are not among what the game offers, for heroes ${planPartsSetAside.join(", ")}; each keeps the rest of his plan.`);
 	});
 }
 // src/engine/battle/best-commander.ts
@@ -62977,9 +64218,6 @@ function emitBattle(turnContext, battle, prov, ph, participants, opts) {
 	});
 }
 // src/engine/battle/evil-terror.ts
-function reignOfFearHere(prov, playerIdx) {
-	return !!(prov && playerIdx != null && (prov._terrorStacks || 0) > 0 && prov._terrorisedBy === playerIdx);
-}
 function spreadTerror(turnContext, battleProv, byPlayer, narrative) {
 	const { G } = turnContext;
 	const targets = [battleProv, ...getNeighborsP(battleProv, G.world.cols, G.world.rows, G.world.provinces)];
@@ -62987,10 +64225,7 @@ function spreadTerror(turnContext, battleProv, byPlayer, narrative) {
 	targets.forEach((tp) => {
 		if (seen.has(tp.id)) return;
 		seen.add(tp.id);
-		tp._terrorStacks = Math.min(TERROR_MAX_STACKS, (tp._terrorStacks || 0) + 1);
-		tp._terrorTurn = G.turn;
-		tp._terrorisedBy = byPlayer;
-		tp._terrorPct = TERROR_PCT_PER_STACK + whatARealmsDiscoveriesAddToTheTerrorAVictoryLeaves(G.players[byPlayer]);
+		layATerrorStackOnAProvince(tp, G.turn, byPlayer, TERROR_PCT_PER_STACK + whatARealmsDiscoveriesAddToTheTerrorAVictoryLeaves(G.players[byPlayer]));
 	});
 	if (narrative) {
 		const adjNames = getNeighborsP(battleProv, G.world.cols, G.world.rows, G.world.provinces).map((n) => n.name).filter(Boolean);
@@ -63003,11 +64238,9 @@ function spreadTerror(turnContext, battleProv, byPlayer, narrative) {
 	}
 }
 function consumeTerror(prov, defenders, narrative) {
-	if (!prov._terrorStacks || prov._terrorTurn === void 0) return false;
+	if (!terrorLingersOnAProvince(prov)) return false;
 	if (prov._terrorisedBy !== void 0 && prov._terrorisedBy !== null && prov.owner === prov._terrorisedBy) {
-		delete prov._terrorStacks;
-		delete prov._terrorTurn;
-		delete prov._terrorisedBy;
+		liftTheTerrorFromAProvinceItsRealmHolds(prov);
 		return false;
 	}
 	const stacks = Math.min(TERROR_MAX_STACKS, prov._terrorStacks);
@@ -63022,10 +64255,7 @@ function consumeTerror(prov, defenders, narrative) {
 		terrorPct: dispFloor(frac * 100),
 		terrorStacks: stacks
 	});
-	delete prov._terrorStacks;
-	delete prov._terrorTurn;
-	delete prov._terrorisedBy;
-	delete prov._terrorPct;
+	spendTheTerrorOnAProvince(prov);
 	return true;
 }
 // src/engine/magic/pre-battle-spell-choice.ts
@@ -63087,10 +64317,11 @@ function pickBattleSpell(turnContext, tactics, heroChar, enemyCmdr, enemyArmies)
 function bloodHarvest(turnContext, winner, destroyed, narrative) {
 	const { G } = turnContext;
 	if (winner?.player == null || !(destroyed > 0)) return;
-	if (G.players[winner.player]?.alignment !== "Pagan") return;
+	const theGoldForEachFoe = theGoldARealmsAlignmentClaimsForEachFoeDestroyed(G.players[winner.player]?.alignment);
+	if (theGoldForEachFoe === null) return;
 	const _pl = G.players[winner.player];
 	if (!_pl) return;
-	const _take = destroyed * (BLOOD_HARVEST_PER_UNIT + whatARealmsDiscoveriesAddToABloodHarvest(_pl));
+	const _take = destroyed * (theGoldForEachFoe + whatARealmsDiscoveriesAddToABloodHarvest(_pl));
 	_pl.gold = (_pl.gold || 0) + _take;
 	narrate(narrative, {
 		kind: "the blood harvest claims offerings from the fallen enemy units",
@@ -63851,7 +65082,8 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 		});
 	} else {
 		const pKing = deadChar.player != null ? G.players[deadChar.player] : null;
-		if (pKing && deadChar.player != null && pKing.alignment === "Divine" && (asItsGuardReadsIt(pKing.provinces) ?? []).length > 0 && ownedConsecratedProvs(G, deadChar.player).length > 0) {
+		const theRealmRaisesItsFallen = theReturnARealmsAlignmentGivesItsFallen(pKing?.alignment) !== null;
+		if (pKing && deadChar.player != null && theRealmRaisesItsFallen && (asItsGuardReadsIt(pKing.provinces) ?? []).length > 0 && ownedConsecratedProvs(G, deadChar.player).length > 0) {
 			deadChar._divineReturn = true;
 			emit(turnContext, {
 				type: "system",
@@ -63868,7 +65100,7 @@ function handleHeroDeath(turnContext, deadChar, killerChar, opts) {
 				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
 				province: asItsGuardReadsIt(deadChar.location) ?? void 0
 			});
-		} else if (pKing?.alignment === "Divine") emit(turnContext, {
+		} else if (theRealmRaisesItsFallen) emit(turnContext, {
 			type: "system",
 			fact: {
 				kind: "a fallen Divine monarch has no holy ground to return to",
@@ -64140,7 +65372,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 	});
 	const _fearAtk = reignOfFearHere(prov, c.player);
 	consumeTerror(prov, defenders, narrative);
-	if (_fearAtk && (c.player != null ? G.players[c.player]?.alignment : null) === "Evil" && armies.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, {
+	if (_fearAtk && armies.some((a) => a && theFactorARealmsAlignmentStrengthensAUnitByItsReignOfFear(c.player != null ? G.players[c.player]?.alignment : null, { theUnitType: a.type }) !== null)) narrate(narrative, {
 		kind: "the province still cowers under a reign of fear",
 		provName: prov.name,
 		terrorHeroName: c.name,
@@ -64262,12 +65494,15 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			});
 		}
 	}
-	if (prov.owner != null && prov.owner !== c.player && G.players[prov.owner]?.alignment === "Good") {
-		defBonus *= 1.1;
-		narrate(narrative, {
-			kind: "the defenders of a province defend ground held justly",
-			provName: prov.name
-		});
+	if (prov.owner != null && prov.owner !== c.player) {
+		const _righteous = theFactorARealmsAlignmentStrengthensItsDefenceOfItsOwnGroundBy(G.players[prov.owner]?.alignment);
+		if (_righteous !== null) {
+			defBonus *= _righteous;
+			narrate(narrative, {
+				kind: "the defenders of a province defend ground held justly",
+				provName: prov.name
+			});
+		}
 	}
 	{
 		const _fort = theDefendersFortificationsAfterTheCommandersItems({ theDefendersFightAtTheirHome: false }, { theAttackersItems: () => activeItems(c) }, defBonus);
@@ -65043,17 +66278,21 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		if (_rc) delete _rc._phantasmalBonus;
 		if (theAttackerAsTheGuardsReadHim) delete c._phantasmalBonus;
 	}
-	const align = (theAttackersRealm?.alignment ?? "") || "Neutral";
-	const FANATIC_CHANCE = { ...FANATIC_CHANCE_BY_ALIGN };
-	const fanatic = kcRng() < (FANATIC_CHANCE[align] ?? .1) + whatARealmsDiscoveriesAddToASidesFanaticism(theAttackersRealm, {
+	const align = theAlignmentASideFightsUnder(theAttackersRealm?.alignment);
+	const fanatic = kcRng() < theChanceOfZealARealmsAlignmentGivesASide(theAttackersRealm?.alignment) + whatARealmsDiscoveriesAddToASidesFanaticism(theAttackersRealm, {
 		theSide: "atk",
 		theGround: prov.terrain,
 		theForce: armies
 	});
-	const skeletalFanatic = align === "Undead" && c.isKing && armies.some((a) => a._isSkeletal);
-	const skelHeroFanatic = align === "Undead" && !c.isKing && armies.some((a) => a._isSkeletal);
-	const evilMonsterFanatic = align === "Evil" && armies.some((a) => MONSTER_ARMIES.has(a.type));
-	const fanMult = Math.max(1, fanatic ? 1.3 : 1, skeletalFanatic ? UNDEAD_SKEL_KING_FAN : 1, evilMonsterFanatic ? 1.25 : 1, skelHeroFanatic ? UNDEAD_SKEL_HERO_FAN : 1);
+	const fervour = theFervourOfASide(theAttackersRealm?.alignment, {
+		isItSeizedByZeal: fanatic,
+		isItLedByTheKing: c.isKing,
+		theForce: armies
+	});
+	const skeletalFanatic = fervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && c.isKing;
+	const skelHeroFanatic = fervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && !c.isKing;
+	const evilMonsterFanatic = fervour.theAbilitiesThatStirredIt.includes("savage-fury");
+	const fanMult = fervour.theFactor;
 	if (evilMonsterFanatic && !fanatic) narrate(narrative, {
 		kind: "the attacker's monsters are driven to savage fury",
 		cName: atkSide
@@ -65078,8 +66317,8 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		discoveriesArmyBonus: discArmyBonus
 	});
 	const finalAtkMod = discArmyBonus;
-	const _consecNPC = prov.owner != null && prov.owner !== c.player && isConsecrated(G.players[prov.owner], prov.id) && (align === "Undead" || align === "Evil");
-	if (_consecNPC) narrate(narrative, {
+	const _consecNPCFactor = prov.owner != null && prov.owner !== c.player && isConsecrated(G.players[prov.owner], prov.id) ? theFactorConsecratedGroundWeakensAnAttackersHostBy({ theAttackersAlignment: align }) : 1;
+	if (_consecNPCFactor < 1) narrate(narrative, {
 		kind: "the consecrated ground of the province weakens the attacker's host",
 		provName: prov.name,
 		atkName: atkSide,
@@ -65108,7 +66347,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		},
 		{
 			reason: "consecrated-ground",
-			m: _consecNPC ? .85 : 1
+			m: _consecNPCFactor
 		}
 	];
 	const _nDefFM = [
@@ -65340,7 +66579,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 			someUnitsFateIsToldAbove: winEvents > 0
 		});
 		c.armies = c.armies.filter((a) => !a._died && !a._disbanded);
-		if (isDecisive && c.player !== null && theAttackersRealm?.alignment === "Evil" && ((c.encounterPlan?.evilMode ?? "") || "terror") === "terror") spreadTerror(turnContext, prov, c.player, narrative);
+		if (isDecisive && c.player !== null && theConquestDoctrineOfARealmsAlignment(theAttackersRealm?.alignment) !== null && ((c.encounterPlan?.evilMode ?? "") || "terror") === "terror") spreadTerror(turnContext, prov, c.player, narrative);
 		recordBattleGraves(turnContext, prov, armies.filter((a) => a._died), c.player);
 		const _defOwner = defHero ? {
 			kind: "the defenders led by their guard",
@@ -65540,7 +66779,7 @@ function combatVsNPC(turnContext, c, prov, neutralGuardHero) {
 		const _seaEscape = _npcCorsairs && adjProvs.some((p2) => p2?.terrain === "sea");
 		const _sfNPC = _npcSF && armies.some((a) => !a._died);
 		const _liveNPC = armies.filter((a) => !a._died && !a._disbanded);
-		const _dmNPC = _liveNPC.length > 0 && _liveNPC.every((a) => a._isSkeletal) && theAttackersRealm?.alignment === "Undead";
+		const _dmNPC = doesARealmsAlignmentHoldABeatenHostOnTheField(theAttackersRealm?.alignment, { theCompanies: _liveNPC });
 		if (infStay ? "" : navalSplitRetreat(turnContext, c, prov, _retLive, narrative, atkSide)) {} else if (friendlyAdj.length === 0 || infStay) {
 			if (_npcSeaTrap) narrate(narrative, _npcSeaTrap);
 			if (_dmNPC && !infStay) {
@@ -65871,7 +67110,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 		theDefendersRealm,
 		def.name,
 		defArmies
-	]]) if (_f && _hr?.alignment === "Evil" && _ar.some((a) => a && MONSTER_ARMIES.has(a.type))) narrate(narrative, {
+	]]) if (_f && _ar.some((a) => a && theFactorARealmsAlignmentStrengthensAUnitByItsReignOfFear(_hr?.alignment, { theUnitType: a.type }) !== null)) narrate(narrative, {
 		kind: "the province still cowers under a reign of fear",
 		provName: prov.name,
 		terrorHeroName: _hn,
@@ -65932,12 +67171,15 @@ function combatVsChar(turnContext, atk, def, prov) {
 			});
 		}
 	}
-	if (prov.owner === def.player && theDefendersRealm?.alignment === "Good") {
-		defBonus *= 1.1;
-		narrate(narrative, {
-			kind: "the defender's host defends ground held justly",
-			defName: defSide
-		});
+	if (prov.owner === def.player) {
+		const _righteous = theFactorARealmsAlignmentStrengthensItsDefenceOfItsOwnGroundBy(theDefendersRealm?.alignment);
+		if (_righteous !== null) {
+			defBonus *= _righteous;
+			narrate(narrative, {
+				kind: "the defender's host defends ground held justly",
+				defName: defSide
+			});
+		}
 	}
 	{
 		const _dOwnP = prov.owner != null && prov.owner === def.player ? theShareARealmsDiscoveriesFortifyItsOwnGroundBy(theDefendersRealm, { isItTheRealmsHome: () => homeFounderOf(G, prov.id) === def.player }) : 0;
@@ -65966,32 +67208,39 @@ function combatVsChar(turnContext, atk, def, prov) {
 		});
 	}
 	if (isHome) narrate(narrative, { kind: "the defenders fight on home ground" });
-	const atkFanChance = { ...FANATIC_CHANCE_BY_ALIGN };
-	const defFanChance = { ...FANATIC_CHANCE_BY_ALIGN };
-	const atkAlign = (theAttackersRealm?.alignment ?? "") || "Neutral";
-	const defAlign = (theDefendersRealm?.alignment ?? "") || "Neutral";
-	const _atkFanPct = Math.max(0, (atkFanChance[atkAlign] ?? .1) + whatARealmsDiscoveriesAddToASidesFanaticism(theAttackersRealm, {
+	const atkAlign = theAlignmentASideFightsUnder(theAttackersRealm?.alignment);
+	const _atkFanPct = Math.max(0, theChanceOfZealARealmsAlignmentGivesASide(theAttackersRealm?.alignment) + whatARealmsDiscoveriesAddToASidesFanaticism(theAttackersRealm, {
 		theSide: "atk",
 		theGround: prov.terrain,
 		theForce: atkArmies
 	}));
-	let _defFanPct = Math.max(0, (defFanChance[defAlign] ?? .1) + whatARealmsDiscoveriesAddToASidesFanaticism(theDefendersRealm, {
+	let _defFanPct = Math.max(0, theChanceOfZealARealmsAlignmentGivesASide(theDefendersRealm?.alignment) + whatARealmsDiscoveriesAddToASidesFanaticism(theDefendersRealm, {
 		theSide: "def",
 		theGround: prov.terrain,
 		theForce: defArmies
 	}));
 	const _consecratedHere = def.player != null && isConsecrated(theDefendersRealm, prov.id) && prov.owner === def.player;
-	if (_consecratedHere) _defFanPct = Math.min(1, _defFanPct * 2);
+	if (_consecratedHere) _defFanPct = theChanceOfZealOfADefenderOnConsecratedGround({ theChance: _defFanPct });
 	const atkFanatic = kcRng() < _atkFanPct;
 	const defFanatic = kcRng() < _defFanPct;
-	const atkSkelFanatic = atkAlign === "Undead" && atk.isKing && atkArmies.some((a) => a._isSkeletal);
-	const defSkelFanatic = defAlign === "Undead" && def.isKing && defArmies.some((a) => a._isSkeletal);
-	const atkSkelHero = atkAlign === "Undead" && !atk.isKing && atkArmies.some((a) => a._isSkeletal);
-	const defSkelHero = defAlign === "Undead" && !def.isKing && defArmies.some((a) => a._isSkeletal);
-	const atkEvilMonster = atkAlign === "Evil" && atkArmies.some((a) => MONSTER_ARMIES.has(a.type));
-	const defEvilMonster = defAlign === "Evil" && defArmies.some((a) => MONSTER_ARMIES.has(a.type));
-	const atkFanMult = Math.max(1, atkFanatic ? 1.3 : 1, atkSkelFanatic ? UNDEAD_SKEL_KING_FAN : 1, atkEvilMonster ? 1.25 : 1, atkSkelHero ? UNDEAD_SKEL_HERO_FAN : 1);
-	const defFanMult = Math.max(1, defFanatic ? 1.3 : 1, defSkelFanatic ? UNDEAD_SKEL_KING_FAN : 1, defEvilMonster ? 1.25 : 1, defSkelHero ? UNDEAD_SKEL_HERO_FAN : 1);
+	const atkFervour = theFervourOfASide(theAttackersRealm?.alignment, {
+		isItSeizedByZeal: atkFanatic,
+		isItLedByTheKing: atk.isKing,
+		theForce: atkArmies
+	});
+	const defFervour = theFervourOfASide(theDefendersRealm?.alignment, {
+		isItSeizedByZeal: defFanatic,
+		isItLedByTheKing: def.isKing,
+		theForce: defArmies
+	});
+	const atkSkelFanatic = atkFervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && atk.isKing;
+	const defSkelFanatic = defFervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && def.isKing;
+	const atkSkelHero = atkFervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && !atk.isKing;
+	const defSkelHero = defFervour.theAbilitiesThatStirredIt.includes("skeletal-fervour") && !def.isKing;
+	const atkEvilMonster = atkFervour.theAbilitiesThatStirredIt.includes("savage-fury");
+	const defEvilMonster = defFervour.theAbilitiesThatStirredIt.includes("savage-fury");
+	const atkFanMult = atkFervour.theFactor;
+	const defFanMult = defFervour.theFactor;
 	if (atkSkelFanatic) narrate(narrative, {
 		kind: "a side's skeletal legions fight with fanaticism under their undead king",
 		sideName: atkSide,
@@ -66541,7 +67790,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 			atkName: atkSide
 		});
 	}
-	const _consecPenalty = _consecratedHere && (atkAlign === "Undead" || atkAlign === "Evil") ? .85 : 1;
+	const _consecPenalty = _consecratedHere ? theFactorConsecratedGroundWeakensAnAttackersHostBy({ theAttackersAlignment: atkAlign }) : 1;
 	if (_consecPenalty < 1) narrate(narrative, {
 		kind: "the consecrated ground of the province weakens the attacker's host",
 		provName: prov.name,
@@ -66711,7 +67960,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 		margRatio: margRatioPvP
 	});
 	const _pvpWinner = won ? atk : def;
-	if (isDecisivePvP && _pvpWinner.player !== null && G.players[_pvpWinner.player]?.alignment === "Evil" && ((_pvpWinner.encounterPlan?.evilMode ?? "") || "terror") === "terror") spreadTerror(turnContext, prov, _pvpWinner.player, narrative);
+	if (isDecisivePvP && _pvpWinner.player !== null && theConquestDoctrineOfARealmsAlignment(G.players[_pvpWinner.player]?.alignment) !== null && ((_pvpWinner.encounterPlan?.evilMode ?? "") || "terror") === "terror") spreadTerror(turnContext, prov, _pvpWinner.player, narrative);
 	const tiers = QUALITY_TIERS.slice();
 	const xpMultPvP = [
 		1.5,
@@ -66952,7 +68201,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 				defFriendlyAdj = overland;
 			}
 		}
-		const _dmDef = def.armies.length > 0 && def.armies.every((a) => a._isSkeletal) && theDefendersRealm?.alignment === "Undead";
+		const _dmDef = doesARealmsAlignmentHoldABeatenHostOnTheField(theDefendersRealm?.alignment, { theCompanies: def.armies });
 		const _defStays = defFriendlyAdj.length > 0 && _wantsToStay(def.armies, def);
 		const _navalDef = _defStays || asItsGuardReadsIt(def.alive) === false || def.killedThisTurn ? "" : navalSplitRetreat(turnContext, def, prov, def.armies, narrative, defSide, _cutAtk);
 		if (_navalDef) {
@@ -67109,7 +68358,7 @@ function combatVsChar(turnContext, atk, def, prov) {
 				atkFriendlyAdj = overland;
 			}
 		}
-		const _dmAtk = atk.armies.length > 0 && atk.armies.every((a) => a._isSkeletal) && theAttackersRealm?.alignment === "Undead";
+		const _dmAtk = doesARealmsAlignmentHoldABeatenHostOnTheField(theAttackersRealm?.alignment, { theCompanies: atk.armies });
 		const _atkStays = atkFriendlyAdj.length > 0 && _wantsToStay(atk.armies, atk);
 		const _navalAtk = _atkStays || asItsGuardReadsIt(atk.alive) === false || atk.killedThisTurn ? "" : navalSplitRetreat(turnContext, atk, prov, atk.armies, narrative, atkSide, _cutDef);
 		if (_navalAtk) {
@@ -69252,6 +70501,16 @@ function resolveWarFronts(turnContext, ph) {
 	});
 	settleRalliedGarrisons(turnContext);
 }
+// src/engine/rules-on-plain-values/the-creeds-that-war-without-warning-break-an-alliance-into-war-and-conquer-by-a-doctrine.ts
+/** Whether a row of the list is of the alignment (as the old lists' `includes`: an alignment no row holds, or none,
+*  is not). */
+var anAbilityOfTheListIsOf = (theList, theAlignment) => theList.some((slug) => ALIGNMENT_ABILITIES[slug].alignment === theAlignment);
+/** Whether a realm of the alignment declares war without warning: its declaration on a realm it has met stands from
+*  the turn's first phase (the turn's start, and the march's forecast). */
+var doesAnAlignmentDeclareWarWithoutWarning = (theAlignment) => anAbilityOfTheListIsOf(["war-without-warning-of-an-evil-realm", "war-without-warning-of-an-undead-realm"], theAlignment);
+/** Whether a realm of the alignment that breaks an alliance goes to war, not to neutral (the reckoning, and the
+*  diplomacy card's button). */
+var doesAnAlignmentBreakAnAllianceIntoWar = (theAlignment) => anAbilityOfTheListIsOf(["a-broken-alliance-means-war-for-an-evil-realm", "a-broken-alliance-means-war-for-an-undead-realm"], theAlignment);
 // src/engine/turn/before-the-first-phase-war-without-warning-research-choices-messages-move-pools-and-default-defend.ts
 /** The realms, where the code tests the list for a gap. */
 function theRealmsOf(G) {
@@ -69354,7 +70613,7 @@ function warWithoutWarningTitlesHeldSafeStartAndStaleOrderLinesGmRemovalsAndMess
 		const _npW = theRealmsOf(G).length;
 		for (let a = 0; a < _npW; a++) {
 			const pa = G.players[a];
-			if (!pa || !["Evil", "Undead"].includes(pa.alignment)) continue;
+			if (!pa || !doesAnAlignmentDeclareWarWithoutWarning(pa.alignment)) continue;
 			const decl = diploDeclarations[a] ?? {};
 			for (let b = 0; b < _npW; b++) {
 				if (b === a || decl[b] !== "enemy") continue;
@@ -70787,7 +72046,7 @@ function resolveRecruitArmiesOrder(turnContext, c, ph, target, extra, prov, play
 				continue;
 			}
 			const baseMercCost = (ARMY_COST_P[merc.type] ?? 0) || 2;
-			const mCost = Math.max(1, baseMercCost - (G.players[c.player]?.alignment === "Neutral" ? 2 : 0) + whatARealmsDiscoveriesAddToAMercenaryBandsPrice(G.players[c.player], { theUnitsType: merc.type }));
+			const mCost = Math.max(1, baseMercCost - theGoldARealmsAlignmentCutsFromAMercenaryBandsPrice(G.players[c.player]?.alignment) + whatARealmsDiscoveriesAddToAMercenaryBandsPrice(G.players[c.player], { theUnitsType: merc.type }));
 			if ((player.gold || 0) < mCost) {
 				emit(turnContext, {
 					type: "hire",
@@ -71757,7 +73016,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 			if (intendedDestination(turnContext, ally, allyOrder)?.id !== toProv.id) return;
 			const marchLvl = effStat(turnContext, c, "march");
 			const unifyDist = Math.min(2, Number(provDistance(turnContext, ally.location, prov.id)));
-			const _goodUnify = (G.players[c.player]?.alignment === "Good" ? 15 : 0) + whatARealmsDiscoveriesAddToConvergingColumnsChanceToUnite(G.players[c.player]);
+			const _goodUnify = whatARealmsAlignmentAddsToConvergingColumnsChanceToUnite(G.players[c.player]?.alignment) + whatARealmsDiscoveriesAddToConvergingColumnsChanceToUnite(G.players[c.player]);
 			const unifyChancePct = Math.min(100, contingentUnifyChance(marchLvl, unifyDist, false) + _goodUnify);
 			const unifyRoll = d100();
 			if (unifyRoll <= unifyChancePct) {
@@ -72115,7 +73374,7 @@ function resolveMoveOrder(turnContext, c, ph, _fmSlip, target, prov, player) {
 				if (intendedDestination(turnContext, ally, allyOrder)?.id !== toProv.id) return;
 				const marchLvl = effStat(turnContext, c, "march");
 				const unifyDist = Math.min(2, Number(provDistance(turnContext, ally.location, prov.id)));
-				const unifyPct = Math.min(100, contingentUnifyChance(marchLvl, unifyDist, false) + (G.players[c.player]?.alignment === "Good" ? 15 : 0) + whatARealmsDiscoveriesAddToConvergingColumnsChanceToUnite(G.players[c.player]));
+				const unifyPct = Math.min(100, contingentUnifyChance(marchLvl, unifyDist, false) + whatARealmsAlignmentAddsToConvergingColumnsChanceToUnite(G.players[c.player]?.alignment) + whatARealmsDiscoveriesAddToConvergingColumnsChanceToUnite(G.players[c.player]));
 				const roll = d100();
 				if (roll <= unifyPct) {
 					pvpReinforcements.push(ally);
@@ -72915,17 +74174,6 @@ function theShareOfAProvinceAnExploreOrderMaps(theGround, theExplorersLevel, heH
 	const loreMult = heHoldsTheTrailblazer ? 1.05 : 1;
 	return Math.min(100, Math.floor(basicRate * (explorerSkill + 1) * loreMult * theFactorHisRealmsDiscoveriesMultiplyItBy));
 }
-// src/engine/rules-on-plain-values/the-alignment-orders-the-names-the-form-writes-and-who-may-give-each.ts
-/** Whether a realm of the creed `creed` (none: a realm whose creed isn't known) may give the order: its row's creed
-*  alone may. */
-function aRealmOfThisCreedMayGiveTheAlignmentOrder(order, creed) {
-	return creed === order.creed;
-}
-/** Whether a hero, the king or not (`isKing`; none: not the king), may give the order: any hero may, unless its row
-*  marks it the king's alone. */
-function aHeroMayGiveTheAlignmentOrderAsKingOrNot(order, isKing) {
-	return !order.theKingAlone || (isKing ?? false);
-}
 // src/engine/personal-combat/lair-guardians-and-the-odds.ts
 function monsterTraits(m) {
 	const n = (m.name ?? "").toLowerCase();
@@ -73212,84 +74460,6 @@ function resolveEncounter(turnContext, c, feature, prov, tactics, effStat, rng, 
 		narrative
 	};
 }
-// src/engine/rules-on-plain-values/the-company-a-call-to-arms-musters-a-blood-offerings-companies-and-a-consecrations-checks.ts
-/** The company a Call to Arms musters in a province of the realm: the first garrison type of the province's own pool
-*  (Elven Bowmen), else its race's garrison, else a plain levy (Human Garrison); its race the province's, else Human. */
-function theCompanyACallToArmsMusters(ctaProv) {
-	return {
-		type: ((ctaProv.armyTypes ?? []).find((t) => t.toLowerCase().includes("garrison")) ?? "") || ({
-			Human: "Human Garrison",
-			Elven: "Elven Garrison",
-			Dwarven: "Dwarf Garrison",
-			Orcish: "Orc Garrison"
-		}[String(ctaProv.race)] ?? "") || "Human Garrison",
-		race: (ctaProv.race ?? "") || "Human"
-	};
-}
-/** Whether a Blood Offering may take a company, to give or to raise: one borrowed for a while (summoned, charmed), a
-*  Wild Hunt beast or a skeleton can be neither offered nor raised. */
-function aBloodOfferingMayTakeTheCompany(a) {
-	return !a.temporary && !a.wildHunt && !a.skeletal;
-}
-/** The companies a Blood Offering gives and raises (each raised two tiers, capped at Elite). The player names them in
-*  the order's marks, "S:i,j|E:a,b": places in the column, the ones it may take, each once, none both. With a side
-*  named empty (or no marks, an older form's), the first company it may take is given and the second raised; with
-*  fewer than two, no offering (null). Each given raises one: the longer side is cut to the shorter. A company is read
-*  as its realm sees it (`seenAs`: the engine hands unitAsItsRealmSeesIt); a gap in the column is never taken. */
-function theCompaniesABloodOfferingGivesAndRaises(_army, extra, seenAs) {
-	const _bOffElig = (i) => {
-		const a = _army[i];
-		return !!a && aBloodOfferingMayTakeTheCompany(seenAs(a));
-	};
-	let _sacI = [], _benI = [];
-	const _bm = /S:([0-9,]*)\|E:([0-9,]*)/.exec((extra || "").trim());
-	if (_bm) {
-		_sacI = [...new Set(String(_bm[1]).split(",").filter((x) => x !== "").map(Number))].filter((i) => Number.isInteger(i) && _bOffElig(i));
-		_benI = [...new Set(String(_bm[2]).split(",").filter((x) => x !== "").map(Number))].filter((i) => Number.isInteger(i) && _bOffElig(i) && !_sacI.includes(i));
-	}
-	if (_sacI.length === 0 || _benI.length === 0) {
-		const _own = _army.map((a, i) => i).filter(_bOffElig);
-		if (_own.length >= 2) {
-			_sacI = _own.slice(0, 1);
-			_benI = _own.slice(1, 2);
-		} else return null;
-	}
-	const _bn = Math.min(_sacI.length, _benI.length);
-	return {
-		given: _sacI.slice(0, _bn),
-		raised: _benI.slice(0, _bn)
-	};
-}
-/** Why a king may not consecrate the province he stands in, or (refused: null) that he may: it must be his realm's;
-*  not his home or beside it (the home marches were anointed at the coronation); not consecrated already; beside no
-*  consecrated province (holy ground is spread across the realm); and he must know White, and hold fewer than he may.
-*  The answer carries what the turn's lines name: the consecrated neighbour, the list and the limit. */
-function whyAKingMayNotConsecrateAProvince(facts) {
-	if (!facts.itIsHisRealms) return { refused: "it is not a province of his realm" };
-	const { theHomeId: _homeId, theProvincesBesideIt } = facts.theHomeMarches();
-	const _homeAdj = new Set(theProvincesBesideIt);
-	if (facts.theProvinceId === _homeId || _homeAdj.has(facts.theProvinceId)) return { refused: "it lies in the home marches" };
-	const _cList = facts.theConsecrated();
-	if (_cList.includes(facts.theProvinceId)) return { refused: "it is consecrated already" };
-	const _provAdjC = new Set(facts.theProvincesBesideIt());
-	const _adjConsecId = _cList.find((id) => _provAdjC.has(id));
-	if (_adjConsecId != null) return {
-		refused: "a consecrated province lies beside it",
-		theNeighbourId: _adjConsecId
-	};
-	const _cLimit = facts.theConsecrationsHeMayHold();
-	if (_cLimit <= 0) return { refused: "he knows no White" };
-	if (_cList.length >= _cLimit) return {
-		refused: "he holds as many as he may",
-		theConsecrated: _cList,
-		theLimit: _cLimit
-	};
-	return {
-		refused: null,
-		theConsecrated: _cList,
-		theLimit: _cLimit
-	};
-}
 // src/engine/orders/explore-and-search-orders-maps-lairs-rites-and-rumours.ts
 function resolveExploreOrder(turnContext, c, prov) {
 	const { G } = turnContext;
@@ -73447,205 +74617,6 @@ function resolveExploreOrder(turnContext, c, prov) {
 		province: prov.id
 	});
 	recordDeadHeroSighting(turnContext, c.player, prov.id);
-}
-function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player) {
-	const { G } = turnContext;
-	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm performs a rite");
-	if (!aRealmOfThisCreedMayGiveTheAlignmentOrder(THE_ALIGNMENT_ORDERS["perform-rite"], G.players[c.player]?.alignment)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "a hero who does not keep the old faith cannot perform rites",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	theProvinceIsHanded(prov);
-	const _riteSite = (asItsGuardReadsIt(prov.features) ?? []).find((f) => f.ritualSite && (featDiscovered(f, c.player) || prov.owner === c.player));
-	if (!_riteSite) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "a hero finds no ritual site for a rite",
-				heroName: c.name,
-				provinceName: prov.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (prov._riteTurn === G.turn) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the stones have already answered a rite this turn",
-				heroName: c.name,
-				siteName: _riteSite.name,
-				provinceName: prov.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-			province: prov.id
-		});
-		return;
-	}
-	if ((target || "").toLowerCase().startsWith("wild")) {
-		const primalDefs = PRIMAL_ARMY_DEFS_P;
-		const _wildType = (asItsGuardReadsIt(prov.armyTypes) ?? []).find((t) => primalDefs[t]);
-		if (!_wildType) {
-			emit(turnContext, {
-				type: "system",
-				fact: {
-					kind: "nothing wild answers the Wild Hunt",
-					heroName: c.name,
-					siteName: _riteSite.name,
-					provinceName: prov.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-				province: prov.id
-			});
-			return;
-		}
-		const _huntCost = wildHuntPrice(_wildType);
-		theRealmIsHanded(player);
-		if ((player.gold || 0) < _huntCost) {
-			emit(turnContext, {
-				type: "system",
-				fact: {
-					kind: "a hero cannot afford the Wild Hunt offerings",
-					heroName: c.name,
-					price: _huntCost
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		player.gold -= _huntCost;
-		prov._riteTurn = G.turn;
-		c.armies = asItsGuardReadsIt(c.armies) ?? [];
-		const _bound = [];
-		for (let wi = 0; wi < WILD_HUNT_UNITS; wi++) {
-			const _u = {
-				type: _wildType,
-				quality: "Veteran",
-				race: (prov.race ?? "") || "Primal",
-				unitName: theNameDrawn(armyUnitName(_wildType)),
-				_wildHuntUntilTurn: G.turn + theTurnsAWildHuntServesBeyondThisOne(G.players[c.player])
-			};
-			c.armies.push(_u);
-			_bound.push({
-				unitName: _u.unitName,
-				type: _wildType
-			});
-		}
-		emit(turnContext, {
-			type: "combat",
-			fact: {
-				kind: "a hero performs the Rite of the Wild Hunt",
-				heroName: c.name,
-				siteName: _riteSite.name,
-				price: _huntCost,
-				beasts: _bound
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player],
-				seen: "battle"
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-			province: prov.id
-		});
-		resolveUnitGainInProvince(turnContext, c, prov, ph);
-		return;
-	}
-	const _tiers = QUALITY_TIERS.slice();
-	const _army = asItsGuardReadsIt(c.armies) ?? [];
-	const theCompanyNamed = (i) => {
-		const a = _army[i];
-		if (!a) throw new TypeError("a company the Blood Offering names is none");
-		return a;
-	};
-	const theMarked = theCompaniesABloodOfferingGivesAndRaises(_army, extra, unitAsItsRealmSeesIt);
-	if (!theMarked) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "a hero makes no Blood Offering",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const _bn = theMarked.given.length;
-	const _sac = theMarked.given.map(theCompanyNamed);
-	const _ben = theMarked.raised.map(theCompanyNamed);
-	prov._riteTurn = G.turn;
-	c.armies = _army.filter((a) => !_sac.includes(a));
-	recordBattleGraves(turnContext, prov, _sac);
-	_ben.forEach((b) => {
-		const cur = _tiers.indexOf(b.quality);
-		if (cur > -1) {
-			const risen = _tiers[Math.min(4, cur + THE_ALIGNMENT_ORDERS["perform-rite"].theNumbers.theBloodOfferingsGrades.value)];
-			if (risen === void 0) throw new TypeError("a quality two tiers up is none");
-			b.quality = risen;
-		}
-	});
-	if (typeof refreshMovePool === "function") refreshMovePool(turnContext, c);
-	emit(turnContext, {
-		type: "combat",
-		fact: {
-			kind: "a hero makes a Blood Offering",
-			heroName: c.name,
-			siteName: _riteSite.name,
-			offered: _sac.map((a) => a.unitName || a.type),
-			count: _bn,
-			empowered: _ben.map((a) => ({
-				name: a.unitName || a.type,
-				quality: a.quality
-			}))
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player],
-			seen: "battle"
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		province: prov.id
-	});
 }
 function resolveHuntingRumoursOrder(turnContext, c, target, prov, player) {
 	const { G } = turnContext;
@@ -74519,689 +75490,11 @@ function resolveDiscoverLostRuinOrder(turnContext, c, target, prov) {
 	});
 	trySkillGain(turnContext, c, "explorer", SKILLGAIN_STD);
 }
-// src/engine/espionage/what-a-spy-learns.ts
-/** The realm an index names where the code reads it unguarded: there is one (else the old read threw a TypeError). */
-function theRealmTheIndexNames(realm) {
-	if (realm === void 0) throw new TypeError("no realm at this index");
-	return realm;
-}
-function applySpySuccess(turnContext, c, sprov) {
-	const { G } = turnContext;
-	trySkillGain(turnContext, c, "spy", SKILLGAIN_STD);
-	const actingP = c.player === null ? void 0 : G.players[c.player];
-	if (actingP) {
-		actingP._spiedProvincesThisTurn ??= [];
-		if (!actingP._spiedProvincesThisTurn.includes(sprov.id)) actingP._spiedProvincesThisTurn.push(sprov.id);
-	}
-	emit(turnContext, {
-		type: "explore",
-		fact: {
-			kind: "a spy learns who holds a province, its tax and its defenders",
-			heroName: c.name,
-			provinceName: sprov.name,
-			ownerRealmName: sprov.owner !== null ? theRealmTheIndexNames(G.players[sprov.owner]).name : null,
-			tax: sprov.tax,
-			defenders: theDefendersAsTheSpyNamesThem(sprov.neutralDefenders ?? [])
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player]
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		spy: true,
-		province: sprov.id
-	});
-	{
-		let _homeKing = null;
-		for (let _pi = 0; _pi < G.players.length; _pi++) if (homeProvinceIdFor(G, _pi) === sprov.id) {
-			_homeKing = _pi;
-			break;
-		}
-		if (_homeKing != null && _homeKing !== c.player) {
-			const _kp = theRealmTheIndexNames(G.players[_homeKing]);
-			const _kIncome = botTaxIncome(G, _homeKing);
-			const _kHeroes = (asItsGuardReadsIt(G.characters) ?? []).filter((x) => x?.alive && x.player === _homeKing && !x.isKing).length;
-			emit(turnContext, {
-				type: "spy",
-				fact: {
-					kind: "a spy learns a king's home's tax income and heroes",
-					realmName: _kp.name,
-					taxIncome: _kIncome,
-					heroes: _kHeroes
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-				province: sprov.id
-			});
-			const _spyLvl = effStat(turnContext, c, "spy");
-			const _stealPct = Math.max(5, Math.min(95, 10 + _spyLvl * 10));
-			const _mine = new Set((actingP?.discoveries ?? []).map((d) => d.id));
-			const _blkSpy = discBlockedIds(actingP);
-			const _stealable = (_kp.discoveries ?? []).filter((d) => !_mine.has(d.id) && !_blkSpy.has(d.id) && discEligible(DISC_BY_ID[d.id], actingP));
-			if (_stealable.length > 0) {
-				const _sr = d100();
-				emit(turnContext, {
-					type: "spy",
-					fact: {
-						kind: "a spy rifles a king's archives for a discovery",
-						heroName: c.name,
-						spyLevel: _spyLvl,
-						realmName: _kp.name,
-						chance: _stealPct,
-						roll: _sr
-					},
-					audience: {
-						actor: c.player,
-						realms: [c.player]
-					},
-					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-					phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-					province: sprov.id
-				});
-				if (_sr <= _stealPct) {
-					const _disc = theOneThePickFell(_stealable[Math.floor(kcRng() * _stealable.length)]);
-					const thief = theRealmTheIndexNames(actingP);
-					thief.discoveries ??= [];
-					thief.discoveries.push({
-						id: _disc.id,
-						name: _disc.name,
-						category: _disc.category,
-						desc: _disc.desc,
-						turnDiscovered: G.turn
-					});
-					try {
-						TM(c).discoveries += 1;
-					} catch {}
-					emit(turnContext, {
-						type: "spy",
-						fact: {
-							kind: "a spy copies a secret from a king's archives",
-							heroName: c.name,
-							discoveryName: _disc.name,
-							realmName: _kp.name
-						},
-						audience: {
-							actor: c.player,
-							realms: [c.player]
-						},
-						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-						phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-						province: sprov.id
-					});
-				}
-			}
-		}
-	}
-	if (sprov.owner != null && sprov.owner !== c.player && !c._spyDisguised) {
-		const _byName = c.player != null ? (G.players[c.player]?.name ?? "") || "an unknown power" : "unknown agents";
-		const _vp = G.players[sprov.owner];
-		if (_vp) {
-			_vp._spiedOnThisTurn ??= [];
-			_vp._spiedOnThisTurn.push({
-				provId: sprov.id,
-				provName: sprov.name,
-				byPlayer: c.player,
-				byName: _byName,
-				turn: G.turn
-			});
-		}
-		emit(turnContext, {
-			type: "spy",
-			fact: {
-				kind: "a province's watch catches a rival's agents prying",
-				provinceName: sprov.name,
-				pryingRealmName: c.player != null ? (G.players[c.player]?.name ?? "") || null : null,
-				theSpyServesARealm: c.player != null
-			},
-			audience: {
-				actor: null,
-				realms: [sprov.owner]
-			},
-			hero: null,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-			province: sprov.id
-		});
-	}
-	c.merits = (c.merits || 0) + 1;
-	(sprov.features ?? []).filter((f) => !featDiscovered(f, c.player)).forEach((f) => {
-		if (kcRng() < .5) discoverFeat(f, c.player);
-	});
-	if (c.player !== null) recordDeadHeroSighting(turnContext, c.player, sprov.id);
-}
 // src/engine/orders/realm-works-orders-consecration-muster-broker-the-wild-and-grand-design.ts
-/** A province of the map a realm's home names: every realm's home is one, so there is one; for none, the TypeError the
-*  reading of its neighbours throws. */
-function theHomeOnTheMap(home) {
-	if (!home) throw new TypeError("Cannot destructure property 'row' of 'prov' as it is undefined.");
-	return home;
-}
 /** Whether a place a Wild Calling tore beasts from is one it has named already: the same kind, province and hero, each
 *  compared as it is. */
 function theSamePlaceAsNamed(h, from) {
 	return h.kind === from.kind && h.provinceName === from.provinceName && h.heroName === from.heroName;
-}
-function resolveConsecrateOrder(turnContext, c, prov, player) {
-	const { G } = turnContext;
-	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm consecrates");
-	if (!aHeroMayGiveTheAlignmentOrderAsKingOrNot(THE_ALIGNMENT_ORDERS.consecrate, c.isKing)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only the king can consecrate ground",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (!aRealmOfThisCreedMayGiveTheAlignmentOrder(THE_ALIGNMENT_ORDERS.consecrate, G.players[c.player]?.alignment)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the gods answer a consecration only from a Divine crown",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	theProvinceIsHanded(prov);
-	const theAnswer = whyAKingMayNotConsecrateAProvince({
-		theProvinceId: prov.id,
-		itIsHisRealms: prov.owner === c.player,
-		theHomeMarches: () => {
-			const _homeId = homeProvinceIdFor(G, c.player);
-			return {
-				theHomeId: _homeId,
-				theProvincesBesideIt: _homeId != null ? getNeighborsP(theHomeOnTheMap(G.world.provinces[_homeId]), G.world.cols, G.world.rows, G.world.provinces).map((x) => x.id) : []
-			};
-		},
-		theConsecrated: () => consecratedIds(player),
-		theProvincesBesideIt: () => getNeighborsP(prov, G.world.cols, G.world.rows, G.world.provinces).map((x) => x.id),
-		theConsecrationsHeMayHold: () => theConsecrationsAKingMayHold(c, G.players[c.player])
-	});
-	if (theAnswer.refused === "it is not a province of his realm") {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only a province of the realm can be consecrated",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (theAnswer.refused === "it lies in the home marches") {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the home marches were anointed at the coronation",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (theAnswer.refused === "it is consecrated already") {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the province is already consecrated",
-				provinceName: prov.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (theAnswer.refused === "a consecrated province lies beside it") {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "two consecrated provinces may not lie side by side",
-				heroName: c.name,
-				provinceName: prov.name,
-				neighbourName: (G.world.provinces[theAnswer.theNeighbourId]?.name ?? "") || null
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (theAnswer.refused === "he knows no White") {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "consecration flows from the White arts",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (theAnswer.refused === "he holds as many as he may") {
-		const { theConsecrated: _cList, theLimit: _cLimit } = theAnswer;
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the White faith can sustain no more consecrated provinces",
-				heroName: c.name,
-				limit: _cLimit,
-				consecratedNames: _cList.map((id) => G.world.provinces[id]?.name).filter((n) => Boolean(n)),
-				provinceName: prov.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const { theConsecrated: _cList, theLimit: _cLimit } = theAnswer;
-	_cList.push(prov.id);
-	emit(turnContext, {
-		type: "explore",
-		fact: {
-			kind: "a king consecrates a province",
-			heroName: c.name,
-			provinceName: prov.name,
-			consecrated: _cList.length,
-			limit: _cLimit
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player],
-			seen: "there"
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		province: prov.id,
-		env: true
-	});
-}
-function resolveCallToArmsOrder(turnContext, c, target, player) {
-	const { G } = turnContext;
-	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm calls to arms");
-	theRealmIsHanded(player);
-	if (!aRealmOfThisCreedMayGiveTheAlignmentOrder(THE_ALIGNMENT_ORDERS["call-to-arms"], G.players[c.player]?.alignment)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only a Good realm's folk answer a Call to Arms",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (!aHeroMayGiveTheAlignmentOrderAsKingOrNot(THE_ALIGNMENT_ORDERS["call-to-arms"], c.isKing)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only the king's voice carries the Call to Arms",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (player._calledToArmsTurn === G.turn) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the realm has already answered a Call to Arms this turn",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const ctaProv = G.world.provinces[parseInt(target)];
-	if (ctaProv?.owner !== c.player) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "a Call to Arms must name a province of the realm",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (ctaProv.terrain === "sea" || (ctaProv.race ?? "").startsWith("Primal")) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only the folk of settled land answer a Call to Arms",
-				heroName: c.name,
-				provinceName: ctaProv.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const theCompany = theCompanyACallToArmsMusters(ctaProv);
-	const ctaType = theCompany.type;
-	ctaProv.garrisonArmies = asItsGuardReadsIt(ctaProv.garrisonArmies) ?? [];
-	const tiers = QUALITY_TIERS;
-	const _ctaQ = (theQualitiesARealmsDiscoveriesMayRaiseACallToArmsAt(G.players[c.player]).filter((e) => e.theChance == null || kcRng() < e.theChance).map((e) => e.theQuality).find((q) => Boolean(q && tiers.includes(q))) ?? "") || THE_ALIGNMENT_ORDERS["call-to-arms"].theNumbers.theGradeMustered.value;
-	ctaProv.garrisonArmies.push({
-		type: ctaType,
-		quality: _ctaQ,
-		race: theCompany.race,
-		unitName: theNameDrawn(armyUnitName(ctaType))
-	});
-	player._calledToArmsTurn = G.turn;
-	emit(turnContext, {
-		type: "hire",
-		fact: {
-			kind: "the folk answer a Call to Arms",
-			provinceName: ctaProv.name,
-			quality: _ctaQ,
-			unitType: ctaType
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player]
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		province: ctaProv.id
-	});
-}
-function resolveBrokerOrder(turnContext, c, ph, target, player) {
-	const { G, SEASONS } = turnContext;
-	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm keeps brokers");
-	theRealmIsHanded(player);
-	if (!aRealmOfThisCreedMayGiveTheAlignmentOrder(THE_ALIGNMENT_ORDERS.broker, G.players[c.player]?.alignment)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only a Neutral crown keeps brokers",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	if (!aHeroMayGiveTheAlignmentOrderAsKingOrNot(THE_ALIGNMENT_ORDERS.broker, c.isKing)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only the king commands the realm's brokers",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const _bk = (target || "").split(":");
-	if (_bk[0] === "hire") {
-		const bh = G.characters[parseInt(String(_bk[1]))];
-		const bhProv = bh ? G.world.provinces[bh.location] : null;
-		const _visible = bhProv && (bhProv.owner === c.player || (asItsGuardReadsIt(bhProv.visitedBy) ?? []).includes(c.player));
-		if (bh?.player !== null || !bh.alive || bh._isNeutralGuard || bh._justDefeated || !_visible) {
-			emit(turnContext, {
-				type: "hire",
-				fact: {
-					kind: "the brokers find no such hero within reach",
-					heroName: c.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		if (bh._releasedTurn === G.turn) {
-			emit(turnContext, {
-				type: "hire",
-				fact: {
-					kind: "a hero just released from service hears no offers this turn",
-					heroName: bh.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		const bWage = heroHireWage((G.players[c.player]?.alignment ?? "") || "Neutral", bh.alignment, doARealmsDiscoveriesWaiveTheHiringBan(G.players[c.player]), bh);
-		if (bWage == null) {
-			emit(turnContext, {
-				type: "hire",
-				fact: {
-					kind: "a hero will not treat with the brokers across the alignment gulf",
-					heroName: bh.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		if ((player.gold || 0) < bWage) {
-			emit(turnContext, {
-				type: "hire",
-				fact: {
-					kind: "a king cannot afford a brokered hero",
-					heroName: c.name,
-					wantedName: bh.name,
-					wage: bWage
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		bh.pay = bWage;
-		player.gold -= bWage;
-		bh.player = c.player;
-		bh.name = bh.name.replace(" (wandering)", "");
-		if (bh.race === "Dwarven" && G.players[c.player]?.race === "Dwarven") grantMithrilTo(bh, G);
-		player.heroes = asItsGuardReadsIt(player.heroes) ?? [];
-		player.heroes.push(bh.id);
-		bh.hiredInPhase = ph;
-		const brokeredsId = bh.id;
-		G.turnOrders[brokeredsId] ??= [
-			null,
-			null,
-			null,
-			null,
-			null
-		];
-		for (let p2 = 0; p2 <= ph; p2++) G.turnOrders[brokeredsId][p2] = G.turnOrders[brokeredsId][p2] ?? {
-			action: "defend",
-			target: "",
-			extra: "",
-			desc: "(not yet hired)"
-		};
-		landHirePreOrders(turnContext, bh, c, ph, player);
-		setMovePool(turnContext, bh);
-		const _brokerFact = {
-			kind: "a wandering hero accepts the realm's terms by courier",
-			heroName: bh.name,
-			race: bh.race,
-			alignment: bh.alignment,
-			provinceName: bhProv.name,
-			realmName: player.name,
-			wage: bWage,
-			seasonName: (SEASONS[ph + 1] ?? "") || null
-		};
-		emit(turnContext, {
-			type: "hire",
-			fact: _brokerFact,
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-			province: bhProv.id
-		});
-		emit(turnContext, {
-			type: "hire",
-			fact: _brokerFact,
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			province: bhProv.id,
-			hero: bh.id,
-			phase: ph
-		});
-	} else if (_bk[0] === "spy") {
-		const sp2 = G.world.provinces[parseInt(String(_bk[1]))];
-		const _seen = sp2 && (sp2.owner === c.player || (asItsGuardReadsIt(sp2.visitedBy) ?? []).includes(c.player) || (sp2.exploredBy?.[c.player] ?? 0) > 0);
-		if (!sp2 || !_seen) {
-			emit(turnContext, {
-				type: "system",
-				fact: {
-					kind: "the brokers reach only provinces the realm has seen",
-					heroName: c.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		if ((player.gold || 0) < THE_ALIGNMENT_ORDERS.broker.theNumbers.thePriceOfWordFromAProvince.value) {
-			emit(turnContext, {
-				type: "system",
-				fact: {
-					kind: "the treasury cannot pay for brokered word",
-					heroName: c.name
-				},
-				audience: {
-					actor: c.player,
-					realms: [c.player]
-				},
-				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-			});
-			return;
-		}
-		player.gold -= THE_ALIGNMENT_ORDERS.broker.theNumbers.thePriceOfWordFromAProvince.value;
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the brokers buy word from a province",
-				heroName: c.name,
-				provinceName: sp2.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		applySpySuccess(turnContext, c, sp2);
-	} else emit(turnContext, {
-		type: "system",
-		fact: {
-			kind: "a Broker order names no target",
-			heroName: c.name
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player]
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-	});
 }
 function resolveRemovedAwakenTheWildAndCallFromThePitOrders(turnContext, c, action) {
 	emit(turnContext, {
@@ -75218,112 +75511,6 @@ function resolveRemovedAwakenTheWildAndCallFromThePitOrders(turnContext, c, acti
 		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
 		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
 	});
-}
-function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
-	const { G } = turnContext;
-	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm harvests the field");
-	theRealmIsHanded(player);
-	if (!aRealmOfThisCreedMayGiveTheAlignmentOrder(THE_ALIGNMENT_ORDERS["harvest-the-field"], G.players[c.player]?.alignment)) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "only Undead realms keep corpse-carters",
-				heroName: c.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	theProvinceIsHanded(prov);
-	if ((prov.battleGraves ?? []).length === 0) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "no battlefield dead lie here to raise",
-				heroName: c.name,
-				provinceName: prov.name
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	const _hCost = theCorpseCartersPriceForARealm(G.players[c.player]);
-	if ((player.gold || 0) < _hCost) {
-		emit(turnContext, {
-			type: "system",
-			fact: {
-				kind: "the treasury cannot pay the corpse-carters",
-				heroName: c.name,
-				cost: _hCost
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
-		});
-		return;
-	}
-	player.gold -= _hCost;
-	const hGrave = takeBestGrave(prov);
-	if (!hGrave) throw new TypeError("Cannot read properties of null (reading 'type')");
-	const qualityUp = KC_QUALITY_UP;
-	const _uTierH = gdActive(turnContext, c.player, "Undead");
-	const hSkel = {
-		type: hGrave.type,
-		quality: _uTierH ? (qualityUp[hGrave.quality] ?? "") || hGrave.quality : hGrave.quality,
-		race: "Undead",
-		_isSkeletal: true,
-		unitName: `${String(hGrave.unitName || armyUnitName(hGrave.type))} (Skeletal)`
-	};
-	c.armies = asItsGuardReadsIt(c.armies) ?? [];
-	c.armies.push(hSkel);
-	emit(turnContext, {
-		type: "hire",
-		fact: {
-			kind: "the corpse-carters raise a skeletal company",
-			heroName: c.name,
-			provinceName: prov.name,
-			unitName: hSkel.unitName,
-			quality: hSkel.quality,
-			cost: _hCost
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player],
-			seen: "there"
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		province: prov.id
-	});
-	if (effStat(turnContext, c, "necromancy") < 1) emit(turnContext, {
-		type: "hire",
-		fact: {
-			kind: "a raiser with no Necromancy is warned his dead will crumble",
-			heroName: c.name,
-			unitName: hSkel.unitName
-		},
-		audience: {
-			actor: c.player,
-			realms: [c.player]
-		},
-		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
-		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
-		province: prov.id
-	});
-	resolveUnitGainInProvince(turnContext, c, prov, ph);
 }
 function resolveAwakenGroveOrder(turnContext, c, ph, prov) {
 	if (skillLevel(c, "druid") < THE_MASTERY_ORDERS.awaken_grove.level) {
@@ -75608,6 +75795,1090 @@ function resolveGrandDesignOrder(turnContext, c, prov) {
 	});
 	trySkillGain(turnContext, c, "sage", SKILLGAIN_STD);
 }
+// src/engine/rules-on-plain-values/the-company-a-call-to-arms-musters-a-blood-offerings-companies-and-a-consecrations-checks.ts
+/** The company a Call to Arms musters in a province of the realm: the first garrison type of the province's own pool
+*  (Elven Bowmen), else its race's garrison, else a plain levy (Human Garrison); its race the province's, else Human. */
+function theCompanyACallToArmsMusters(ctaProv) {
+	return {
+		type: ((ctaProv.armyTypes ?? []).find((t) => t.toLowerCase().includes("garrison")) ?? "") || ({
+			Human: "Human Garrison",
+			Elven: "Elven Garrison",
+			Dwarven: "Dwarf Garrison",
+			Orcish: "Orc Garrison"
+		}[String(ctaProv.race)] ?? "") || "Human Garrison",
+		race: (ctaProv.race ?? "") || "Human"
+	};
+}
+/** Whether a Blood Offering may take a company, to give or to raise: one borrowed for a while (summoned, charmed), a
+*  Wild Hunt beast or a skeleton can be neither offered nor raised. */
+function aBloodOfferingMayTakeTheCompany(a) {
+	return !a.temporary && !a.wildHunt && !a.skeletal;
+}
+/** The companies a Blood Offering gives and raises (each raised two tiers, capped at Elite). The player names them in
+*  the order's marks, "S:i,j|E:a,b": places in the column, the ones it may take, each once, none both. With a side
+*  named empty (or no marks, an older form's), the first company it may take is given and the second raised; with
+*  fewer than two, no offering (null). Each given raises one: the longer side is cut to the shorter. A company is read
+*  as its realm sees it (`seenAs`: the engine hands unitAsItsRealmSeesIt); a gap in the column is never taken. */
+function theCompaniesABloodOfferingGivesAndRaises(_army, extra, seenAs) {
+	const _bOffElig = (i) => {
+		const a = _army[i];
+		return !!a && aBloodOfferingMayTakeTheCompany(seenAs(a));
+	};
+	let _sacI = [], _benI = [];
+	const _bm = /S:([0-9,]*)\|E:([0-9,]*)/.exec((extra || "").trim());
+	if (_bm) {
+		_sacI = [...new Set(String(_bm[1]).split(",").filter((x) => x !== "").map(Number))].filter((i) => Number.isInteger(i) && _bOffElig(i));
+		_benI = [...new Set(String(_bm[2]).split(",").filter((x) => x !== "").map(Number))].filter((i) => Number.isInteger(i) && _bOffElig(i) && !_sacI.includes(i));
+	}
+	if (_sacI.length === 0 || _benI.length === 0) {
+		const _own = _army.map((a, i) => i).filter(_bOffElig);
+		if (_own.length >= 2) {
+			_sacI = _own.slice(0, 1);
+			_benI = _own.slice(1, 2);
+		} else return null;
+	}
+	const _bn = Math.min(_sacI.length, _benI.length);
+	return {
+		given: _sacI.slice(0, _bn),
+		raised: _benI.slice(0, _bn)
+	};
+}
+/** Why a king may not consecrate the province he stands in, or (refused: null) that he may: it must be his realm's;
+*  not his home or beside it (the home marches were anointed at the coronation); not consecrated already; beside no
+*  consecrated province (holy ground is spread across the realm); and he must know White, and hold fewer than he may.
+*  The answer carries what the turn's lines name: the consecrated neighbour, the list and the limit. */
+function whyAKingMayNotConsecrateAProvince(facts) {
+	if (!facts.itIsHisRealms) return { refused: "it is not a province of his realm" };
+	const { theHomeId: _homeId, theProvincesBesideIt } = facts.theHomeMarches();
+	const _homeAdj = new Set(theProvincesBesideIt);
+	if (facts.theProvinceId === _homeId || _homeAdj.has(facts.theProvinceId)) return { refused: "it lies in the home marches" };
+	const _cList = facts.theConsecrated();
+	if (_cList.includes(facts.theProvinceId)) return { refused: "it is consecrated already" };
+	const _provAdjC = new Set(facts.theProvincesBesideIt());
+	const _adjConsecId = _cList.find((id) => _provAdjC.has(id));
+	if (_adjConsecId != null) return {
+		refused: "a consecrated province lies beside it",
+		theNeighbourId: _adjConsecId
+	};
+	const _cLimit = facts.theConsecrationsHeMayHold();
+	if (_cLimit <= 0) return { refused: "he knows no White" };
+	if (_cList.length >= _cLimit) return {
+		refused: "he holds as many as he may",
+		theConsecrated: _cList,
+		theLimit: _cLimit
+	};
+	return {
+		refused: null,
+		theConsecrated: _cList,
+		theLimit: _cLimit
+	};
+}
+// src/engine/orders/alignment/consecrate-a-divine-kings-order-to-sanctify-a-province-of-his-realm.ts
+/** A province of the map a realm's home names: every realm's home is one, so there is one; for none, the TypeError the
+*  reading of its neighbours throws. */
+function theHomeOnTheMap(home) {
+	if (!home) throw new TypeError("Cannot destructure property 'row' of 'prov' as it is undefined.");
+	return home;
+}
+function resolveConsecrateOrder(turnContext, c, prov, player) {
+	const { G } = turnContext;
+	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm consecrates");
+	const whoMayGiveIt = theCheckAnAlignmentOrderRefusesAHeroOn(THE_ALIGNMENT_ORDERS.consecrate, {
+		isHeTheKing: c.isKing,
+		theAlignmentOfHisRealm: G.players[c.player]?.alignment
+	});
+	if (whoMayGiveIt === "he is not the king") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only the king can consecrate ground",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (whoMayGiveIt === "his realm is not of its creed") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the gods answer a consecration only from a Divine crown",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	theProvinceIsHanded(prov);
+	const theAnswer = whyAKingMayNotConsecrateAProvince({
+		theProvinceId: prov.id,
+		itIsHisRealms: prov.owner === c.player,
+		theHomeMarches: () => {
+			const _homeId = homeProvinceIdFor(G, c.player);
+			return {
+				theHomeId: _homeId,
+				theProvincesBesideIt: _homeId != null ? getNeighborsP(theHomeOnTheMap(G.world.provinces[_homeId]), G.world.cols, G.world.rows, G.world.provinces).map((x) => x.id) : []
+			};
+		},
+		theConsecrated: () => consecratedIds(player),
+		theProvincesBesideIt: () => getNeighborsP(prov, G.world.cols, G.world.rows, G.world.provinces).map((x) => x.id),
+		theConsecrationsHeMayHold: () => theConsecrationsAKingMayHold(c, G.players[c.player])
+	});
+	if (theAnswer.refused === "it is not a province of his realm") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only a province of the realm can be consecrated",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (theAnswer.refused === "it lies in the home marches") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the home marches were anointed at the coronation",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (theAnswer.refused === "it is consecrated already") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the province is already consecrated",
+				provinceName: prov.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (theAnswer.refused === "a consecrated province lies beside it") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "two consecrated provinces may not lie side by side",
+				heroName: c.name,
+				provinceName: prov.name,
+				neighbourName: (G.world.provinces[theAnswer.theNeighbourId]?.name ?? "") || null
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (theAnswer.refused === "he knows no White") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "consecration flows from the White arts",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (theAnswer.refused === "he holds as many as he may") {
+		const { theConsecrated: _cList, theLimit: _cLimit } = theAnswer;
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the White faith can sustain no more consecrated provinces",
+				heroName: c.name,
+				limit: _cLimit,
+				consecratedNames: _cList.map((id) => G.world.provinces[id]?.name).filter((n) => Boolean(n)),
+				provinceName: prov.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const { theConsecrated: _cList, theLimit: _cLimit } = theAnswer;
+	layConsecratedGround(_cList, prov.id);
+	emit(turnContext, {
+		type: "explore",
+		fact: {
+			kind: "a king consecrates a province",
+			heroName: c.name,
+			provinceName: prov.name,
+			consecrated: _cList.length,
+			limit: _cLimit
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player],
+			seen: "there"
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		province: prov.id,
+		env: true
+	});
+}
+// src/engine/orders/alignment/call-to-arms-a-good-kings-order-to-muster-a-company-from-his-folk.ts
+function resolveCallToArmsOrder(turnContext, c, target, player) {
+	const { G } = turnContext;
+	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm calls to arms");
+	theRealmIsHanded(player);
+	const whoMayGiveIt = theCheckAnAlignmentOrderRefusesAHeroOn(THE_ALIGNMENT_ORDERS["call-to-arms"], {
+		isHeTheKing: c.isKing,
+		theAlignmentOfHisRealm: G.players[c.player]?.alignment
+	});
+	if (whoMayGiveIt === "his realm is not of its creed") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only a Good realm's folk answer a Call to Arms",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (whoMayGiveIt === "he is not the king") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only the king's voice carries the Call to Arms",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (player._calledToArmsTurn === G.turn) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the realm has already answered a Call to Arms this turn",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const ctaProv = G.world.provinces[parseInt(target)];
+	if (ctaProv?.owner !== c.player) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "a Call to Arms must name a province of the realm",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (ctaProv.terrain === "sea" || (ctaProv.race ?? "").startsWith("Primal")) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only the folk of settled land answer a Call to Arms",
+				heroName: c.name,
+				provinceName: ctaProv.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const theCompany = theCompanyACallToArmsMusters(ctaProv);
+	const ctaType = theCompany.type;
+	ctaProv.garrisonArmies = asItsGuardReadsIt(ctaProv.garrisonArmies) ?? [];
+	const tiers = QUALITY_TIERS;
+	const _ctaQ = (theQualitiesARealmsDiscoveriesMayRaiseACallToArmsAt(G.players[c.player]).filter((e) => e.theChance == null || kcRng() < e.theChance).map((e) => e.theQuality).find((q) => Boolean(q && tiers.includes(q))) ?? "") || THE_ALIGNMENT_ORDERS["call-to-arms"].theNumbers.theGradeMustered.value;
+	ctaProv.garrisonArmies.push({
+		type: ctaType,
+		quality: _ctaQ,
+		race: theCompany.race,
+		unitName: theNameDrawn(armyUnitName(ctaType))
+	});
+	player._calledToArmsTurn = G.turn;
+	emit(turnContext, {
+		type: "hire",
+		fact: {
+			kind: "the folk answer a Call to Arms",
+			provinceName: ctaProv.name,
+			quality: _ctaQ,
+			unitType: ctaType
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player]
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		province: ctaProv.id
+	});
+}
+// src/engine/espionage/what-a-spy-learns.ts
+/** The realm an index names where the code reads it unguarded: there is one (else the old read threw a TypeError). */
+function theRealmTheIndexNames(realm) {
+	if (realm === void 0) throw new TypeError("no realm at this index");
+	return realm;
+}
+function applySpySuccess(turnContext, c, sprov) {
+	const { G } = turnContext;
+	trySkillGain(turnContext, c, "spy", SKILLGAIN_STD);
+	const actingP = c.player === null ? void 0 : G.players[c.player];
+	if (actingP) {
+		actingP._spiedProvincesThisTurn ??= [];
+		if (!actingP._spiedProvincesThisTurn.includes(sprov.id)) actingP._spiedProvincesThisTurn.push(sprov.id);
+	}
+	emit(turnContext, {
+		type: "explore",
+		fact: {
+			kind: "a spy learns who holds a province, its tax and its defenders",
+			heroName: c.name,
+			provinceName: sprov.name,
+			ownerRealmName: sprov.owner !== null ? theRealmTheIndexNames(G.players[sprov.owner]).name : null,
+			tax: sprov.tax,
+			defenders: theDefendersAsTheSpyNamesThem(sprov.neutralDefenders ?? [])
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player]
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		spy: true,
+		province: sprov.id
+	});
+	{
+		let _homeKing = null;
+		for (let _pi = 0; _pi < G.players.length; _pi++) if (homeProvinceIdFor(G, _pi) === sprov.id) {
+			_homeKing = _pi;
+			break;
+		}
+		if (_homeKing != null && _homeKing !== c.player) {
+			const _kp = theRealmTheIndexNames(G.players[_homeKing]);
+			const _kIncome = botTaxIncome(G, _homeKing);
+			const _kHeroes = (asItsGuardReadsIt(G.characters) ?? []).filter((x) => x?.alive && x.player === _homeKing && !x.isKing).length;
+			emit(turnContext, {
+				type: "spy",
+				fact: {
+					kind: "a spy learns a king's home's tax income and heroes",
+					realmName: _kp.name,
+					taxIncome: _kIncome,
+					heroes: _kHeroes
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+				province: sprov.id
+			});
+			const _spyLvl = effStat(turnContext, c, "spy");
+			const _stealPct = Math.max(5, Math.min(95, 10 + _spyLvl * 10));
+			const _mine = new Set((actingP?.discoveries ?? []).map((d) => d.id));
+			const _blkSpy = discBlockedIds(actingP);
+			const _stealable = (_kp.discoveries ?? []).filter((d) => !_mine.has(d.id) && !_blkSpy.has(d.id) && discEligible(DISC_BY_ID[d.id], actingP));
+			if (_stealable.length > 0) {
+				const _sr = d100();
+				emit(turnContext, {
+					type: "spy",
+					fact: {
+						kind: "a spy rifles a king's archives for a discovery",
+						heroName: c.name,
+						spyLevel: _spyLvl,
+						realmName: _kp.name,
+						chance: _stealPct,
+						roll: _sr
+					},
+					audience: {
+						actor: c.player,
+						realms: [c.player]
+					},
+					hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+					phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+					province: sprov.id
+				});
+				if (_sr <= _stealPct) {
+					const _disc = theOneThePickFell(_stealable[Math.floor(kcRng() * _stealable.length)]);
+					const thief = theRealmTheIndexNames(actingP);
+					thief.discoveries ??= [];
+					thief.discoveries.push({
+						id: _disc.id,
+						name: _disc.name,
+						category: _disc.category,
+						desc: _disc.desc,
+						turnDiscovered: G.turn
+					});
+					try {
+						TM(c).discoveries += 1;
+					} catch {}
+					emit(turnContext, {
+						type: "spy",
+						fact: {
+							kind: "a spy copies a secret from a king's archives",
+							heroName: c.name,
+							discoveryName: _disc.name,
+							realmName: _kp.name
+						},
+						audience: {
+							actor: c.player,
+							realms: [c.player]
+						},
+						hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+						phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+						province: sprov.id
+					});
+				}
+			}
+		}
+	}
+	if (sprov.owner != null && sprov.owner !== c.player && !c._spyDisguised) {
+		const _byName = c.player != null ? (G.players[c.player]?.name ?? "") || "an unknown power" : "unknown agents";
+		const _vp = G.players[sprov.owner];
+		if (_vp) {
+			_vp._spiedOnThisTurn ??= [];
+			_vp._spiedOnThisTurn.push({
+				provId: sprov.id,
+				provName: sprov.name,
+				byPlayer: c.player,
+				byName: _byName,
+				turn: G.turn
+			});
+		}
+		emit(turnContext, {
+			type: "spy",
+			fact: {
+				kind: "a province's watch catches a rival's agents prying",
+				provinceName: sprov.name,
+				pryingRealmName: c.player != null ? (G.players[c.player]?.name ?? "") || null : null,
+				theSpyServesARealm: c.player != null
+			},
+			audience: {
+				actor: null,
+				realms: [sprov.owner]
+			},
+			hero: null,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+			province: sprov.id
+		});
+	}
+	c.merits = (c.merits || 0) + 1;
+	(sprov.features ?? []).filter((f) => !featDiscovered(f, c.player)).forEach((f) => {
+		if (kcRng() < .5) discoverFeat(f, c.player);
+	});
+	if (c.player !== null) recordDeadHeroSighting(turnContext, c.player, sprov.id);
+}
+// src/engine/orders/alignment/broker-a-neutral-kings-order-to-hire-a-hero-or-buy-word-from-afar.ts
+function resolveBrokerOrder(turnContext, c, ph, target, player) {
+	const { G, SEASONS } = turnContext;
+	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm keeps brokers");
+	theRealmIsHanded(player);
+	const whoMayGiveIt = theCheckAnAlignmentOrderRefusesAHeroOn(THE_ALIGNMENT_ORDERS.broker, {
+		isHeTheKing: c.isKing,
+		theAlignmentOfHisRealm: G.players[c.player]?.alignment
+	});
+	if (whoMayGiveIt === "his realm is not of its creed") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only a Neutral crown keeps brokers",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (whoMayGiveIt === "he is not the king") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only the king commands the realm's brokers",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const _bk = (target || "").split(":");
+	if (_bk[0] === "hire") {
+		const bh = G.characters[parseInt(String(_bk[1]))];
+		const bhProv = bh ? G.world.provinces[bh.location] : null;
+		const _visible = bhProv && (bhProv.owner === c.player || (asItsGuardReadsIt(bhProv.visitedBy) ?? []).includes(c.player));
+		if (bh?.player !== null || !bh.alive || bh._isNeutralGuard || bh._justDefeated || !_visible) {
+			emit(turnContext, {
+				type: "hire",
+				fact: {
+					kind: "the brokers find no such hero within reach",
+					heroName: c.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		if (bh._releasedTurn === G.turn) {
+			emit(turnContext, {
+				type: "hire",
+				fact: {
+					kind: "a hero just released from service hears no offers this turn",
+					heroName: bh.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		const bWage = heroHireWage((G.players[c.player]?.alignment ?? "") || "Neutral", bh.alignment, doARealmsDiscoveriesWaiveTheHiringBan(G.players[c.player]), bh);
+		if (bWage == null) {
+			emit(turnContext, {
+				type: "hire",
+				fact: {
+					kind: "a hero will not treat with the brokers across the alignment gulf",
+					heroName: bh.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		if ((player.gold || 0) < bWage) {
+			emit(turnContext, {
+				type: "hire",
+				fact: {
+					kind: "a king cannot afford a brokered hero",
+					heroName: c.name,
+					wantedName: bh.name,
+					wage: bWage
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		bh.pay = bWage;
+		player.gold -= bWage;
+		bh.player = c.player;
+		bh.name = bh.name.replace(" (wandering)", "");
+		if (bh.race === "Dwarven" && G.players[c.player]?.race === "Dwarven") grantMithrilTo(bh, G);
+		player.heroes = asItsGuardReadsIt(player.heroes) ?? [];
+		player.heroes.push(bh.id);
+		bh.hiredInPhase = ph;
+		const brokeredsId = bh.id;
+		G.turnOrders[brokeredsId] ??= [
+			null,
+			null,
+			null,
+			null,
+			null
+		];
+		for (let p2 = 0; p2 <= ph; p2++) G.turnOrders[brokeredsId][p2] = G.turnOrders[brokeredsId][p2] ?? {
+			action: "defend",
+			target: "",
+			extra: "",
+			desc: "(not yet hired)"
+		};
+		landHirePreOrders(turnContext, bh, c, ph, player);
+		setMovePool(turnContext, bh);
+		const _brokerFact = {
+			kind: "a wandering hero accepts the realm's terms by courier",
+			heroName: bh.name,
+			race: bh.race,
+			alignment: bh.alignment,
+			provinceName: bhProv.name,
+			realmName: player.name,
+			wage: bWage,
+			seasonName: (SEASONS[ph + 1] ?? "") || null
+		};
+		emit(turnContext, {
+			type: "hire",
+			fact: _brokerFact,
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+			province: bhProv.id
+		});
+		emit(turnContext, {
+			type: "hire",
+			fact: _brokerFact,
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			province: bhProv.id,
+			hero: bh.id,
+			phase: ph
+		});
+	} else if (_bk[0] === "spy") {
+		const sp2 = G.world.provinces[parseInt(String(_bk[1]))];
+		const _seen = sp2 && (sp2.owner === c.player || (asItsGuardReadsIt(sp2.visitedBy) ?? []).includes(c.player) || (sp2.exploredBy?.[c.player] ?? 0) > 0);
+		if (!sp2 || !_seen) {
+			emit(turnContext, {
+				type: "system",
+				fact: {
+					kind: "the brokers reach only provinces the realm has seen",
+					heroName: c.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		if ((player.gold || 0) < THE_ALIGNMENT_ORDERS.broker.theNumbers.thePriceOfWordFromAProvince.value) {
+			emit(turnContext, {
+				type: "system",
+				fact: {
+					kind: "the treasury cannot pay for brokered word",
+					heroName: c.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		player.gold -= THE_ALIGNMENT_ORDERS.broker.theNumbers.thePriceOfWordFromAProvince.value;
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the brokers buy word from a province",
+				heroName: c.name,
+				provinceName: sp2.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		applySpySuccess(turnContext, c, sp2);
+	} else emit(turnContext, {
+		type: "system",
+		fact: {
+			kind: "a Broker order names no target",
+			heroName: c.name
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player]
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+	});
+}
+// src/engine/orders/alignment/harvest-the-field-an-undead-realms-order-to-raise-a-grave-as-a-skeletal-company.ts
+function resolveHarvestTheFieldOrder(turnContext, c, ph, prov, player) {
+	const { G } = turnContext;
+	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm harvests the field");
+	theRealmIsHanded(player);
+	if (theCheckAnAlignmentOrderRefusesAHeroOn(THE_ALIGNMENT_ORDERS["harvest-the-field"], {
+		isHeTheKing: c.isKing,
+		theAlignmentOfHisRealm: G.players[c.player]?.alignment
+	}) === "his realm is not of its creed") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "only Undead realms keep corpse-carters",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	theProvinceIsHanded(prov);
+	if ((prov.battleGraves ?? []).length === 0) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "no battlefield dead lie here to raise",
+				heroName: c.name,
+				provinceName: prov.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const _hCost = theCorpseCartersPriceForARealm(G.players[c.player]);
+	if ((player.gold || 0) < _hCost) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the treasury cannot pay the corpse-carters",
+				heroName: c.name,
+				cost: _hCost
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	player.gold -= _hCost;
+	const hGrave = takeBestGrave(prov);
+	if (!hGrave) throw new TypeError("Cannot read properties of null (reading 'type')");
+	const qualityUp = KC_QUALITY_UP;
+	const _uTierH = gdActive(turnContext, c.player, "Undead");
+	const hSkel = {
+		type: hGrave.type,
+		quality: _uTierH ? (qualityUp[hGrave.quality] ?? "") || hGrave.quality : hGrave.quality,
+		race: "Undead",
+		_isSkeletal: true,
+		unitName: `${String(hGrave.unitName || armyUnitName(hGrave.type))} (Skeletal)`
+	};
+	c.armies = asItsGuardReadsIt(c.armies) ?? [];
+	c.armies.push(hSkel);
+	emit(turnContext, {
+		type: "hire",
+		fact: {
+			kind: "the corpse-carters raise a skeletal company",
+			heroName: c.name,
+			provinceName: prov.name,
+			unitName: hSkel.unitName,
+			quality: hSkel.quality,
+			cost: _hCost
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player],
+			seen: "there"
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		province: prov.id
+	});
+	if (effStat(turnContext, c, "necromancy") < 1) emit(turnContext, {
+		type: "hire",
+		fact: {
+			kind: "a raiser with no Necromancy is warned his dead will crumble",
+			heroName: c.name,
+			unitName: hSkel.unitName
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player]
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		province: prov.id
+	});
+	resolveUnitGainInProvince(turnContext, c, prov, ph);
+}
+// src/engine/orders/alignment/perform-rite-a-pagan-heros-rite-of-the-wild-hunt-or-blood-offering.ts
+function resolvePerformRiteOrder(turnContext, c, ph, target, extra, prov, player) {
+	const { G } = turnContext;
+	if (!servesARealm(c)) throw new TypeError("a hero who serves no realm performs a rite");
+	if (theCheckAnAlignmentOrderRefusesAHeroOn(THE_ALIGNMENT_ORDERS["perform-rite"], {
+		isHeTheKing: c.isKing,
+		theAlignmentOfHisRealm: G.players[c.player]?.alignment
+	}) === "his realm is not of its creed") {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "a hero who does not keep the old faith cannot perform rites",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	theProvinceIsHanded(prov);
+	const _riteSite = (asItsGuardReadsIt(prov.features) ?? []).find((f) => f.ritualSite && (featDiscovered(f, c.player) || prov.owner === c.player));
+	if (!_riteSite) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "a hero finds no ritual site for a rite",
+				heroName: c.name,
+				provinceName: prov.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	if (prov._riteTurn === G.turn) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "the stones have already answered a rite this turn",
+				heroName: c.name,
+				siteName: _riteSite.name,
+				provinceName: prov.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+			province: prov.id
+		});
+		return;
+	}
+	if ((target || "").toLowerCase().startsWith("wild")) {
+		const primalDefs = PRIMAL_ARMY_DEFS_P;
+		const _wildType = (asItsGuardReadsIt(prov.armyTypes) ?? []).find((t) => primalDefs[t]);
+		if (!_wildType) {
+			emit(turnContext, {
+				type: "system",
+				fact: {
+					kind: "nothing wild answers the Wild Hunt",
+					heroName: c.name,
+					siteName: _riteSite.name,
+					provinceName: prov.name
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+				province: prov.id
+			});
+			return;
+		}
+		const _huntCost = wildHuntPrice(_wildType);
+		theRealmIsHanded(player);
+		if ((player.gold || 0) < _huntCost) {
+			emit(turnContext, {
+				type: "system",
+				fact: {
+					kind: "a hero cannot afford the Wild Hunt offerings",
+					heroName: c.name,
+					price: _huntCost
+				},
+				audience: {
+					actor: c.player,
+					realms: [c.player]
+				},
+				hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+				phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+			});
+			return;
+		}
+		player.gold -= _huntCost;
+		prov._riteTurn = G.turn;
+		c.armies = asItsGuardReadsIt(c.armies) ?? [];
+		const _bound = [];
+		for (let wi = 0; wi < WILD_HUNT_UNITS; wi++) {
+			const _u = {
+				type: _wildType,
+				quality: "Veteran",
+				race: (prov.race ?? "") || "Primal",
+				unitName: theNameDrawn(armyUnitName(_wildType)),
+				_wildHuntUntilTurn: G.turn + theTurnsAWildHuntServesBeyondThisOne(G.players[c.player])
+			};
+			c.armies.push(_u);
+			_bound.push({
+				unitName: _u.unitName,
+				type: _wildType
+			});
+		}
+		emit(turnContext, {
+			type: "combat",
+			fact: {
+				kind: "a hero performs the Rite of the Wild Hunt",
+				heroName: c.name,
+				siteName: _riteSite.name,
+				price: _huntCost,
+				beasts: _bound
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player],
+				seen: "battle"
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+			province: prov.id
+		});
+		resolveUnitGainInProvince(turnContext, c, prov, ph);
+		return;
+	}
+	const _tiers = QUALITY_TIERS.slice();
+	const _army = asItsGuardReadsIt(c.armies) ?? [];
+	const theCompanyNamed = (i) => {
+		const a = _army[i];
+		if (!a) throw new TypeError("a company the Blood Offering names is none");
+		return a;
+	};
+	const theMarked = theCompaniesABloodOfferingGivesAndRaises(_army, extra, unitAsItsRealmSeesIt);
+	if (!theMarked) {
+		emit(turnContext, {
+			type: "system",
+			fact: {
+				kind: "a hero makes no Blood Offering",
+				heroName: c.name
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+			phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN
+		});
+		return;
+	}
+	const _bn = theMarked.given.length;
+	const _sac = theMarked.given.map(theCompanyNamed);
+	const _ben = theMarked.raised.map(theCompanyNamed);
+	prov._riteTurn = G.turn;
+	c.armies = _army.filter((a) => !_sac.includes(a));
+	recordBattleGraves(turnContext, prov, _sac);
+	_ben.forEach((b) => {
+		const cur = _tiers.indexOf(b.quality);
+		if (cur > -1) {
+			const risen = _tiers[Math.min(4, cur + THE_ALIGNMENT_ORDERS["perform-rite"].theNumbers.theBloodOfferingsGrades.value)];
+			if (risen === void 0) throw new TypeError("a quality two tiers up is none");
+			b.quality = risen;
+		}
+	});
+	if (typeof refreshMovePool === "function") refreshMovePool(turnContext, c);
+	emit(turnContext, {
+		type: "combat",
+		fact: {
+			kind: "a hero makes a Blood Offering",
+			heroName: c.name,
+			siteName: _riteSite.name,
+			offered: _sac.map((a) => a.unitName || a.type),
+			count: _bn,
+			empowered: _ben.map((a) => ({
+				name: a.unitName || a.type,
+				quality: a.quality
+			}))
+		},
+		audience: {
+			actor: c.player,
+			realms: [c.player],
+			seen: "battle"
+		},
+		hero: THE_HERO_WHOSE_ORDER_IS_RESOLVING,
+		phase: THE_PHASE_THE_LINE_IS_WRITTEN_IN,
+		province: prov.id
+	});
+}
 // src/engine/orders/research-and-practice-orders-discoveries-skill-drills-and-rest.ts
 /** Levels by skill (a hero's skills, a season's snapshot of them, his rises this turn) as Practice reads and raises
 *  them, by the skill's name the order gives: the same object. */
@@ -75685,7 +76956,7 @@ function resolveResearchOrder(turnContext, c, ph, target, player) {
 			_rcat = _to;
 		}
 	}
-	const neutralSageBonus = G.players[c.player]?.alignment === "Neutral" ? sageLevel * 5 : 0;
+	const neutralSageBonus = whatARealmsAlignmentAddsToResearch(G.players[c.player]?.alignment, { theSageLevel: sageLevel });
 	const perLevel = 5;
 	const _discBase = sageLevel * perLevel + neutralSageBonus + (charMinor(turnContext, c, "loreseeker") ? perLevel : 0) + whatARealmsDiscoveriesAddToResearch(G.players[c.player], { isTheFieldStudiedItsOwnCreed: () => (_rcat || "").trim().toLowerCase() === ((player.alignment || "") + " Creed").toLowerCase() });
 	const _rStreak = c._researchFailStreak?.turn === G.turn ? c._researchFailStreak.n : 0;
@@ -76122,10 +77393,10 @@ function resolveRestOrder(turnContext, c, prov) {
 	const { G } = turnContext;
 	const REST_HEAL_PCT = .3;
 	const hisRealm = c.player === null ? void 0 : G.players[c.player];
-	const isDivineKingdom = hisRealm?.alignment === "Divine";
+	const theFactorHisRealmsAlignmentRaisesItBy = theFactorARealmsAlignmentRaisesARestsHealBy(hisRealm?.alignment);
 	const _medArts = aRealmsDiscoveriesHealARestingHeroInFull(hisRealm);
 	const baseHeal = Math.max(1, Math.ceil((c.maxHp || 20) * REST_HEAL_PCT));
-	let heal = _medArts ? Math.max(0, (c.maxHp || 20) - c.hp) : isDivineKingdom ? Math.ceil(baseHeal * 1.5) : baseHeal;
+	let heal = _medArts ? Math.max(0, (c.maxHp || 20) - c.hp) : theFactorHisRealmsAlignmentRaisesItBy !== null ? Math.ceil(baseHeal * theFactorHisRealmsAlignmentRaisesItBy) : baseHeal;
 	if (charMinor(turnContext, c, "colossus")) heal += 2;
 	theProvinceIsHanded(prov);
 	heal += whatARealmsDiscoveriesAddToARestsHeal(hisRealm, {
@@ -76143,7 +77414,7 @@ function resolveRestOrder(turnContext, c, prov) {
 			healed: heal,
 			hp: c.hp,
 			maxHp: c.maxHp,
-			isDivine: isDivineKingdom
+			isDivine: theFactorHisRealmsAlignmentRaisesItBy !== null
 		},
 		audience: {
 			actor: c.player,
@@ -79258,9 +80529,10 @@ function workBlessProvince({ turnContext, G, c, targetProv }) {
 	targetProv._blessWardBy = c.player;
 	targetProv._blessWardPct = Math.min(100, 50 + 5 * Math.min(5, effStat(turnContext, c, "white")));
 	TM(c).holyCasts += 1;
-	const _divineKingdom = G.players[c.player]?.alignment === "Divine";
+	const _alignmentsYield = theYieldOfABlessARealmsAlignmentGives(G.players[c.player]?.alignment, { isTheCasterTheKing: c.isKing });
+	const _divineKingdom = _alignmentsYield !== null;
 	const _divineKingBless = c.isKing && _divineKingdom;
-	targetProv._blessedMult = (_divineKingBless ? 2 : _divineKingdom ? 1.8 : 1.6) + whatARealmsDiscoveriesAddToABless(G.players[c.player]);
+	targetProv._blessedMult = (_alignmentsYield ?? 1.6) + whatARealmsDiscoveriesAddToABless(G.players[c.player]);
 	emit(turnContext, {
 		type: "explore",
 		fact: {
@@ -83694,10 +84966,10 @@ function earlyWinterCharmsFadeTaxesWagesRaidersMusterAndGarrisonDrill(turnContex
 			if (pv._blessedTurn === G.turn) t = Math.round(t * (Number(pv._blessedMult) || 1.6));
 			if (isConsecrated(p, pv.id)) {
 				const _cb = t;
-				t = Math.round(t * 1.5);
+				t = theTaxOfAProvinceOnConsecratedGround({ theTax: t });
 				_consecBonus += t - _cb;
 			}
-			if (pv._enslavedUntil != null && pv._enslavedUntil >= G.turn) t = Math.max(0, t - 1);
+			if (theEnslavedProvinceStillPaysLess(pv, G.turn)) t = Math.max(0, t - 1);
 			if (pv._earthquakeTax) t = Math.max(0, t - (pv._earthquakeTax || 0));
 			t += discTaxAdd(p, pv, G, pi, _taxAcc, _taxCap);
 			if (gdActive(turnContext, pi, "Good") && (pv.garrisonArmies ?? []).length > 0) t += 2;
@@ -84239,7 +85511,7 @@ function afterThePhasesStandOffsTheDeadGravesCouriersMassHealingCowardsAndLocati
 					env: true
 				});
 			});
-			pl.consecratedProvIds = kept;
+			keepOnlyTheConsecratedGroundARealmHolds(pl, kept);
 		}
 	});
 	if (Array.isArray(G._itemDeliveries) && G._itemDeliveries.length) {
@@ -84490,9 +85762,7 @@ function diplomacyResolutionOverturesPeaceAlliancesWarAndWarFrontWarnings(turnCo
 			let _brokenPact = false;
 			if (da === "enemy" || db === "enemy") {
 				if (cur === "allied") {
-					const _dark = (pi) => {
-						return ["Evil", "Undead"].includes(G.players[pi]?.alignment);
-					};
+					const _dark = (pi) => doesAnAlignmentBreakAnAllianceIntoWar(G.players[pi]?.alignment);
 					next = da === "enemy" && _dark(a) || db === "enemy" && _dark(b) ? "enemy" : "neutral";
 					_brokenPact = next === "neutral";
 				} else next = "enemy";
@@ -85070,7 +86340,7 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 	const { G } = turnContext;
 	G.turn = (G.turn || 1) + 1;
 	(asItsGuardReadsIt(G.players) ?? []).forEach((p, pi) => {
-		if (p?.alignment !== "Divine") return;
+		if (theReturnARealmsAlignmentGivesItsFallen(p?.alignment) === null) return;
 		G.characters.filter((c) => c.isKing && c.player === pi && !c.alive && c._divineReturn).forEach((k) => {
 			if (ownedConsecratedProvs(G, pi).length > 0) return;
 			delete k._divineReturn;
@@ -85094,7 +86364,7 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 			p.heirPending = false;
 			return;
 		}
-		if (p.alignment === "Divine" && (asItsGuardReadsIt(p.provinces) ?? []).length > 0 && G.characters.some((c) => c.isKing && c.player === pi && !c.alive && c._divineReturn && (asItsGuardReadsIt(G.heroGraveyard) ?? []).some((g) => g.id === c.id))) {
+		if (theReturnARealmsAlignmentGivesItsFallen(p.alignment) !== null && (asItsGuardReadsIt(p.provinces) ?? []).length > 0 && G.characters.some((c) => c.isKing && c.player === pi && !c.alive && c._divineReturn && (asItsGuardReadsIt(G.heroGraveyard) ?? []).some((g) => g.id === c.id))) {
 			p.heirPending = false;
 			return;
 		}
@@ -85134,11 +86404,8 @@ function newTurnCounterKingSuccessionSummonsAndSpellsEndAndTheGrandDesigns(turnC
 			archery: 1,
 			sage: 1
 		};
-		if (p.alignment === "Divine") heirSkills.white = (heirSkills.white ?? 0) + 1;
-		if (p.alignment === "Druidic") heirSkills.druid = (heirSkills.druid ?? 0) + 1;
-		if (p.alignment === "Evil") heirSkills.druid = (heirSkills.druid ?? 0) + 1;
-		if (p.alignment === "Pagan") heirSkills.explorer = (heirSkills.explorer ?? 0) + 1;
-		if (p.alignment === "Undead") heirSkills.necromancy = (heirSkills.necromancy ?? 0) + 1;
+		const heirsSkill = theSkillAKingOfTheAlignmentStartsWith(p.alignment);
+		if (heirsSkill) heirSkills[heirsSkill.theSkill] = (heirSkills[heirsSkill.theSkill] ?? 0) + heirsSkill.theLevelsMore;
 		const heirName = typeof asItsGuardReadsIt(nextHeroName) === "function" ? nextHeroName(p.alignment || "Neutral") : deadKing ? "Heir of " + deadKing.name : "The New Monarch";
 		const heir = {
 			id: G.characters.length,
@@ -85527,8 +86794,10 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 		});
 	});
 	if (!asItsGuardReadsIt(G.heroGraveyard)) G.heroGraveyard = [];
-	G.heroGraveyard.filter((g) => g.player !== null && G.players[g.player]?.alignment === "Divine" && (!g._monarch || G.characters.some((h) => h.id === g.id && h._divineReturn))).forEach((grave) => {
-		if (G.turn < (grave.killedOnTurn || 0) + 2) return;
+	G.heroGraveyard.filter((g) => g.player !== null && theReturnARealmsAlignmentGivesItsFallen(G.players[g.player]?.alignment) !== null && (!g._monarch || G.characters.some((h) => h.id === g.id && h._divineReturn))).forEach((grave) => {
+		const theReturn = theReturnARealmsAlignmentGivesItsFallen(G.players[grave.player]?.alignment);
+		if (theReturn === null) return;
+		if (G.turn < (grave.killedOnTurn || 0) + theReturn.theFullTurnsInDeath + 1) return;
 		const hero = G.characters.find((h) => h.id === grave.id);
 		if (!hero) return;
 		const _wasKing = !!grave._monarch;
@@ -85558,13 +86827,9 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 			delete hero._divineReturn;
 			if (playerP) delete playerP._resurrectableMonarchId;
 		}
-		{
-			const _cl = consecratedIds(playerP);
-			const _ci = _cl.indexOf(homeProv.id);
-			if (_ci >= 0) _cl.splice(_ci, 1);
-		}
+		liftConsecratedGround(playerP, homeProv.id);
 		hero.alive = true;
-		hero.hp = Math.floor(hero.maxHp * .5) || 8;
+		hero.hp = Math.floor(hero.maxHp * theReturn.theShareOfHealth) || 8;
 		hero.killedThisTurn = false;
 		hero.armies = [];
 		hero.items = [];
@@ -85591,7 +86856,7 @@ function newTurnWarAcademyInformantsDivineResurrectionGravesMercenariesWanderers
 	});
 	G.world.provinces.forEach((p) => {
 		if (!p.battleGraves || p.battleGraves.length === 0) return;
-		let decay = p.owner != null && G.players[p.owner]?.alignment === "Undead" ? .05 : .1;
+		let decay = p.owner != null ? theRateARealmsAlignmentLetsTheGravesOnItsLandRotAt(G.players[p.owner]?.alignment) ?? .1 : .1;
 		if (p.owner != null) decay = theRateARealmsDiscoveriesLetTheGravesRotAt(G.players[p.owner], decay);
 		p.battleGraves = p.battleGraves.filter(() => kcRng() > decay);
 	});
@@ -90355,6 +91620,7 @@ function playerEvents(turnLog, G, pi, sight, theKindOfEachLine) {
 			return pre + (!/[A-Za-z0-9]/.test(before) || /[.!?:—]\s*$/.test(before) ? "An unknown realm" : "an unknown realm");
 		});
 	};
+	const theForcesRows = new Set(turnLog.filter((_e, at) => theKindOfEachLine[at] === THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE));
 	const lastTurnLog = _filteredLog.map((e) => ({
 		type: e.type,
 		text: _maskText(e),
@@ -90366,7 +91632,8 @@ function playerEvents(turnLog, G, pi, sight, theKindOfEachLine) {
 		...e.battleId != null ? {
 			battleId: e.battleId,
 			bTier: e.bTier
-		} : {}
+		} : {},
+		...theForcesRows.has(e) ? { kind: THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE } : {}
 	}));
 	{
 		const _watch = clairWatch[pi];

@@ -1201,15 +1201,6 @@ var KC_SEASONS = [
 	"Fall",
 	"Early Winter"
 ];
-var KC_ALIGNMENTS = [
-	"Divine",
-	"Good",
-	"Druidic",
-	"Neutral",
-	"Pagan",
-	"Evil",
-	"Undead"
-];
 var KC_TEMPERS = [
 	"Berserk",
 	"Brave",
@@ -1452,18 +1443,30 @@ function makeTheDbFromItsClient(client) {
 		},
 		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
 		theOrders: {
-			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
-				orders,
-				orders_submitted: false
-			}).eq("id", realm),
-			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
-			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
-			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
-				orders,
-				orders_submitted: true,
-				last_submitted_at: submittedAt
-			}).eq("id", realm),
-			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+			saveThisRealmsDraft: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: false
+			}),
+			saveThisRealmsHeroOrder: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: null
+			}),
+			reopenThisRealmsOrders: (game, turn) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: null,
+				p_submitted: false
+			}),
+			submitThisRealmsOrders: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: true
+			})
 		},
 		theGameMastersGames: {
 			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
@@ -1543,7 +1546,7 @@ function makeThePagesDatabase(url, key, options) {
 	};
 }
 // src/ui/player/startup.ts
-var KC_DB_MIN = "20261015062128";
+var KC_DB_MIN = "20261115103705";
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
 var SUPABASE_URL = KC_CONFIG.supabaseUrl;
 var SUPABASE_ANON_KEY = KC_CONFIG.supabaseKey;
@@ -1782,14 +1785,673 @@ function dispFloor(v) {
 	const r = Math.round(n);
 	return Math.abs(n - r) < 1e-9 ? r : Math.trunc(n);
 }
+// src/engine/rules-on-plain-values/a-forces-row-on-a-page-its-kind-and-its-colour-of-six-hex-digits.ts
+/** The kind of a force drawn up for battle, as a realm's report and the GM's log store it beside the line (the views
+*  name it THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE, checked against the line facts' kinds). */
+var THE_KIND_A_FORCES_ROW_CARRIES = "a force drawn up for battle";
+/** `value` when it is a colour of six hex digits (`#rrggbb`, small or capital letters), else none. */
+function aColourOfSixHexDigitsOrNone(value) {
+	return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+}
 // src/engine/rules-on-plain-values/a-guarded-value-read-as-it-is-and-a-skill-held-above-nothing.ts
 /** A value where the code guards it as if it may be missing (a narrative, a foe or a status no caller leaves out
 *  today), read as it is: the guard stays, and the value keeps its type where the code reads it unguarded. */
 function asItsGuardReadsIt(value) {
 	return value;
 }
+// src/content/alignment-abilities-their-keys-names-numbers-and-words.ts
+/** The alignment abilities the registry holds, by slug. */
+var ALIGNMENT_ABILITIES = {
+	"neutral-trade": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theShareOfTheProvincesIncome: {
+			value: 20,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Trade: province tax income is +{N}",
+			inTheRulebooksParagraphOnGold: "Neutral realms add a +{N} trade bonus (rounded down)",
+			inTheIntrosTable: "+{N} tax",
+			inTheReportsSummary: "Province tax income flows {N} richer",
+			inTheJoinForm: "+{N} tax from every province"
+		} }
+	},
+	"consecrated-ground-tax": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theShareMoreTax: {
+			value: 50,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Consecrated ground gives +{N} tax",
+			inTheRulebooksOrdersTable: "+{N} tax, stauncher defenders",
+			inTheIntrosTable: "+{N} tax and holy ground",
+			inTheReportsSummary: "Consecrated ground yields +{N} tax",
+			inTheJoinForm: "Consecrate provinces: +{N} tax"
+		} }
+	},
+	"zeal-of-a-divine-realm": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			theChanceOfZeal: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Fanatical zeal {N}",
+				inTheIntrosTable: "Divine {N}",
+				inTheReportsSummary: "Your armies fight with a {N} chance of fanatical zeal",
+				inTheJoinForm: "({N} chance your host fights fanatically)"
+			},
+			theStrengthOfZeal: {
+				value: 1.3,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "zeal = your force fights at {N}0 for that battle"
+			}
+		}
+	},
+	"zeal-of-a-good-realm": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { theChanceOfZeal: {
+			value: 40,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Good {N}",
+			inTheReportsSummary: "Your armies fight with a solid {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-druidic-realm": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: { theChanceOfZeal: {
+			value: 20,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Druidic {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-neutral-realm": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theChanceOfZeal: {
+			value: 10,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Neutral {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-a-pagan-realm": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: { theChanceOfZeal: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Pagan {N}",
+			inTheReportsSummary: "Your armies fight with a {N} chance of fanaticism"
+		} }
+	},
+	"zeal-of-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theChanceOfZeal: {
+			value: 25,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Fanatical zeal {N}",
+			inTheIntrosTable: "Evil {N}",
+			inTheReportsSummary: "Your armies fight with a {N} base chance of fanaticism"
+		} }
+	},
+	"zeal-of-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: { theChanceOfZeal: {
+			value: 0,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Undead — zeal {N}"
+		} }
+	},
+	"consecrated-ground-doubles-a-defenders-zeal": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theTimesTheChance: {
+			value: 2,
+			writtenAs: "as a multiple",
+			inItsCreedsSection: "defenders there roll zeal at {N} chance"
+		} }
+	},
+	"savage-fury": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theStrengthOfTheHost: {
+			value: 1.25,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "fights at {N} in every battle",
+			inTheIntrosTable: "a host with a Monster fights {N}",
+			inTheReportsSummary: "a host with any of them in it fights at {N} in every battle",
+			inTheJoinForm: "lifts the whole host to {N} in every battle"
+		} }
+	},
+	"skeletal-fervour": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {
+			underTheKing: {
+				value: 1.5,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "fights at {N} when the King leads it in person",
+				inTheIntrosTable: "({N} under the king)",
+				inTheReportsSummary: "{N} (+50%) when the king leads them in person"
+			},
+			underAnyOtherCommander: {
+				value: 1.3,
+				writtenAs: "as a multiplier",
+				inItsCreedsSection: "and {N} under any other commander",
+				inTheIntrosTable: "Skeletal hosts fight {N}",
+				inTheReportsSummary: "{N} (+30%) under any other commander"
+			}
+		}
+	},
+	"consecrated-ground-weakens-an-unholy-attacker": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theCreedsItActsAgainst: ["Undead", "Evil"],
+		theNumbers: { theShareWeaker: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Undead and Evil hosts attacking it fight at −{N}",
+			inTheReportsSummary: "Undead and Evil hosts attacking it fight at −{N}"
+		} }
+	},
+	"righteous-defence": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { theShareStronger: {
+			value: 10,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Righteous Defence: any army defending a province you own fights at +{N}",
+			inTheIntrosTable: "+{N} when defending your own provinces",
+			inTheReportsSummary: "Righteous Defence: any army defending a province you own fights at +{N}",
+			inTheJoinForm: "+{N} strength defending land you own"
+		} }
+	},
+	"banner-of-fellowship": {
+		howItIsUsed: "always on",
+		alignment: "Good",
+		theNumbers: { thePointsMoreReadily: {
+			value: 15,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "allied contingents converging on the same battle unify +{N} more readily",
+			inTheReportsSummary: "allied contingents converging on the same battle unify {N} more readily"
+		} }
+	},
+	"home-of-the-wild": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: { theStrengthOfACreature: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Home of the Wild: in forest and jungle your Creature armies fight at {N}",
+			inTheIntrosTable: "Creatures fight {N} in forest and jungle",
+			inTheReportsSummary: "your Creature armies fight at {N} strength",
+			inTheJoinForm: "Creature armies fight at {N} in forest and jungle"
+		} }
+	},
+	"reign-of-fear": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: { theStrengthOfAMonster: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Reign of Fear: your Monsters fight at {N} when they attack a province",
+			inTheIntrosTable: "Monsters {N} attacking ground under your Terror",
+			inTheReportsSummary: "your Monsters fight at {N} when they attack a province your own Terror still grips",
+			inTheJoinForm: "your Monsters fight {N} attacking ground your Terror grips"
+		} }
+	},
+	"the-deathless-march": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"the-neutral-mercenary-discount": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { theGoldLess: {
+			value: 2,
+			writtenAs: "as it is",
+			inItsCreedsSection: "mercenary bands cost {N}g less than the going rate",
+			inTheReportsSummary: "Mercenary bands cost {N}g less to hire than the going rate"
+		} }
+	},
+	"the-divine-blessing": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			byTheRealmsCasters: {
+				value: 80,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Bless Province adds {N} of a province's tax value (others 60%)",
+				inTheReportsSummary: "Bless Province adds {N} of a province's tax value rather than 60%"
+			},
+			byTheKingInPerson: {
+				value: 100,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "when the King casts it the province yields +{N}",
+				inTheReportsSummary: "the province yields a full {N} more"
+			}
+		}
+	},
+	"creatures-follow-without-a-druid": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: {}
+	},
+	"monsters-follow-without-a-druid": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"neutral-scholars": {
+		howItIsUsed: "always on",
+		alignment: "Neutral",
+		theNumbers: { thePointsASageLevelAdds: {
+			value: 5,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "each Sage level adds a further +{N} discovery chance"
+		} }
+	},
+	"divine-grace": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {
+			theFullTurnsInDeath: {
+				value: 1,
+				writtenAs: "as a word",
+				inItsCreedsSection: "spends {N} full turn in death"
+			},
+			theShareOfHealthTheFallenRiseWith: {
+				value: .5,
+				writtenAs: "as a fraction",
+				inItsCreedsSection: "returns to life at the start of the turn after that, at {N} health"
+			}
+		}
+	},
+	"the-divine-rest": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: { theFactorOfTheHeal: {
+			value: 1.5,
+			writtenAs: "as a multiplier",
+			inItsCreedsSection: "Rest heals {N}"
+		} }
+	},
+	"a-pagan-victors-blood-harvest": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: { theGoldForEachFoeDestroyed: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Blood Harvest: +{N}g per enemy unit"
+		} }
+	},
+	"plunder-or-enslave": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {
+			theShareOfTheTaxPlundered: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inItsCreedsSection: "Terror plunders {N} of the province's tax value"
+			},
+			theGradeOfTheEnslavedGarrison: {
+				value: "Green",
+				writtenAs: "as it is",
+				inItsCreedsSection: "presses the beaten folk into a free {N} garrison unit"
+			},
+			theTurnsTheEnslavedProvincePaysLess: {
+				value: 3,
+				writtenAs: "as it is",
+				inItsCreedsSection: "1g less tax for {N} turns"
+			}
+		}
+	},
+	"graves-keep-on-undead-land": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: { theShareOfTheGravesThatRotEachTurn: {
+			value: 5,
+			writtenAs: "as a percentage",
+			inItsCreedsSection: "Battlefield graves in your provinces decay at {N} per turn instead of 10%"
+		} }
+	},
+	"war-without-warning-of-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"war-without-warning-of-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-broken-alliance-means-war-for-an-evil-realm": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"a-broken-alliance-means-war-for-an-undead-realm": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"the-risen-dead-follow-only-the-undead": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"an-undead-hero-is-undead-in-personal-combat": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-divine-king-starts-with-white-magic": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theSkillItGives: "white",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with White Magic +{N}"
+		} }
+	},
+	"a-druidic-king-starts-with-druid": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theSkillItGives: "druid",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Druid +{N} (heirs too), and ALL Creature"
+		} }
+	},
+	"an-evil-king-starts-with-druid": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theSkillItGives: "druid",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Druid +{N} (heirs too), and ALL Monster"
+		} }
+	},
+	"a-pagan-king-starts-with-explorer": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theSkillItGives: "explorer",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Explorer +{N} (heirs too)"
+		} }
+	},
+	"an-undead-king-starts-with-necromancy": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theSkillItGives: "necromancy",
+		theNumbers: { theLevelsMore: {
+			value: 1,
+			writtenAs: "as it is",
+			inItsCreedsSection: "Your king starts with Necromancy +{N} (heirs too)"
+		} }
+	},
+	"an-undead-king-starts-with-a-skeletal-company": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	"a-pagan-capital-opens-beside-the-ritual-stones": {
+		howItIsUsed: "always on",
+		alignment: "Pagan",
+		theNumbers: {}
+	},
+	"a-druidic-capital-opens-beside-creatures": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theNumbers: {}
+	},
+	"an-evil-capital-opens-beside-monsters": {
+		howItIsUsed: "always on",
+		alignment: "Evil",
+		theNumbers: {}
+	},
+	"a-druidic-wanderer-knows-the-druids-craft": {
+		howItIsUsed: "always on",
+		alignment: "Druidic",
+		theSkillItGives: "druid",
+		theNumbers: {}
+	},
+	"one-divine-realm-a-game": {
+		howItIsUsed: "always on",
+		alignment: "Divine",
+		theNumbers: {}
+	},
+	"one-undead-realm-a-game": {
+		howItIsUsed: "always on",
+		alignment: "Undead",
+		theNumbers: {}
+	},
+	consecrate: {
+		howItIsUsed: "a king's order",
+		alignment: "Divine",
+		key: "consecrate",
+		name: "Consecrate",
+		theOtherNamesTheTurnReads: ["consecrate province"],
+		theNumbers: {}
+	},
+	"call-to-arms": {
+		howItIsUsed: "a king's order",
+		alignment: "Good",
+		key: "call_to_arms",
+		name: "Call to Arms",
+		theOtherNamesTheTurnReads: [],
+		theNumbers: { theGradeMustered: {
+			value: "Green",
+			writtenAs: "as it is",
+			inItsCreedsSection: "a free {N} garrison unit",
+			inTheReportsSummary: "a free {N} garrison unit"
+		} }
+	},
+	broker: {
+		howItIsUsed: "a king's order",
+		alignment: "Neutral",
+		key: "broker",
+		name: "Broker",
+		theOtherNamesTheTurnReads: [],
+		theNumbers: { thePriceOfWordFromAProvince: {
+			value: 2,
+			writtenAs: "as it is",
+			inItsCreedsSection: "has ever seen for {N}g",
+			inTheReportsSummary: "has ever seen for {N}g"
+		} }
+	},
+	"harvest-the-field": {
+		howItIsUsed: "a hero's order",
+		alignment: "Undead",
+		key: "harvest_field",
+		name: "Harvest the Field",
+		theOtherNamesTheTurnReads: [],
+		theNumbers: { thePrice: {
+			value: 2,
+			writtenAs: "as it is",
+			inItsCreedsSection: "as a Skeletal unit for {N}g",
+			inTheIntrosTable: "from a grave for {N} gold",
+			inTheReportsSummary: "as a Skeletal unit for {N}g",
+			inTheJoinForm: "raises a grave as a soldier for {N}g"
+		} }
+	},
+	"perform-rite": {
+		howItIsUsed: "a hero's order",
+		alignment: "Pagan",
+		key: "rite",
+		name: "Perform Rite",
+		theOtherNamesTheTurnReads: [],
+		theNumbers: {
+			theWildHuntsBeasts: {
+				value: 2,
+				writtenAs: "as a word",
+				inItsCreedsSection: "the Wild Hunt binds {N} of",
+				inTheReportsSummary: "the Wild Hunt binds {N} of",
+				inTheJoinForm: "the Wild Hunt binds {N} of"
+			},
+			theWildHuntsTurnsMore: {
+				value: 1,
+				writtenAs: "as the turn it lasts until",
+				inItsCreedsSection: "serve until the end of {N}",
+				inTheReportsSummary: "as Veterans until the end of {N}"
+			},
+			theBloodOfferingsGrades: {
+				value: 2,
+				writtenAs: "as it is",
+				inItsCreedsSection: "by +{N} quality tiers",
+				inTheReportsSummary: "(+{N} quality tiers each"
+			}
+		}
+	}
+};
+/** The alignment orders: each row given as an order, and no other (one left out, or one that isn't, fails to compile),
+*  by slug, in the order of ALIGNMENT_ORDER_KEYS. */
+var THE_ALIGNMENT_ORDERS = {
+	consecrate: ALIGNMENT_ABILITIES.consecrate,
+	"call-to-arms": ALIGNMENT_ABILITIES["call-to-arms"],
+	broker: ALIGNMENT_ABILITIES.broker,
+	"harvest-the-field": ALIGNMENT_ABILITIES["harvest-the-field"],
+	"perform-rite": ALIGNMENT_ABILITIES["perform-rite"]
+};
+var AT_75 = "spared {N} of the time by a Good, Divine or Druidic foe";
+var AT_50 = "{N} by Neutral or Pagan";
+var AT_20 = "{N} by Evil or Undead";
+var THE_LADDER_OF_THE_ALIGNMENTS = {
+	theRungs: [
+		{
+			alignment: "Divine",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 1,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Good",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75,
+				inItsCreedsSection: "A felled Cowardly enemy who begs your mercy is spared {N} of the time"
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 2,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Druidic",
+			theChanceAFoeSparesAPlea: {
+				value: 75,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_75
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 4,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Neutral",
+			theChanceAFoeSparesAPlea: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_50
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 6,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Pagan",
+			theChanceAFoeSparesAPlea: {
+				value: 50,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_50
+			},
+			aFoesRefusalIsLaughter: false,
+			theWanderersCardsInTheDeck: {
+				value: 4,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Evil",
+			theChanceAFoeSparesAPlea: {
+				value: 20,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_20,
+				inItsCreedsSection: "A felled Cowardly enemy begging your mercy is spared only {N} of the time"
+			},
+			aFoesRefusalIsLaughter: true,
+			theWanderersCardsInTheDeck: {
+				value: 2,
+				writtenAs: "as it is"
+			}
+		},
+		{
+			alignment: "Undead",
+			theChanceAFoeSparesAPlea: {
+				value: 20,
+				writtenAs: "as a percentage",
+				inTheRulebooksEntryOnTheCowardly: AT_20
+			},
+			aFoesRefusalIsLaughter: true,
+			theWanderersCardsInTheDeck: {
+				value: 1,
+				writtenAs: "as it is"
+			}
+		}
+	],
+	theNumbers: {
+		theWageOfAHeroAtNoDistance: {
+			value: 2,
+			writtenAs: "as it is",
+			inTheRulebooksParagraphOnTheAlignments: "a wandering hero costs {N}g/turn",
+			inTheRulebooksParagraphOnHiring: "{N}g for a close match"
+		},
+		theStepsForEachGoldMore: {
+			value: 2,
+			writtenAs: "as a word",
+			inTheRulebooksParagraphOnTheAlignments: "+1g for every {N} steps between your alignment and theirs"
+		},
+		theStepsOfTheGulf: {
+			value: 6,
+			writtenAs: "as a word",
+			inTheRulebooksParagraphOnTheAlignments: "across the full gulf of {N} steps"
+		},
+		theStepsAKingsHeroesAreDealtWithin: {
+			value: 1,
+			writtenAs: "as it is"
+		}
+	}
+};
 // src/engine/rules-on-plain-values/alignments-and-a-wandering-heros-hire-wage.ts
-var ALIGNMENTS_P = KC_ALIGNMENTS.slice();
+var ALIGNMENTS_P = THE_LADDER_OF_THE_ALIGNMENTS.theRungs.map((rung) => rung.alignment);
 function alignDistP(a, b) {
 	const i = ALIGNMENTS_P.indexOf(a), j = ALIGNMENTS_P.indexOf(b);
 	if (i < 0 || j < 0) return 0;
@@ -1802,9 +2464,10 @@ function heroSkillWage(ch) {
 	return Math.max(0, Math.ceil(heroSkillTotal(ch) / 4) - 1);
 }
 function heroHireWage(kingdomAlign, heroAlign, waiveBan, hero) {
+	const { theWageOfAHeroAtNoDistance, theStepsForEachGoldMore, theStepsOfTheGulf } = THE_LADDER_OF_THE_ALIGNMENTS.theNumbers;
 	const d = alignDistP(kingdomAlign, heroAlign);
-	if (d >= 6 && !waiveBan) return null;
-	return 2 + Math.floor(Math.min(d, 6) / 2) + (hero ? heroSkillWage(hero) : 0);
+	if (d >= theStepsOfTheGulf.value && !waiveBan) return null;
+	return theWageOfAHeroAtNoDistance.value + Math.floor(Math.min(d, theStepsOfTheGulf.value) / theStepsForEachGoldMore.value) + (hero ? heroSkillWage(hero) : 0);
 }
 // src/engine/rules-on-plain-values/units-that-fly-sail-or-can-be-carried-through-the-air.ts
 var FLYING_TYPES = new Set(KC_UNIT_CLASS.flying);
@@ -1891,7 +2554,9 @@ var TAMED_FLYER_TYPES_D = new Set(KC_UNIT_CLASS.tamedFlyer);
 *  are driven, not led. (sd40 Dragon Taming's winged beasts are waived too: the caller knows the realm's discoveries,
 *  so it passes that on its own, to druidLevelALeaderNeeds.) */
 function druidNeedWaivedByAlignment(unitType, realmAlignment, leaderAlignment) {
-	return CREATURE_ARMIES.has(unitType) && (realmAlignment === "Druidic" || leaderAlignment === "Druidic") || MONSTER_ARMIES.has(unitType) && (realmAlignment === "Evil" || leaderAlignment === "Evil");
+	const creatures = ALIGNMENT_ABILITIES["creatures-follow-without-a-druid"].alignment;
+	const monsters = ALIGNMENT_ABILITIES["monsters-follow-without-a-druid"].alignment;
+	return CREATURE_ARMIES.has(unitType) && (realmAlignment === creatures || leaderAlignment === creatures) || MONSTER_ARMIES.has(unitType) && (realmAlignment === monsters || leaderAlignment === monsters);
 }
 /** The Druid a leader needs to lead a unit of this type at full strength, the waivers counted: none where his realm's
 *  alignment or his own waives it, or where the unit is a winged beast his realm has tamed (`tamed`: sd40 Dragon
@@ -3683,97 +4348,16 @@ function theActionSpellsAimedAtAProvince() {
 function theActionSpellsAimedAtAHero() {
 	return new Set(theSpellsThat((spell) => spell.phase && spell.target === "character"));
 }
-// src/content/alignment-orders-their-keys-names-creeds-numbers-and-words.ts
-/** The alignment orders, by slug, in the order of ALIGNMENT_ORDER_KEYS. */
-var THE_ALIGNMENT_ORDERS = {
-	consecrate: {
-		key: "consecrate",
-		name: "Consecrate",
-		theOtherNamesTheTurnReads: ["consecrate province"],
-		creed: "Divine",
-		theKingAlone: true,
-		theNumbers: {}
-	},
-	"call-to-arms": {
-		key: "call_to_arms",
-		name: "Call to Arms",
-		theOtherNamesTheTurnReads: [],
-		creed: "Good",
-		theKingAlone: true,
-		theNumbers: { theGradeMustered: {
-			value: "Green",
-			writtenAs: "as it is",
-			inItsCreedsSection: "a free {N} garrison unit",
-			inTheReportsSummary: "a free {N} garrison unit"
-		} }
-	},
-	broker: {
-		key: "broker",
-		name: "Broker",
-		theOtherNamesTheTurnReads: [],
-		creed: "Neutral",
-		theKingAlone: true,
-		theNumbers: { thePriceOfWordFromAProvince: {
-			value: 2,
-			writtenAs: "as it is",
-			inItsCreedsSection: "has ever seen for {N}g",
-			inTheReportsSummary: "has ever seen for {N}g"
-		} }
-	},
-	"harvest-the-field": {
-		key: "harvest_field",
-		name: "Harvest the Field",
-		theOtherNamesTheTurnReads: [],
-		creed: "Undead",
-		theKingAlone: false,
-		theNumbers: { thePrice: {
-			value: 2,
-			writtenAs: "as it is",
-			inItsCreedsSection: "as a Skeletal unit for {N}g",
-			inTheIntrosTable: "from a grave for {N} gold",
-			inTheReportsSummary: "as a Skeletal unit for {N}g",
-			inTheJoinForm: "raises a grave as a soldier for {N}g"
-		} }
-	},
-	"perform-rite": {
-		key: "rite",
-		name: "Perform Rite",
-		theOtherNamesTheTurnReads: [],
-		creed: "Pagan",
-		theKingAlone: false,
-		theNumbers: {
-			theWildHuntsBeasts: {
-				value: 2,
-				writtenAs: "as a word",
-				inItsCreedsSection: "the Wild Hunt binds {N} of",
-				inTheReportsSummary: "the Wild Hunt binds {N} of",
-				inTheJoinForm: "the Wild Hunt binds {N} of"
-			},
-			theWildHuntsTurnsMore: {
-				value: 1,
-				writtenAs: "as the turn it lasts until",
-				inItsCreedsSection: "serve until the end of {N}",
-				inTheReportsSummary: "as Veterans until the end of {N}"
-			},
-			theBloodOfferingsGrades: {
-				value: 2,
-				writtenAs: "as it is",
-				inItsCreedsSection: "by +{N} quality tiers",
-				inTheReportsSummary: "(+{N} quality tiers each"
-			}
-		}
-	}
-};
 // src/engine/rules-on-plain-values/the-alignment-orders-the-names-the-form-writes-and-who-may-give-each.ts
-/** Whether a realm of the creed `creed` (none: a realm whose creed isn't known) may give the order: its row's creed
+/** Whether a realm of the creed `creed` (none: a realm whose creed isn't known) may give the order: its row's alignment
 *  alone may. */
 function aRealmOfThisCreedMayGiveTheAlignmentOrder(order, creed) {
-	return creed === order.creed;
+	return creed === order.alignment;
 }
 /** Whether a hero, the king or not (`isKing`; none: not the king), may give the order: any hero may, unless its row
 *  marks it the king's alone. */
 function aHeroMayGiveTheAlignmentOrderAsKingOrNot(order, isKing) {
-	return !order.theKingAlone || (isKing ?? false);
+	return order.howItIsUsed !== "a king's order" || (isKing ?? false);
 }
 /** The name the order form writes for the alignment order of the slug `slug`. */
 function theNameTheFormWritesOfTheAlignmentOrder(slug) {
@@ -4026,7 +4610,8 @@ function theItemsASendItemOrderHandsOver(held, target) {
 /** Whether risen dead follow a hand-over to where it goes: into a garrison (no recipient) always; to a comrade only if
 *  he is Undead himself or serves an Undead realm. */
 function theRisenDeadFollowAHandOverTo(recipient) {
-	return !recipient || recipient.alignment === "Undead" || recipient.hisRealmsAlignment === "Undead";
+	const theUndead = ALIGNMENT_ABILITIES["the-risen-dead-follow-only-the-undead"].alignment;
+	return !recipient || recipient.alignment === theUndead || recipient.hisRealmsAlignment === theUndead;
 }
 /** Where a hand-over's companies go, by the risen dead among them: where they refuse to follow (theyFollow false),
 *  the skeletal companies go to their graves and the rest are handed; else every company is handed. Each list keeps
@@ -4167,6 +4752,22 @@ function aWageUnderEachCeiling(theCeilings, theWage, theAccount, theCeiling) {
 function aHerosWageAfterTheCutsAndTheCeilings(theCutsLeave, theCeilingsLeave, theWage) {
 	return Math.max(1, theCeilingsLeave(theCutsLeave(theWage)));
 }
+// src/engine/rules-on-plain-values/the-creeds-that-war-without-warning-break-an-alliance-into-war-and-conquer-by-a-doctrine.ts
+/** Whether a row of the list is of the alignment (as the old lists' `includes`: an alignment no row holds, or none,
+*  is not). */
+var anAbilityOfTheListIsOf = (theList, theAlignment) => theList.some((slug) => ALIGNMENT_ABILITIES[slug].alignment === theAlignment);
+/** Whether a realm of the alignment declares war without warning: its declaration on a realm it has met stands from
+*  the turn's first phase (the turn's start, and the march's forecast). */
+var doesAnAlignmentDeclareWarWithoutWarning = (theAlignment) => anAbilityOfTheListIsOf(["war-without-warning-of-an-evil-realm", "war-without-warning-of-an-undead-realm"], theAlignment);
+/** Whether a realm of the alignment that breaks an alliance goes to war, not to neutral (the reckoning, and the
+*  diplomacy card's button). */
+var doesAnAlignmentBreakAnAllianceIntoWar = (theAlignment) => anAbilityOfTheListIsOf(["a-broken-alliance-means-war-for-an-evil-realm", "a-broken-alliance-means-war-for-an-undead-realm"], theAlignment);
+/** Whether a realm of the alignment conquers by a doctrine its heroes set on their orders (the order form's choice;
+*  the turn reads the doctrine's numbers through the registry's runner). */
+var doesAnAlignmentConquerByADoctrine = (theAlignment) => anAbilityOfTheListIsOf(["plunder-or-enslave"], theAlignment);
+// src/engine/rules-on-plain-values/the-world-each-creed-is-made-in-its-wild-country-its-first-skills-and-one-realm-a-game.ts
+/** The alignments only one realm a game may hold, in their rows' order (Divine, then Undead). */
+var theAlignmentsOnlyOneRealmAGameMayHold = () => ["one-divine-realm-a-game", "one-undead-realm-a-game"].map((slug) => ALIGNMENT_ABILITIES[slug].alignment);
 // src/engine/rules-on-plain-values/the-level-a-heros-skill-counts-at-and-his-items-each-name-once.ts
 var SKILL_BENEFIT_CAP = 5;
 var SKILL_MAX = 9;
@@ -4623,7 +5224,7 @@ function theRelationAMarchMeetsAtTheBorderOf(report, orders, owner) {
 	const known = (report.diplomacy?.known ?? []).find((k) => k?.index === owner);
 	const now = (known?.relation ?? "") || "neutral";
 	const declared = known && orders.declarations ? Reflect.get(Object(orders.declarations), owner) : null;
-	const withoutWarning = ["Evil", "Undead"].includes(report.kingdom?.alignment);
+	const withoutWarning = doesAnAlignmentDeclareWarWithoutWarning(report.kingdom?.alignment);
 	return declared === "enemy" && withoutWarning ? "enemy" : now;
 }
 function aMarchTheTurnRefuses(report, orders, char, ph, from, to) {
@@ -6764,7 +7365,7 @@ function _renderDiplomacyInto(el, report, withControls) {
 		else if (k.relation === "neutral") controls = kcHtml`${alliancesAllowed ? kcHtml`${btn(k.index, "treat", "Propose Alliance", "#2d6a2d")} ` : ""}${btn(k.index, "enemy", "Declare War", "#8a1c1c")}`;
 		else if (k.relation === "enemy") controls = btn(k.index, "treat", "Propose Peace", "#2d6a2d");
 		else {
-			const _darkSelf = ["Evil", "Undead"].includes(reportRead.kingdom?.alignment);
+			const _darkSelf = doesAnAlignmentBreakAnAllianceIntoWar(reportRead.kingdom?.alignment);
 			controls = btn(k.index, "enemy", _darkSelf ? "Break Alliance — War" : "Break Alliance", "#8a1c1c");
 		}
 		return kcHtml`<div style="border:1px solid var(--parchment-dark);border-radius:2px;padding:8px 10px;margin-bottom:6px">
@@ -8227,12 +8828,14 @@ async function persistHeroOrder() {
 	const raw = parsed && typeof parsed === "object" ? parsed : {};
 	if (Reflect.get(raw, "orders") === void 0) Reflect.set(raw, "orders", {});
 	if (Reflect.get(raw, "encounterPlans") === void 0) Reflect.set(raw, "encounterPlans", {});
-	if (Reflect.get(raw, "forTurn") == null) Reflect.set(raw, "forTurn", Number(currentReport ? Number(currentReport._liveTurn) || currentReport.turn : currentReport) || 1);
+	const theFormsTurn = Number(currentReport ? Number(currentReport._liveTurn) || currentReport.turn : currentReport) || 1;
+	if (Reflect.get(raw, "forTurn") == null) Reflect.set(raw, "forTurn", theFormsTurn);
 	Reflect.set(raw, "heroOrder", heroOrder.slice());
 	const payload = JSON.stringify(raw);
-	const { error } = await thePagesDb.theOrders.saveThisRealmsHeroOrder(gp.id, payload);
+	const { error } = await thePagesDb.theOrders.saveThisRealmsHeroOrder(String(gp.game_id), theFormsTurn, payload);
 	if (error) {
-		console.warn("persistHeroOrder:", error.message);
+		const line = document.getElementById("orders-msg");
+		if (line) line.innerHTML = String(kcHtml`<div class="msg-error">Error: ${error.message}</div>`);
 		return;
 	}
 	gp.orders = payload;
@@ -9761,6 +10364,10 @@ function cancelSubmit() {
 	theElementWithTheId("orders-msg", HTMLElement).innerHTML = "";
 	restoreSubmitWrap("Submit");
 }
+/** Shows a save of the orders refused, in the database's words, in the order form's message line. */
+function showTheRefusalOfASaveInTheOrderForm(message) {
+	theElementWithTheId("orders-msg", HTMLElement).innerHTML = String(kcHtml`<div class="msg-error">Error: ${message}</div>`);
+}
 async function doSaveOrders() {
 	const chars = currentReport?.characters ?? [];
 	const orders = {};
@@ -9822,9 +10429,9 @@ async function doSaveOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: _draftTurn
 	});
-	const { error: saveErr } = await thePagesDb.theOrders.saveThisRealmsDraft(gp.id, _payload);
+	const { error: saveErr } = await thePagesDb.theOrders.saveThisRealmsDraft(String(gp.game_id), _draftTurn, _payload);
 	if (saveErr) {
-		console.error("Save draft error:", saveErr.message);
+		showTheRefusalOfASaveInTheOrderForm(saveErr.message);
 		return;
 	}
 	if (currentGamePlayer) currentGamePlayer.orders = _payload;
@@ -9844,14 +10451,7 @@ async function doSubmitOrders() {
 		btn.disabled = true;
 		btn.textContent = "Saving…";
 	}
-	const { data: freshGame } = await thePagesDb.theOrders.theTurnOfThisGame(String(currentGamePlayer?.game_id));
 	const expectedTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
-	if (freshGame && freshGame.turn !== expectedTurn) {
-		const resolved = String(kcHtml`<div class="msg-error">⚠ The GM has already resolved this turn. Your orders were not saved — please reload the page to see your new turn report.</div>`);
-		theElementWithTheId("orders-msg", HTMLElement).innerHTML = resolved;
-		restoreSubmitWrap("Submit");
-		return;
-	}
 	if (!currentGamePlayer?.id) {
 		theElementWithTheId("orders-msg", HTMLElement).innerHTML = "<div class=\"msg-error\">Session error — please reload the page.</div>";
 		restoreSubmitWrap("Submit");
@@ -9976,10 +10576,9 @@ async function doSubmitOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: expectedTurn
 	});
-	const { error } = await thePagesDb.theOrders.submitThisRealmsOrders(currentGamePlayer.id, _subPayload, (/* @__PURE__ */ new Date()).toISOString());
+	const { error } = await thePagesDb.theOrders.submitThisRealmsOrders(String(currentGamePlayer.game_id), expectedTurn, _subPayload);
 	if (error) {
-		const refused = String(kcHtml`<div class="msg-error">Error: ${error.message}</div>`);
-		theElementWithTheId("orders-msg", HTMLElement).innerHTML = refused;
+		showTheRefusalOfASaveInTheOrderForm(error.message);
 		restoreSubmitWrap("Submit");
 		return;
 	}
@@ -10042,7 +10641,7 @@ async function showJoinGame(gameId, gameName, maxP, joined, gmName, worldSize) {
 	const { data: slots } = await fetchGameSlots([gameId]);
 	const takenAlignments = new Set(slots.map((s) => s.alignment).filter(Boolean));
 	const alignSel = theElementWithTheId("join-alignment", HTMLSelectElement);
-	const UNIQUE_ALIGNS = ["Divine", "Undead"];
+	const UNIQUE_ALIGNS = theAlignmentsOnlyOneRealmAGameMayHold();
 	const warningParts = [];
 	Array.from(alignSel.options).forEach((opt) => {
 		if (UNIQUE_ALIGNS.includes(opt.value) && takenAlignments.has(opt.value)) {
@@ -10161,7 +10760,7 @@ async function doJoinGame(gameId) {
 	const alignment = theElementWithTheId("join-alignment", HTMLSelectElement).value;
 	const temper = theElementWithTheId("join-temper", HTMLSelectElement).value;
 	const msg = document.getElementById("join-msg");
-	if (["Divine", "Undead"].includes(alignment)) {
+	if (theAlignmentsOnlyOneRealmAGameMayHold().includes(alignment)) {
 		const { data: slots2 } = await fetchGameSlots([gameId]);
 		if (new Set(slots2.map((s) => s.alignment).filter(Boolean)).has(alignment)) {
 			theMessageBox(msg).innerHTML = String(kcHtml`<div class="msg-error">⚠ The <strong>${alignment}</strong> alignment is already taken in this game. Only one player per game may choose Divine or Undead. Please choose a different alignment.</div>`);
@@ -10469,13 +11068,15 @@ function buildChronicle(log, chars_for_log) {
 			if (km) add(km[1]);
 		}
 		lines.forEach((eOrNone) => {
-			const t = theLineRead(eOrNone).text ?? "";
-			if (t.startsWith("⚑FORCE⚑")) try {
+			const e = theLineRead(eOrNone);
+			const t = e.text ?? "";
+			if (e.kind === THE_KIND_A_FORCES_ROW_CARRIES) try {
 				const f = theForceTheMarkerHolds(t.slice(7), "name");
-				_registerName(f.name, f.color, f.neutral, !!f.guard);
+				const itsColour = aColourOfSixHexDigitsOrNone(f.color);
+				_registerName(f.name, itsColour, f.neutral, !!f.guard);
 				theListOfTheMarker(thisOrElse$1(f.armies, [])).forEach((a) => {
 					const un = a && theField(a, "unitName");
-					if (un && un !== theField(a, "type") && !inWords(un).startsWith("undefined")) _registerName(un, f.color, f.neutral, !!f.guard);
+					if (un && un !== theField(a, "type") && !inWords(un).startsWith("undefined")) _registerName(un, itsColour, f.neutral, !!f.guard);
 				});
 			} catch {}
 		});
@@ -10527,7 +11128,7 @@ function buildChronicle(log, chars_for_log) {
 			return nodes;
 		}
 		function renderForceBlock(f, compact) {
-			const col = f.guard ? CHIEFTAIN_MARKER_COLOR : f.neutral ? NEUTRAL_COLOR : thisOrElse$1(reportColour(f.color), NEUTRAL_COLOR);
+			const col = f.guard ? CHIEFTAIN_MARKER_COLOR : f.neutral ? NEUTRAL_COLOR : thisOrElse$1(reportColour(aColourOfSixHexDigitsOrNone(f.color)), NEUTRAL_COLOR);
 			if (compact) {
 				const cnt = {};
 				theListOfTheMarker(thisOrElse$1(f.armies, [])).forEach((a) => {
@@ -10547,7 +11148,7 @@ function buildChronicle(log, chars_for_log) {
 		function renderEntry(e, opt) {
 			opt ??= {};
 			const raw0 = e.text ?? "";
-			if (raw0.startsWith("⚑FORCE⚑")) try {
+			if (e.kind === THE_KIND_A_FORCES_ROW_CARRIES) try {
 				return renderForceBlock(theForceTheMarkerHolds(raw0.slice(7), "guard"), !!opt.compact);
 			} catch {}
 			const _ind = (/^ +/.exec(raw0) ?? [""])[0].length;
@@ -12641,7 +13242,7 @@ function injectResurrectOrders(charId, ph, heroId, casters) {
     <input type="hidden" id="ep-preschool-${fakeId}" value="">
     <div style="margin-top:6px">
       <label style="font-size:.72rem">Describe their battlecry:</label>
-      <input type="text" id="ep-notes-${fakeId}" placeholder="e.g. Death held me only briefly." style="font-size:.8rem;margin-top:2px">
+      <input type="text" id="ep-notes-${fakeId}" maxlength="200" placeholder="e.g. Death held me only briefly." style="font-size:.8rem;margin-top:2px">
     </div>`);
 	card.appendChild(epDiv);
 	return card;
@@ -12766,7 +13367,7 @@ function injectCharmOrders(charId, ph, heroId, containerId) {
     <input type="hidden" id="ep-preschool-${fakeId}" value="">
     <div style="margin-top:6px">
       <label style="font-size:.72rem">Describe their battlecry:</label>
-      <input type="text" id="ep-notes-${fakeId}" placeholder="e.g. Your cause is mine now." style="font-size:.8rem;margin-top:2px">
+      <input type="text" id="ep-notes-${fakeId}" maxlength="200" placeholder="e.g. Your cause is mine now." style="font-size:.8rem;margin-top:2px">
     </div>`);
 	card.appendChild(epDiv);
 }
@@ -12912,7 +13513,7 @@ function injectHiredHeroOrders(charId, ph) {
     </div>
     <div style="margin-top:6px">
       <label style="font-size:.72rem">Describe your battlecry:</label>
-      <input type="text" id="ep-notes-${hiredCharId}" placeholder="e.g. For glory and the fallen — none shall pass!"
+      <input type="text" id="ep-notes-${hiredCharId}" maxlength="200" placeholder="e.g. For glory and the fallen — none shall pass!"
         style="font-size:.8rem;margin-top:2px">
     </div>`);
 	card.appendChild(epDiv);
@@ -13386,7 +13987,7 @@ function buildOrdersForm(charsHanded, alreadySubmitted, existingOrders, turnNum)
               A refused challenge costs the refusing commander's force <strong>20% strength</strong>. So does losing the duel — whether by falling or by breaking off.
             </div>
           </div>
-          ${report.kingdom?.alignment === "Evil" ? kcHtml`
+          ${doesAnAlignmentConquerByADoctrine(report.kingdom?.alignment) ? kcHtml`
           <!-- EVIL — conquest doctrine: Terror (loot + fear) or Enslave (chained garrisons) -->
           <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #d8c48a">
             <div style="font-family:'Cinzel',serif;font-size:.68rem;color:#7a1010;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">
@@ -13400,10 +14001,10 @@ function buildOrdersForm(charsHanded, alreadySubmitted, existingOrders, turnNum)
 
           <div style="margin-top:6px">
             <label style="font-size:.72rem">Describe your battlecry:</label>
-            <input type="text" id="ep-notes-${c.id}" value="${thisOrThat(theDraftsField(savedEP, "notes"), "")}"
+            <input type="text" id="ep-notes-${c.id}" maxlength="200" value="${thisOrThat(theDraftsField(savedEP, "notes"), "")}"
               placeholder="e.g. For glory and the fallen — none shall pass!"
               style="font-size:.8rem;margin-top:2px">
-            <div style="font-size:.68rem;color:#2f281c;margin-top:2px">Shouted at any enemy — monster or rival — as combat begins.</div>
+            <div style="font-size:.68rem;color:#2f281c;margin-top:2px">Shouted at any enemy — monster or rival — as combat begins. At most 200 letters.</div>
           </div>
         </div>
 
@@ -13768,9 +14369,10 @@ async function allocateHeirSkill(charId, skill, delta) {
 async function reviseOrders() {
 	const gp = currentGamePlayer;
 	if (!gp) return;
-	const { error } = await thePagesDb.theOrders.reopenThisRealmsOrders(String(gp.id));
+	const theFormsTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
+	const { error } = await thePagesDb.theOrders.reopenThisRealmsOrders(String(gp.game_id), theFormsTurn);
 	if (error) {
-		console.error(error);
+		showTheRefusalOfASaveInTheOrderForm(error.message);
 		return;
 	}
 	setOrdersSubmittedUI(false);
