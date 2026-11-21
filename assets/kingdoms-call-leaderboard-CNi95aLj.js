@@ -154,7 +154,7 @@ function makeTheDbFromItsClient(client) {
 			theNameStatusAndTurnOfTheGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status,turn").eq("gm_user_id", gameMaster),
 			whichOfTheseGamesStillExist: (games) => client.from("games").select("id").in("id", games),
 			theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status").eq("gm_user_id", gameMaster).eq("status", "complete"),
-			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(*)").eq("id", game).single()
+			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(player_index,user_id,turn_report)").eq("id", game).single()
 		},
 		theDispatches: {
 			oneDispatchsId: () => client.from("game_messages").select("id").limit(1),
@@ -176,36 +176,48 @@ function makeTheDbFromItsClient(client) {
 		},
 		thePlayersRealms: {
 			thisAccountsRealmsAndTheirOrdersFlags: (account) => client.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", account),
-			everyRealmOfThisAccount: (account) => client.from("game_players").select("*").eq("user_id", account),
+			everyRealmOfThisAccount: (account) => client.from("game_players").select("id,game_id,player_index,display_name,orders_submitted").eq("user_id", account),
 			theGamesOfThisAccountsRealms: (account) => client.from("game_players").select("game_id").eq("user_id", account),
 			thisAccountsRealmsInThisGame: (game, account) => client.from("game_players").select("id,player_index").eq("game_id", game).eq("user_id", account),
-			thisRealm: (id) => client.from("game_players").select("*").eq("id", id).single(),
-			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			thisRealm: (id) => client.from("game_players").select("id,game_id,player_index,orders_submitted,turn_report,orders").eq("id", id).single(),
+			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			theSlotsOfTheseGames: (games) => client.rpc("get_game_slots", { p_games: games })
 		},
 		thePlayersGames: {
 			theTurnAndStateOfTheseGames: (games) => client.from("games").select("id,turn,status").in("id", games),
 			theseGamesForTheirCards: (games) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,created_at,meta").in("id", games),
-			theseGamesEveryColumn: (games) => client.from("games").select("*").in("id", games),
-			theGamesInSetup: () => client.from("games").select("*").eq("status", "setup"),
+			theseGamesEveryColumn: (games) => client.from("games").select("id,name,status,turn,game_state").in("id", games),
+			theGamesInSetup: () => client.from("games").select("id,name,gm_user_id,game_state,max_players").eq("status", "setup"),
 			thisGamesWorldAndState: (game) => client.from("games").select("game_state,status").eq("id", game).single(),
 			thisGameForItsReport: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", game).single(),
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single()
+			thisGameEveryColumn: (game) => client.from("games").select("game_state").eq("id", game).single()
 		},
-		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
+		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
 		theOrders: {
-			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
-				orders,
-				orders_submitted: false
-			}).eq("id", realm),
-			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
-			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
-			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
-				orders,
-				orders_submitted: true,
-				last_submitted_at: submittedAt
-			}).eq("id", realm),
-			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+			saveThisRealmsDraft: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: false
+			}),
+			saveThisRealmsHeroOrder: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: null
+			}),
+			reopenThisRealmsOrders: (game, turn) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: null,
+				p_submitted: false
+			}),
+			submitThisRealmsOrders: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: true
+			})
 		},
 		theGameMastersGames: {
 			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
@@ -215,8 +227,8 @@ function makeTheDbFromItsClient(client) {
 			everyGameNewestFirstFromRowToRowEveryColumn: (from, to) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
 			theActiveGamesThisGameMasterRuns: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
 			theActiveGamesThisGameMasterRunsEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single(),
-			makeThisGame: (game) => client.from("games").insert(game).select().single(),
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single(),
+			makeThisGame: (game) => client.from("games").insert(game).select("id").single(),
 			thisGamesTurnAndWorld: (game) => client.from("games").select("id,turn,game_state").eq("id", game).single(),
 			theGamesThisGameMasterRunsWithNoMeta: (gameMaster) => client.from("games").select("id,game_state").eq("gm_user_id", gameMaster).is("meta", null),
 			changeThisGame: (game, change) => client.from("games").update(change).eq("id", game),
@@ -225,7 +237,7 @@ function makeTheDbFromItsClient(client) {
 			keepTheRealmsThatAreOutOfThisGameFromSendingDispatches: (game, keep) => client.from("games").update({ block_eliminated_msgs: keep }).eq("id", game).select("id,block_eliminated_msgs").maybeSingle()
 		},
 		theGameMastersRealms: { removeThisRealm: (realm) => client.from("game_players").delete().eq("id", realm) },
-		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
+		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
 		theDeletionOfAGame: {
 			removeThisGamesTurnLogs: (game) => client.from("turn_logs").delete().eq("game_id", game),
 			removeThisGamesDispatches: (game) => client.from("game_messages").delete().eq("game_id", game),
@@ -237,8 +249,8 @@ function makeTheDbFromItsClient(client) {
 			removeThisGame: (game) => client.from("games").delete().eq("id", game)
 		},
 		theTurnAsTheGameMasterRunsIt: {
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single(),
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			thisGameEveryColumn: (game) => client.from("games").select("turn,game_state").eq("id", game).single(),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,orders_submitted,turn_report,orders").eq("game_id", game),
 			clearTheOrdersOfEveryRealmOfThisGame: (game) => client.from("game_players").update({
 				orders: null,
 				orders_submitted: false
@@ -253,9 +265,9 @@ function makeTheDbFromItsClient(client) {
 			}).eq("id", realm)
 		},
 		theTurnZeroAsTheGameMasterRunsIt: {
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,display_name,turn_report").eq("game_id", game),
 			removeEveryBotsRealmOfThisGame: (game) => client.from("game_players").delete().eq("game_id", game).is("user_id", null),
-			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			startThisGame: (game, change) => client.from("games").update(change).eq("id", game),
 			giveThisRealmItsFirstReport: (realm, report) => client.from("game_players").update({
 				turn_report: report,
@@ -263,7 +275,7 @@ function makeTheDbFromItsClient(client) {
 				orders_submitted: false
 			}).eq("id", realm),
 			writeThisLog: (log) => client.from("turn_logs").insert(log),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single()
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single()
 		}
 	};
 }

@@ -23980,15 +23980,16 @@ function theSitesFoundAsTheLineNamesThem(sites) {
 		guardianName: f.monster?.name ?? null
 	}));
 }
-/** The items whose lore a line tells, copied as the line is told (itemLoreLines' words, src/engine/items/tiers-and-
-*  hoards.ts): a field the item lacks is left out. */
-function theItemsAsTheirLoreIsTold(items) {
+/** The items whose lore a line tells, copied as the line is told, each with the lore `theLoreOf` finds for it (the
+*  order hands in itemLore: this file imports no engine code, as the prose may load it). A tier the item lacks is left
+*  out. */
+function theItemsAsTheirLoreIsTold(items, theLoreOf) {
 	return items.map((it) => {
-		const copy = { name: it.name };
+		const copy = {
+			name: it.name,
+			lore: theLoreOf(it)
+		};
 		if (it.tier !== void 0) copy.tier = it.tier;
-		if (it.lore !== void 0) copy.lore = it.lore;
-		if (it.desc !== void 0) copy.desc = it.desc;
-		if (it.effect !== void 0) copy.effect = it.effect ? { stat: it.effect.stat } : it.effect;
 		return copy;
 	});
 }
@@ -25614,11 +25615,16 @@ var TURN_END = THE_ORDER_OF_EACH_STAGE_OF_THE_DISCOVERIES.turnEnd;
 function theEffectsOfTheStageARealmHolds(theRealm, theOrder) {
 	return theOrder.flatMap((slug) => theEffectsOfAKindARealmHolds(theRealm, ROWS$3[slug].kind).map((theEffect) => [slug, theEffect]));
 }
+/** The effects of "strength: a realm's discoveries strengthen a unit" the realm holds, in the order it holds them (its
+*  report carries them for the army card: plan P1-11z2). */
+function theEffectsARealmsDiscoveriesStrengthenAUnitWith(theRealm) {
+	return theEffectsOfTheStageARealmHolds(theRealm, STRENGTH["a realm's discoveries strengthen a unit"]).map(([, e]) => e);
+}
 /** The runner of "strength: a realm's discoveries strengthen a unit" (discUnitMult, which armStr asks): the realm's
 *  effects of the stage's kind, handed in the order it holds them to their product, capped at the kind's ceiling (on
 *  plain values since plan P1-11e36: the stage holds its one kind, whose entry is that product's effect). */
 function theFactorARealmsDiscoveriesStrengthenAUnitBy(theRealm, facts) {
-	return theFactorTheUnitStrengthDiscoveriesARealmHoldsStrengthenAUnitBy(theEffectsOfTheStageARealmHolds(theRealm, STRENGTH["a realm's discoveries strengthen a unit"]).map(([, e]) => e), facts);
+	return theFactorTheUnitStrengthDiscoveriesARealmHoldsStrengthenAUnitBy(theEffectsARealmsDiscoveriesStrengthenAUnitWith(theRealm), facts);
 }
 /** The runner of "strength: a realm's discoveries add to a siege" (both battles, before the defenders' bonus is worn
 *  down): what the attacker's realm's effects take off it, added. */
@@ -29227,9 +29233,6 @@ ALL_MAGIC_ITEMS_P.forEach((it) => {
 function itemLore(it) {
 	if (!it) return "";
 	return (it.lore ?? "") || (ITEM_LORE_BY_NAME[it.name] ?? "") || (anItemIsTheMithrilSuit(it) ? MITHRIL_ARMOUR.lore : "") || (it.desc ?? "");
-}
-function itemLoreLines(items) {
-	return (items ?? []).filter((d) => Boolean(d)).map((d) => `📜 The ${d.name}${isLegendaryItem(d) ? " (LEGENDARY)" : ""} — ${itemLore(d)}`).join("\n");
 }
 function itemEffectKey(it) {
 	if (!it) return "?";
@@ -33608,7 +33611,7 @@ function makeTheDbFromItsClient(client) {
 			theNameStatusAndTurnOfTheGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status,turn").eq("gm_user_id", gameMaster),
 			whichOfTheseGamesStillExist: (games) => client.from("games").select("id").in("id", games),
 			theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status").eq("gm_user_id", gameMaster).eq("status", "complete"),
-			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(*)").eq("id", game).single()
+			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(player_index,user_id,turn_report)").eq("id", game).single()
 		},
 		theDispatches: {
 			oneDispatchsId: () => client.from("game_messages").select("id").limit(1),
@@ -33630,36 +33633,48 @@ function makeTheDbFromItsClient(client) {
 		},
 		thePlayersRealms: {
 			thisAccountsRealmsAndTheirOrdersFlags: (account) => client.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", account),
-			everyRealmOfThisAccount: (account) => client.from("game_players").select("*").eq("user_id", account),
+			everyRealmOfThisAccount: (account) => client.from("game_players").select("id,game_id,player_index,display_name,orders_submitted").eq("user_id", account),
 			theGamesOfThisAccountsRealms: (account) => client.from("game_players").select("game_id").eq("user_id", account),
 			thisAccountsRealmsInThisGame: (game, account) => client.from("game_players").select("id,player_index").eq("game_id", game).eq("user_id", account),
-			thisRealm: (id) => client.from("game_players").select("*").eq("id", id).single(),
-			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			thisRealm: (id) => client.from("game_players").select("id,game_id,player_index,orders_submitted,turn_report,orders").eq("id", id).single(),
+			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			theSlotsOfTheseGames: (games) => client.rpc("get_game_slots", { p_games: games })
 		},
 		thePlayersGames: {
 			theTurnAndStateOfTheseGames: (games) => client.from("games").select("id,turn,status").in("id", games),
 			theseGamesForTheirCards: (games) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,created_at,meta").in("id", games),
-			theseGamesEveryColumn: (games) => client.from("games").select("*").in("id", games),
-			theGamesInSetup: () => client.from("games").select("*").eq("status", "setup"),
+			theseGamesEveryColumn: (games) => client.from("games").select("id,name,status,turn,game_state").in("id", games),
+			theGamesInSetup: () => client.from("games").select("id,name,gm_user_id,game_state,max_players").eq("status", "setup"),
 			thisGamesWorldAndState: (game) => client.from("games").select("game_state,status").eq("id", game).single(),
 			thisGameForItsReport: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", game).single(),
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single()
+			thisGameEveryColumn: (game) => client.from("games").select("game_state").eq("id", game).single()
 		},
-		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
+		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
 		theOrders: {
-			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
-				orders,
-				orders_submitted: false
-			}).eq("id", realm),
-			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
-			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
-			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
-				orders,
-				orders_submitted: true,
-				last_submitted_at: submittedAt
-			}).eq("id", realm),
-			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+			saveThisRealmsDraft: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: false
+			}),
+			saveThisRealmsHeroOrder: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: null
+			}),
+			reopenThisRealmsOrders: (game, turn) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: null,
+				p_submitted: false
+			}),
+			submitThisRealmsOrders: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: true
+			})
 		},
 		theGameMastersGames: {
 			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
@@ -33669,8 +33684,8 @@ function makeTheDbFromItsClient(client) {
 			everyGameNewestFirstFromRowToRowEveryColumn: (from, to) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
 			theActiveGamesThisGameMasterRuns: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
 			theActiveGamesThisGameMasterRunsEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single(),
-			makeThisGame: (game) => client.from("games").insert(game).select().single(),
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single(),
+			makeThisGame: (game) => client.from("games").insert(game).select("id").single(),
 			thisGamesTurnAndWorld: (game) => client.from("games").select("id,turn,game_state").eq("id", game).single(),
 			theGamesThisGameMasterRunsWithNoMeta: (gameMaster) => client.from("games").select("id,game_state").eq("gm_user_id", gameMaster).is("meta", null),
 			changeThisGame: (game, change) => client.from("games").update(change).eq("id", game),
@@ -33679,7 +33694,7 @@ function makeTheDbFromItsClient(client) {
 			keepTheRealmsThatAreOutOfThisGameFromSendingDispatches: (game, keep) => client.from("games").update({ block_eliminated_msgs: keep }).eq("id", game).select("id,block_eliminated_msgs").maybeSingle()
 		},
 		theGameMastersRealms: { removeThisRealm: (realm) => client.from("game_players").delete().eq("id", realm) },
-		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
+		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
 		theDeletionOfAGame: {
 			removeThisGamesTurnLogs: (game) => client.from("turn_logs").delete().eq("game_id", game),
 			removeThisGamesDispatches: (game) => client.from("game_messages").delete().eq("game_id", game),
@@ -33691,8 +33706,8 @@ function makeTheDbFromItsClient(client) {
 			removeThisGame: (game) => client.from("games").delete().eq("id", game)
 		},
 		theTurnAsTheGameMasterRunsIt: {
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single(),
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			thisGameEveryColumn: (game) => client.from("games").select("turn,game_state").eq("id", game).single(),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,orders_submitted,turn_report,orders").eq("game_id", game),
 			clearTheOrdersOfEveryRealmOfThisGame: (game) => client.from("game_players").update({
 				orders: null,
 				orders_submitted: false
@@ -33707,9 +33722,9 @@ function makeTheDbFromItsClient(client) {
 			}).eq("id", realm)
 		},
 		theTurnZeroAsTheGameMasterRunsIt: {
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,display_name,turn_report").eq("game_id", game),
 			removeEveryBotsRealmOfThisGame: (game) => client.from("game_players").delete().eq("game_id", game).is("user_id", null),
-			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			startThisGame: (game, change) => client.from("games").update(change).eq("id", game),
 			giveThisRealmItsFirstReport: (realm, report) => client.from("game_players").update({
 				turn_report: report,
@@ -33717,7 +33732,7 @@ function makeTheDbFromItsClient(client) {
 				orders_submitted: false
 			}).eq("id", realm),
 			writeThisLog: (log) => client.from("turn_logs").insert(log),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single()
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single()
 		}
 	};
 }
@@ -33742,9 +33757,7 @@ function makeThePagesDatabase(url, key, options) {
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
 var SUPABASE_URL = KC_CONFIG.supabaseUrl;
 var SUPABASE_ANON_KEY = KC_CONFIG.supabaseKey;
-var thePagesDatabase = makeThePagesDatabase(SUPABASE_URL, SUPABASE_ANON_KEY);
-var sb = thePagesDatabase.client;
-var thePagesDb = thePagesDatabase.db;
+var thePagesDb = makeThePagesDatabase(SUPABASE_URL, SUPABASE_ANON_KEY).db;
 KC_SEASONS.slice();
 globalThis.currentUser = null;
 globalThis.currentGame = null;
@@ -33774,6 +33787,29 @@ function theDateOf(value) {
 	const made = Reflect.construct(Date, [value]);
 	if (made instanceof Date) return made;
 	throw new TypeError("the Date constructor made no date");
+}
+/**
+* `a + b` on values of any kind (a game's record as parsed from JSON: a score, a count, a name), as JavaScript adds
+* them: words where either side is words once read as a `+` reads it, else the two read as numbers. An object or a list
+* (all JSON holds besides words, numbers, flags and none) reads as its words (`[object Object]`, its elements joined),
+* as `+` reads one; JSON holds no date, symbol or big number, the kinds a `+` reads otherwise.
+*/
+function theSumAsJavaScriptMakesIt(a, b) {
+	const left = aSideAsAPlusReadsIt(a);
+	const right = aSideAsAPlusReadsIt(b);
+	if (typeof left === "string" || typeof right === "string") return String(left) + String(right);
+	return Number(left) + Number(right);
+}
+/** One side of a `+` as it reads it: an object or a list as its words, any other value as it is. */
+function aSideAsAPlusReadsIt(side) {
+	if (typeof side !== "object" || side === null) return side;
+	return String(side);
+}
+/** A database's refusal (its message, code and hint: not an Error), thrown as it is for the catch that reads it (lint's
+*  `only-throw-error` refuses an object of a known type that isn't an Error, and wrapping it would lose its hint). Both
+*  pages throw it (plan P1-16r moved it here from `ui/player/dispatches.ts`). */
+function theRefusalAsThrown(error) {
+	return error;
 }
 // src/ui/gm/startup.ts
 var KC_DB_MIN = "20261015062128";
@@ -38610,23 +38646,64 @@ function metaPatch(gs) {
 	return _kcHasMeta ? { meta: buildGameMeta(gs) } : {};
 }
 // src/ui/gm/game-list.ts
+/** An element the page looked up and writes into, as the write read it: none throws the TypeError writing it threw. */
+function theElementFound$1(el) {
+	if (el === null) throw new TypeError("Cannot set properties of null (setting 'innerHTML')");
+	return el;
+}
+/** The signed-in account's id, where the code reads it unguarded: for none, the TypeError that read threw. */
+function theSignedInAccountsId$1() {
+	if (currentUser === null) throw new TypeError("Cannot read properties of null (reading 'id')");
+	return currentUser.id;
+}
+/** A value of any kind in words, as `String` writes it: the key a table is read by (`table[value]` reads it so). */
+function inWords$4(value) {
+	return String(value);
+}
+/** `document.getElementById(id)?.value`: the field's value, as an element of any kind holds it (none for none). */
+function theValueOfTheField(id) {
+	const el = document.getElementById(id);
+	return el ? Reflect.get(el, "value") : void 0;
+}
+/** `!!document.getElementById(id)?.checked`: whether the box is ticked (an element of another kind, or none, is not). */
+function theBoxTicked(id) {
+	const box = document.getElementById(id);
+	return box instanceof HTMLInputElement && box.checked;
+}
+/** The value of the ticked Public / Private choice of the New Game form (none where none is ticked). */
+function theVisibilityTicked() {
+	const box = document.querySelector("input[name=\"new-game-visibility\"]:checked");
+	return box instanceof HTMLInputElement ? box.value : void 0;
+}
+/** The players' cap of a map's size, as the table holds it (none for a size it lacks; a cap is never 0). */
+function theCapOfTheMap(size) {
+	return MAP_MAX_PLAYERS[size];
+}
+/** The ticked ids a picker's list carries (renderInviteCheckboxes writes them on it): none where none was written,
+*  and any other value the TypeError adding to it threw. */
+function theTicksTheListCarries(list) {
+	const set = list ? Reflect.get(list, "_selectedSet") : list;
+	if (!set) return void 0;
+	if (set instanceof Set) return set;
+	throw new TypeError("set.add is not a function");
+}
 var _listGames = [];
 var _gmNames = {};
 async function loadGames() {
 	const el = document.getElementById("games-list");
-	el.innerHTML = "<div class=\"msg-info\">Loading…</div>";
-	const { data, error } = _kcOverlord ? await loadEveryGame() : _kcHasMeta ? await thePagesDb.theGameMastersGames.theGamesThisGameMasterRunsNewestFirst(currentUser.id) : await thePagesDb.theGameMastersGames.theGamesThisGameMasterRunsNewestFirstEveryColumn(currentUser.id);
+	theElementFound$1(el).innerHTML = "<div class=\"msg-info\">Loading…</div>";
+	const { data, error } = _kcOverlord ? await loadEveryGame() : _kcHasMeta ? await thePagesDb.theGameMastersGames.theGamesThisGameMasterRunsNewestFirst(theSignedInAccountsId$1()) : await thePagesDb.theGameMastersGames.theGamesThisGameMasterRunsNewestFirstEveryColumn(theSignedInAccountsId$1());
 	if (error) {
-		el.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		theElementFound$1(el).innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 		return;
 	}
-	_listGames = data || [];
+	_listGames = data ?? [];
 	if (_kcOverlord) {
-		const ids = [...new Set(_listGames.map((g) => g.gm_user_id).filter(Boolean))];
+		const ids = [...new Set(_listGames.map((g) => g.gm_user_id).filter((id) => Boolean(id)))];
 		const { data: prof } = ids.length ? await thePagesDb.theAccountsNames.theNamesOfTheseAccounts(ids) : { data: [] };
 		_gmNames = {};
-		(prof || []).forEach((p) => {
-			_gmNames[p.id] = p.name || "";
+		(prof ?? []).forEach((p) => {
+			_gmNames[p.id] = p.name ?? "";
 		});
 	}
 	renderGameList();
@@ -38639,7 +38716,7 @@ async function loadEveryGame() {
 			data: null,
 			error
 		};
-		rows.push(...data || []);
+		rows.push(...data ?? []);
 		if (!data || data.length < 200) break;
 	}
 	return {
@@ -38648,50 +38725,50 @@ async function loadEveryGame() {
 	};
 }
 function renderGameList() {
-	const el = document.getElementById("games-list");
 	const data = _listGames;
-	if (!data || data.length === 0) {
-		el.innerHTML = _kcOverlord ? "<div class=\"msg-info\">No games yet.</div>" : "<div class=\"msg-info\">No games yet. Click \"+ New Game\" to create your first game.</div>";
+	if (data.length === 0) {
+		theElementWithTheId("games-list", HTMLElement).innerHTML = _kcOverlord ? "<div class=\"msg-info\">No games yet.</div>" : "<div class=\"msg-info\">No games yet. Click \"+ New Game\" to create your first game.</div>";
 		return;
 	}
 	const _archCount = data.filter(gameArchived).length;
 	const _rows = data.filter((g) => gameArchived(g) === _showArchived);
 	const _switch = _archCount > 0 || _showArchived ? kcHtml`<div class="topbar" style="display:flex;justify-content:flex-end;margin-bottom:10px">
-         <button class="btn btn-ghost" style="font-size:.7rem" onclick="toggleArchivedView()">${_showArchived ? `← Back to active games (${data.length - _archCount})` : `🗄 Archived games (${_archCount})`}</button>
+         <button class="btn btn-ghost" style="font-size:.7rem" onclick="toggleArchivedView()">${_showArchived ? `← Back to active games (${String(data.length - _archCount)})` : `🗄 Archived games (${String(_archCount)})`}</button>
        </div>` : "";
 	const _banner = _showArchived ? kcHtml`<div class="msg-info" style="margin-bottom:10px">🗄 <strong>Archived games.</strong> Everything is kept — the world, the players, every turn report, the dispatches, the statistics and the Hall-of-Fame record. Archived games are simply out of the way, and the auto-turn watcher leaves them alone. Open one and press <strong>Restore</strong> to bring it back.</div>` : "";
 	if (_rows.length === 0) {
-		el.innerHTML = kcHtml`${_switch}${_banner}<div class="msg-info">${_showArchived ? "No archived games." : _kcOverlord ? "No active games." : "No active games. Click \"+ New Game\" to start one."}</div>`;
+		const theEmptyList = String(kcHtml`${_switch}${_banner}<div class="msg-info">${_showArchived ? "No archived games." : _kcOverlord ? "No active games." : "No active games. Click \"+ New Game\" to start one."}</div>`);
+		theElementWithTheId("games-list", HTMLElement).innerHTML = theEmptyList;
 		return;
 	}
 	if (_kcOverlord) {
-		const q = (document.getElementById("overlord-filter").value || "").trim().toLowerCase();
-		const gmName = (g) => _gmNames[g.gm_user_id] || (g.gm_user_id ? "(unknown GM)" : "(no GM)");
+		const q = (theElementWithTheId("overlord-filter", HTMLInputElement).value || "").trim().toLowerCase();
+		const gmName = (g) => (_gmNames[String(g.gm_user_id)] ?? "") || (g.gm_user_id ? "(unknown GM)" : "(no GM)");
 		const groups = {};
-		_rows.filter((g) => !q || String(g.name || "").toLowerCase().includes(q) || gmName(g).toLowerCase().includes(q)).forEach((g) => {
-			(groups[gmName(g)] = groups[gmName(g)] || []).push(g);
+		_rows.filter((g) => !q || (g.name || "").toLowerCase().includes(q) || gmName(g).toLowerCase().includes(q)).forEach((g) => {
+			(groups[gmName(g)] ??= []).push(g);
 		});
-		const names = Object.keys(groups).sort((a, b) => a.localeCompare(b));
-		el.innerHTML = kcHtml`${_switch}${_banner}${names.length ? names.map((n) => kcHtml`<div class="gm-group" data-gm="${n}">
-      <h3 style="color:var(--gold);margin:14px 0 8px">${n} <span style="font-size:.75rem;color:var(--parchment)">· ${groups[n].length} game${groups[n].length > 1 ? "s" : ""}</span></h3>
-      ${groups[n].map((g) => gameCardHtml(g))}</div>`) : kcHtml`<div class="msg-info">No game matches.</div>`}`;
+		const named = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+		const theGroups = String(kcHtml`${_switch}${_banner}${named.length ? named.map(([n, games]) => kcHtml`<div class="gm-group" data-gm="${n}">
+      <h3 style="color:var(--gold);margin:14px 0 8px">${n} <span style="font-size:.75rem;color:var(--parchment)">· ${games.length} game${games.length > 1 ? "s" : ""}</span></h3>
+      ${games.map((g) => gameCardHtml(g))}</div>`) : kcHtml`<div class="msg-info">No game matches.</div>`}`);
+		theElementWithTheId("games-list", HTMLElement).innerHTML = theGroups;
 		return;
 	}
-	el.innerHTML = kcHtml`${_switch}${_banner}${_rows.map((g) => gameCardHtml(g))}`;
+	const theCards = String(kcHtml`${_switch}${_banner}${_rows.map((g) => gameCardHtml(g))}`);
+	theElementWithTheId("games-list", HTMLElement).innerHTML = theCards;
 }
 function gameCardHtml(g) {
-	g.game_players?.length;
-	const joined = g.game_players?.filter((p) => p.user_id).length || 0;
-	g.game_players?.filter((p) => p.orders_submitted).length;
+	const joined = g.game_players?.filter((p) => p.user_id).length ?? 0;
 	const maxP = g.max_players || 4;
 	const { botCount: _bc, allBot: _ab } = botConfigFor(g);
 	const _plannedBots = _ab ? maxP : _bc;
 	const _humanCap = _ab ? 0 : maxP - _plannedBots;
-	const _botTag = _plannedBots ? ` +${_plannedBots}🤖` : "";
+	const _botTag = _plannedBots ? ` +${String(_plannedBots)}🤖` : "";
 	let pill = "";
 	if (g.status === "setup") pill = kcHtml`<span class="pill pill-amber">Setup — ${joined}/${_humanCap} joined${_botTag}</span>`;
 	else if (g.status === "active") {
-		const _need = (g.game_players || []).filter((p) => p.user_id && !isBotRow(p) && !realmExemptIn(g, p.player_index));
+		const _need = (g.game_players ?? []).filter((p) => p.user_id && !isBotRow(p) && !realmExemptIn(g, p.player_index));
 		const _in = _need.filter((p) => p.orders_submitted).length;
 		const _allIn = _in >= _need.length;
 		const _tm = turnModeOf(g);
@@ -38706,32 +38783,32 @@ function gameCardHtml(g) {
 		const a = gameArchivedAt(g);
 		return a ? ` ${fmtLastRun(a)}` : "";
 	})()}</span>` : "";
-	return kcHtml`<div class="game-card" data-game="${g.id}" onclick="openGame(${kcArg(String(g.id))})"${gameArchived(g) ? kcHtml` style="opacity:.82"` : ""}>
+	return kcHtml`<div class="game-card" data-game="${g.id}" onclick="openGame(${kcArg(g.id)})"${gameArchived(g) ? kcHtml` style="opacity:.82"` : ""}>
     <div>
       <div class="gc-name">${g.name}${pill}${_visTag}${_archTag}</div>
-      <div class="gc-meta">${maxP} player slots · Sea ${seaPctOf(g)}% · Created ${new Date(g.created_at).toLocaleDateString()}${_lastRunTag}</div>
+      <div class="gc-meta">${maxP} player slots · Sea ${seaPctOf(g)}% · Created ${theDateOf(g.created_at).toLocaleDateString()}${_lastRunTag}</div>
     </div>
     <div class="gc-action"><span style="color:var(--gold);font-size:1.2rem">›</span></div>
   </div>`;
 }
 function showNewGame() {
-	document.getElementById("new-game-msg").innerHTML = "";
+	theElementWithTheId("new-game-msg", HTMLElement).innerHTML = "";
 	updateMaxPlayersForMap();
 	const _pub = document.querySelector("input[name=\"new-game-visibility\"][value=\"public\"]");
-	if (_pub) _pub.checked = true;
+	if (_pub instanceof HTMLInputElement) _pub.checked = true;
 	_inviteSelected = /* @__PURE__ */ new Set();
 	const _search = document.getElementById("new-game-invite-search");
-	if (_search) _search.value = "";
+	if (_search instanceof HTMLInputElement) _search.value = "";
 	{
 		const _tmSel = document.getElementById("new-game-turnmode");
-		if (_tmSel) {
+		if (_tmSel instanceof HTMLSelectElement) {
 			_tmSel.value = "manual";
 			updateTurnModeFields("new-game");
 		}
 	}
 	{
 		const _sp = document.getElementById("new-game-seapct");
-		if (_sp) {
+		if (_sp instanceof HTMLInputElement) {
 			_sp.value = String(SEA_PCT_DEFAULT);
 			updateSeaHint();
 		}
@@ -38749,20 +38826,20 @@ async function loadInvitablePlayers(force) {
 	if (error) {
 		_invitablePlayers = null;
 		_invitableRawCount = null;
-		throw error;
+		throw theRefusalAsThrown(error);
 	}
-	_invitableRawCount = (data || []).length;
-	_invitablePlayers = (data || []).filter((p) => p && p.id !== currentUser.id).map((p) => ({
+	_invitableRawCount = (data ?? []).length;
+	_invitablePlayers = (data ?? []).filter((p) => p && p.id !== theSignedInAccountsId$1()).map((p) => ({
 		id: p.id,
-		name: p.name || "(unnamed)",
+		name: (p.name ?? "") || "(unnamed)",
 		joined: joinedMonth(p.created_at)
 	}));
 	return _invitablePlayers;
 }
 function joinedMonth(ts) {
-	const d = new Date(ts);
-	if (!ts || isNaN(d)) return "";
-	return [
+	const d = new Date(ts ?? 0);
+	if (!ts || isNaN(d.getTime())) return "";
+	return String([
 		"Jan",
 		"Feb",
 		"Mar",
@@ -38775,10 +38852,10 @@ function joinedMonth(ts) {
 		"Oct",
 		"Nov",
 		"Dec"
-	][d.getUTCMonth()] + " " + d.getUTCFullYear();
+	][d.getUTCMonth()]) + " " + String(d.getUTCFullYear());
 }
 async function updateGameVisibility() {
-	const priv = document.querySelector("input[name=\"new-game-visibility\"]:checked")?.value === "private";
+	const priv = theVisibilityTicked() === "private";
 	const wrap = document.getElementById("new-game-invite-wrap");
 	if (wrap) wrap.style.display = priv ? "block" : "none";
 	if (!priv) return;
@@ -38788,43 +38865,43 @@ async function updateGameVisibility() {
 		await loadInvitablePlayers();
 		renderInviteCheckboxes("new-game-invite-list", "new-game-invite-search", _inviteSelected, "new-game-invite-count");
 	} catch (e) {
-		if (list) list.innerHTML = kcHtml`<div class="msg-error" style="margin:8px">Couldn't load players: ${e.message}<br><small>The GM account needs SELECT access to the <code>profiles</code> table (RLS).</small></div>`;
+		if (list) list.innerHTML = String(kcHtml`<div class="msg-error" style="margin:8px">Couldn't load players: ${theField(e, "message")}<br><small>The GM account needs SELECT access to the <code>profiles</code> table (RLS).</small></div>`);
 	}
 }
 function renderInviteCheckboxes(listId, searchId, selectedSet, countId) {
 	const list = document.getElementById(listId);
 	if (!list) return;
-	const q = (document.getElementById(searchId)?.value || "").trim().toLowerCase();
-	const players = _invitablePlayers || [];
+	const search = document.getElementById(searchId);
+	const q = (search instanceof HTMLInputElement ? search.value : "").trim().toLowerCase();
+	const players = _invitablePlayers ?? [];
 	const shown = players.filter((p) => !q || p.name.toLowerCase().includes(q));
 	if (players.length === 0) list.innerHTML = _invitableRawCount === 0 ? "<div class=\"msg-error\" style=\"margin:8px\">No profiles came back at all — not even this GM account's own. That is almost always a permissions problem, not an empty table: this GM account cannot read the <code>profiles</code> table under its Row-Level Security policy.<br><small>In Supabase → Authentication → Policies (table <code>profiles</code>), add a SELECT policy that covers this account — e.g. <code>for select to authenticated using (true)</code> — then reload.</small></div>" : "<div style=\"padding:10px;color:var(--stone);font-size:.82rem\">No other registered players yet.</div>";
 	else if (shown.length === 0) list.innerHTML = "<div style=\"padding:10px;color:var(--stone);font-size:.82rem\">No players match that filter.</div>";
-	else list.innerHTML = kcHtml`${shown.map((p) => {
+	else list.innerHTML = String(kcHtml`${shown.map((p) => {
 		return kcHtml`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #2a2015;cursor:pointer;font-weight:normal">
-        <input type="checkbox" ${selectedSet.has(p.id) ? "checked" : ""} onchange="toggleInvite(${kcArg(listId)},${kcArg(searchId)},${kcArg(countId)},${kcArg(String(p.id))},this.checked)">
+        <input type="checkbox" ${selectedSet.has(p.id) ? "checked" : ""} onchange="toggleInvite(${kcArg(listId)},${kcArg(searchId)},${kcArg(countId)},${kcArg(p.id)},this.checked)">
         <span style="flex:1;min-width:0">
           <span style="color:var(--parchment)">${p.name || ""}</span>
           ${p.joined ? kcHtml`<span style="color:var(--stone);font-size:.78rem"> · joined ${p.joined}</span>` : ""}
         </span>
       </label>`;
-	})}`;
+	})}`);
 	const cnt = document.getElementById(countId);
-	if (cnt) cnt.textContent = `${selectedSet.size} player${selectedSet.size !== 1 ? "s" : ""} invited`;
-	list._selectedSet = selectedSet;
+	if (cnt) cnt.textContent = `${String(selectedSet.size)} player${selectedSet.size !== 1 ? "s" : ""} invited`;
+	Reflect.set(list, "_selectedSet", selectedSet);
 }
 function toggleInvite(listId, searchId, countId, id, on) {
-	const list = document.getElementById(listId);
-	const set = list && list._selectedSet;
+	const set = theTicksTheListCarries(document.getElementById(listId));
 	if (!set) return;
 	if (on) set.add(id);
 	else set.delete(id);
 	const cnt = document.getElementById(countId);
-	if (cnt) cnt.textContent = `${set.size} player${set.size !== 1 ? "s" : ""} invited`;
+	if (cnt) cnt.textContent = `${String(set.size)} player${set.size !== 1 ? "s" : ""} invited`;
 }
 function invitedNames(ids) {
 	const byId = {};
-	(_invitablePlayers || []).forEach((p) => byId[p.id] = p.name);
-	return (ids || []).map((id) => byId[id] || "(unknown player)");
+	(_invitablePlayers ?? []).forEach((p) => byId[p.id] = p.name);
+	return (ids ?? []).map((id) => (byId[inWords$4(id)] ?? "") || "(unknown player)");
 }
 globalThis._editInviteSelected = /* @__PURE__ */ new Set();
 async function openEditInvites() {
@@ -38834,7 +38911,7 @@ async function openEditInvites() {
 		return;
 	}
 	const vis = gameVisibility(currentGame);
-	_editInviteSelected = new Set(vis.invited || []);
+	_editInviteSelected = new Set(vis.invited);
 	if (document.getElementById("edit-invite-overlay")) return;
 	const ov = document.createElement("div");
 	ov.id = "edit-invite-overlay";
@@ -38857,7 +38934,7 @@ async function openEditInvites() {
 		renderInviteCheckboxes("edit-invite-list", "edit-invite-search", _editInviteSelected, "edit-invite-count");
 	} catch (e) {
 		const l = document.getElementById("edit-invite-list");
-		if (l) l.innerHTML = kcHtml`<div class="msg-error" style="margin:8px">Couldn't load players: ${e.message}<br><small>The GM account needs SELECT access to the <code>profiles</code> table (RLS).</small></div>`;
+		if (l) l.innerHTML = String(kcHtml`<div class="msg-error" style="margin:8px">Couldn't load players: ${theField(e, "message")}<br><small>The GM account needs SELECT access to the <code>profiles</code> table (RLS).</small></div>`);
 	}
 }
 function closeEditInvites() {
@@ -38878,14 +38955,14 @@ var MAP_MAX_PLAYERS = {
 function updateMaxPlayersForMap() {
 	const sizeEl = document.getElementById("new-game-mapsize");
 	const sel = document.getElementById("new-game-maxplayers");
-	if (!sizeEl || !sel) return;
-	const max = MAP_MAX_PLAYERS[sizeEl.value] || 10;
+	if (!(sizeEl instanceof HTMLSelectElement) || !(sel instanceof HTMLSelectElement)) return;
+	const max = theCapOfTheMap(sizeEl.value) ?? 10;
 	const prev = parseInt(sel.value) || max;
 	sel.innerHTML = "";
 	for (let n = 2; n <= max; n++) {
 		const opt = document.createElement("option");
 		opt.value = String(n);
-		opt.textContent = `${n} players`;
+		opt.textContent = `${String(n)} players`;
 		sel.appendChild(opt);
 	}
 	sel.value = String(Math.min(Math.max(2, prev), max));
@@ -38894,10 +38971,10 @@ function updateMaxPlayersForMap() {
 }
 function updateSeaHint() {
 	const el = document.getElementById("new-game-seapct"), lab = document.getElementById("new-game-seapct-label"), hint = document.getElementById("new-game-sea-hint");
-	if (!el) return;
+	if (!(el instanceof HTMLInputElement)) return;
 	const v = normSeaPct(el.value);
 	if (String(v) !== el.value) el.value = String(v);
-	if (lab) lab.textContent = v + "%";
+	if (lab) lab.textContent = String(v) + "%";
 	if (!hint) return;
 	const sizeEl = document.getElementById("new-game-mapsize");
 	const sizemap = {
@@ -38938,26 +39015,26 @@ function updateSeaHint() {
 			rows: 11
 		}
 	};
-	const sz = sizemap[sizeEl ? sizeEl.value : "p5"] || sizemap.p5, cells = sz.cols * sz.rows, sea = Math.round(cells * v / 100), land = cells - sea;
+	const sz = sizemap[inWords$4(sizeEl ? Reflect.get(sizeEl, "value") : "p5")] ?? sizemap.p5, cells = sz.cols * sz.rows, sea = Math.round(cells * v / 100), land = cells - sea;
 	const maxEl = document.getElementById("new-game-maxplayers");
-	const realms = Math.max(2, parseInt(maxEl && maxEl.value) || 2);
+	const realms = Math.max(2, parseInt(inWords$4(maxEl ? Reflect.get(maxEl, "value") : maxEl)) || 2);
 	let flavour;
 	if (v <= 25) flavour = "A continent — a few lakes and inland seas. Fleets and Naval matter little; wars are fought overland.";
 	else if (v <= 40) flavour = "Coasts and channels — the classic map. Most realms touch the sea; a navy is useful but not essential.";
 	else if (v <= 55) flavour = "Archipelagos — land splits into islands. Fleets (or flyers) are needed to reach most rivals; Naval and Part Sea become strong.";
 	else flavour = "A drowned world — scattered islands in open ocean. Every campaign is amphibious; expect far less land, tax and lairs per realm.";
-	hint.textContent = `${sea} sea · ${land} land of ${cells} provinces — about ${(land / realms).toFixed(1)} land provinces per realm. ${flavour}`;
+	hint.textContent = `${String(sea)} sea · ${String(land)} land of ${String(cells)} provinces — about ${(land / realms).toFixed(1)} land provinces per realm. ${flavour}`;
 }
 function updateBotHint() {
 	const maxEl = document.getElementById("new-game-maxplayers");
 	const botEl = document.getElementById("new-game-botcount");
 	const allEl = document.getElementById("new-game-allbot");
 	const hint = document.getElementById("new-game-bot-hint");
-	if (!maxEl || !botEl || !hint) return;
+	if (!(maxEl instanceof HTMLSelectElement) || !(botEl instanceof HTMLInputElement) || !hint) return;
 	const maxP = parseInt(maxEl.value) || 2;
-	const allBot = !!(allEl && allEl.checked);
+	const allBot = allEl instanceof HTMLInputElement && allEl.checked;
 	botEl.disabled = allBot;
-	let bots = allBot ? maxP : Math.max(0, Math.min(parseInt(botEl.value) || 0, maxP));
+	const bots = allBot ? maxP : Math.max(0, Math.min(parseInt(botEl.value) || 0, maxP));
 	if (!allBot && String(bots) !== botEl.value) botEl.value = String(bots);
 	if (!allBot && bots === 0) {
 		hint.style.display = "none";
@@ -38965,36 +39042,36 @@ function updateBotHint() {
 	}
 	const humans = allBot ? 0 : maxP - bots;
 	hint.style.display = "block";
-	if (allBot) hint.innerHTML = kcHtml`🤖 <strong>All-bot game:</strong> all ${maxP} realms will be GM-controlled bots. No humans can join. Needs at least 2.`;
-	else if (humans <= 0) hint.innerHTML = kcHtml`🤖 <strong>${bots} bots</strong>, no room for human players (bots fill all ${maxP} slots). Tick “All-bot game”, or lower the bot count to leave human slots.`;
-	else hint.innerHTML = kcHtml`🤖 <strong>${bots} bot${bots !== 1 ? "s" : ""}</strong> + up to <strong>${humans} human${humans !== 1 ? "s" : ""}</strong> = ${maxP} realms. Bots are generated when you run Turn 0.`;
+	if (allBot) hint.innerHTML = String(kcHtml`🤖 <strong>All-bot game:</strong> all ${maxP} realms will be GM-controlled bots. No humans can join. Needs at least 2.`);
+	else if (humans <= 0) hint.innerHTML = String(kcHtml`🤖 <strong>${bots} bots</strong>, no room for human players (bots fill all ${maxP} slots). Tick “All-bot game”, or lower the bot count to leave human slots.`);
+	else hint.innerHTML = String(kcHtml`🤖 <strong>${bots} bot${bots !== 1 ? "s" : ""}</strong> + up to <strong>${humans} human${humans !== 1 ? "s" : ""}</strong> = ${maxP} realms. Bots are generated when you run Turn 0.`);
 }
 async function createGame() {
-	const name = document.getElementById("new-game-name").value.trim();
-	const mapSize = document.getElementById("new-game-mapsize").value;
-	const cap = MAP_MAX_PLAYERS[mapSize] || 10;
-	const maxP = Math.min(Math.max(2, parseInt(document.getElementById("new-game-maxplayers").value) || 2), cap);
+	const name = theElementWithTheId("new-game-name", HTMLInputElement).value.trim();
+	const mapSize = theElementWithTheId("new-game-mapsize", HTMLSelectElement).value;
+	const cap = theCapOfTheMap(mapSize) ?? 10;
+	const maxP = Math.min(Math.max(2, parseInt(theElementWithTheId("new-game-maxplayers", HTMLSelectElement).value) || 2), cap);
 	const maxTurns = 0;
-	const allBot = !!document.getElementById("new-game-allbot")?.checked;
-	let botCount = allBot ? maxP : Math.max(0, Math.min(parseInt(document.getElementById("new-game-botcount")?.value) || 0, maxP));
+	const allBot = theBoxTicked("new-game-allbot");
+	const botCount = allBot ? maxP : Math.max(0, Math.min(parseInt(inWords$4(theValueOfTheField("new-game-botcount"))) || 0, maxP));
 	const msg = document.getElementById("new-game-msg");
 	if (!name) {
-		msg.innerHTML = "<div class=\"msg-error\">Please enter a game name.</div>";
+		theElementFound$1(msg).innerHTML = "<div class=\"msg-error\">Please enter a game name.</div>";
 		return;
 	}
 	if (allBot && maxP < 2) {
-		msg.innerHTML = "<div class=\"msg-error\">An all-bot game needs at least 2 realms — raise Maximum Players.</div>";
+		theElementFound$1(msg).innerHTML = "<div class=\"msg-error\">An all-bot game needs at least 2 realms — raise Maximum Players.</div>";
 		return;
 	}
 	if (!allBot && botCount >= maxP && maxP >= 2) {
-		if (!confirm(`You've set ${botCount} bots with no room for human players. Create this as an all-bot game?`)) return;
+		if (!confirm(`You've set ${String(botCount)} bots with no room for human players. Create this as an all-bot game?`)) return;
 	}
-	const isPrivate = document.querySelector("input[name=\"new-game-visibility\"]:checked")?.value === "private";
+	const isPrivate = theVisibilityTicked() === "private";
 	const invited = isPrivate ? [..._inviteSelected] : [];
 	if (isPrivate && !allBot && invited.length === 0) {
 		if (!confirm("This private game has no invited players — nobody will be able to join it. Create it anyway (you can add invites from the game screen)?")) return;
 	}
-	msg.innerHTML = "<div class=\"msg-info\">Creating game…</div>";
+	theElementFound$1(msg).innerHTML = "<div class=\"msg-info\">Creating game…</div>";
 	const _cfg = {
 		mapSize,
 		maxTurns,
@@ -39002,18 +39079,18 @@ async function createGame() {
 		botCount: botCount >= maxP ? maxP : botCount,
 		allBot: allBot || botCount >= maxP
 	};
-	_cfg.seaPct = normSeaPct(document.getElementById("new-game-seapct")?.value);
-	_cfg.botDiplomacy = document.getElementById("new-game-botdiplomacy")?.value === "hostile" ? "hostile" : "normal";
-	_cfg.safeStart = !!document.getElementById("new-game-safestart")?.checked;
+	_cfg.seaPct = normSeaPct(theValueOfTheField("new-game-seapct"));
+	_cfg.botDiplomacy = theValueOfTheField("new-game-botdiplomacy") === "hostile" ? "hostile" : "normal";
+	_cfg.safeStart = theBoxTicked("new-game-safestart");
 	_cfg.botDifficulty = "hard";
 	_cfg.turnMode = readTurnModeForm("new-game");
 	if (isPrivate) {
 		_cfg.visibility = "private";
 		_cfg.invited = invited;
 	}
-	const { data: game, error } = await thePagesDb.theGameMastersGames.makeThisGame({
+	const { error } = await thePagesDb.theGameMastersGames.makeThisGame({
 		name,
-		gm_user_id: currentUser.id,
+		gm_user_id: theSignedInAccountsId$1(),
 		status: "setup",
 		turn: 0,
 		max_players: maxP,
@@ -39022,11 +39099,11 @@ async function createGame() {
 		...metaPatch(_cfg)
 	});
 	if (error) {
-		const isRLS = error.message?.includes("row-level security") || error.code === "42501";
-		msg.innerHTML = kcHtml`<div class="msg-error">${error.message}${isRLS ? kcHtml`<br><small>Add an INSERT policy on the games table in your Supabase dashboard.</small>` : ""}</div>`;
+		const isRLS = (asItsGuardReadsIt(error.message)?.includes("row-level security") ?? false) || Reflect.get(error, "code") === "42501";
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">${error.message}${isRLS ? kcHtml`<br><small>Add an INSERT policy on the games table in your Supabase dashboard.</small>` : ""}</div>`);
 		return;
 	}
-	msg.innerHTML = kcHtml`<div class="msg-success">Game created! ${isPrivate ? `Only your ${invited.length} invited player${invited.length !== 1 ? "s" : ""} will see it.` : "Any registered player can now see and join it."}</div>`;
+	theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-success">Game created! ${isPrivate ? `Only your ${String(invited.length)} invited player${invited.length !== 1 ? "s" : ""} will see it.` : "Any registered player can now see and join it."}</div>`);
 	setTimeout(() => {
 		show("sec-games");
 		loadGames();
@@ -39035,28 +39112,30 @@ async function createGame() {
 var _showArchived = false;
 async function setGameArchived(gameId, archived) {
 	if (!gameId) return;
-	const msg = document.getElementById("detail-msg") || document.getElementById("msg-games");
-	if (msg) msg.innerHTML = kcHtml`<div class="msg-info">${archived ? "Archiving" : "Restoring"}…</div>`;
+	const msg = document.getElementById("detail-msg") ?? document.getElementById("msg-games");
+	if (msg) msg.innerHTML = String(kcHtml`<div class="msg-info">${archived ? "Archiving" : "Restoring"}…</div>`);
 	const { data: row, error } = await thePagesDb.theGameMastersGames.thisGamesTurnAndWorld(gameId);
 	if (error || !row) {
-		if (msg) msg.innerHTML = kcHtml`<div class="msg-error">${error && error.message || "Game not found."}</div>`;
+		if (msg) msg.innerHTML = String(kcHtml`<div class="msg-error">${(error?.message ?? "") || "Game not found."}</div>`);
 		return;
 	}
 	const gs = parseGameState(row);
 	if (archived) {
-		gs.archived = true;
-		gs.archivedAt = (/* @__PURE__ */ new Date()).toISOString();
-	} else {
-		delete gs.archived;
-		delete gs.archivedAt;
+		if (typeof gs !== "object" || gs === null) throw new TypeError(`Cannot create property 'archived' on ${typeof gs} '${String(gs)}'`);
+		Reflect.set(gs, "archived", true);
+		Reflect.set(gs, "archivedAt", (/* @__PURE__ */ new Date()).toISOString());
+	} else if (typeof gs === "object" && gs !== null) {
+		Reflect.deleteProperty(gs, "archived");
+		Reflect.deleteProperty(gs, "archivedAt");
 	}
 	const change = {
 		game_state: JSON.stringify(gs),
 		...metaPatch(gs)
 	};
-	const { data: done, error: e2 } = row.turn != null ? await thePagesDb.theGameMastersGames.changeThisGameWhileOnThisTurnAndAnswerItsId(gameId, row.turn, change) : await thePagesDb.theGameMastersGames.changeThisGameAndAnswerItsId(gameId, change);
+	const turn = asItsGuardReadsIt(row.turn);
+	const { data: done, error: e2 } = turn != null ? await thePagesDb.theGameMastersGames.changeThisGameWhileOnThisTurnAndAnswerItsId(gameId, turn, change) : await thePagesDb.theGameMastersGames.changeThisGameAndAnswerItsId(gameId, change);
 	if (e2) {
-		if (msg) msg.innerHTML = kcHtml`<div class="msg-error">${e2.message}</div>`;
+		if (msg) msg.innerHTML = String(kcHtml`<div class="msg-error">${e2.message}</div>`);
 		return;
 	}
 	if (!done) {
@@ -39076,16 +39155,16 @@ async function backfillGameMeta() {
 	if (!_kcHasMeta || !currentUser) return 0;
 	try {
 		const { data, error } = await thePagesDb.theGameMastersGames.theGamesThisGameMasterRunsWithNoMeta(currentUser.id);
-		if (error || !data || !data.length) return 0;
+		if (error || !data?.length) return 0;
 		let n = 0;
 		for (const g of data) {
 			const { error: e2 } = await thePagesDb.theGameMastersGames.changeThisGame(g.id, { meta: buildGameMeta(parseGameState(g)) });
 			if (!e2) n++;
 		}
-		if (n) console.log(`[meta] backfilled ${n} game(s)`);
+		if (n) console.log(`[meta] backfilled ${String(n)} game(s)`);
 		if (n && document.getElementById("sec-games")?.classList.contains("section-active")) loadGames();
 		return n;
-	} catch (e) {
+	} catch {
 		return 0;
 	}
 }
@@ -39140,33 +39219,62 @@ var THE_KINDS_OF_A_ROLL_LINE = /* @__PURE__ */ new Set([
 	"the odds of a lone defender's ambush"
 ]);
 // src/ui/gm/turn-log.ts
+/** Whether a line of the GM's log, as parsed from JSON, is an object, which the chronicle then reads as its line (the
+*  same check as the player page's chronicle). */
+function isALineOfTheGmsLog(e) {
+	return typeof e === "object" && e !== null;
+}
+/** A value of any kind in words, as `String` writes it: the key a table is read by (`table[value]` reads it so). */
+function inWords$3(value) {
+	return String(value);
+}
+/** A hero's section, by a key the code has just found in the table: none throws the TypeError the read threw. */
+function theHerosSection(table, key) {
+	const section = table[key];
+	if (section === void 0) throw new TypeError("Cannot read properties of undefined (reading 'phases')");
+	return section;
+}
+/** One of a section's lists, at a phase's place: none (a phase between the whole ones) throws the TypeError the push
+*  threw. */
+function thePhasesLines(phases, i) {
+	const lines = phases[i];
+	if (lines === void 0) throw new TypeError("Cannot read properties of undefined (reading 'push')");
+	return lines;
+}
+/** An element the page looked up and writes into, as the write read it: none throws the TypeError writing it threw. */
+function theElementFound(el) {
+	if (el === null) throw new TypeError("Cannot set properties of null (setting 'innerHTML')");
+	return el;
+}
 async function loadTurnLog(gameId, turn) {
 	const { data } = await thePagesDb.theGameMastersTurnLogs.theWholeLogOfThisGameInThisTurn(gameId, turn);
-	const el = document.getElementById("detail-log");
 	if (!data || data.length === 0) {
-		el.innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No log entries yet.</div>";
+		theElementWithTheId("detail-log", HTMLElement).innerHTML = "<div style=\"color:#3a3224;font-size:.85rem;font-style:italic\">No log entries yet.</div>";
 		return;
 	}
-	const allEntries = data.flatMap((d) => d.entries || []);
+	const allEntries = data.flatMap((d) => thisOrElse(d.entries, []));
 	const gameState = parseGameState(currentGame);
-	const allChars = gameState?.characters || [];
-	const allPlayers = gameState?.players || [];
+	const allChars = theListToSearch(thisOrElse(theField(gameState, "characters"), []));
+	const allPlayers = thisOrElse(theField(gameState, "players"), []);
 	const PHASE_NAMES = KC_PHASE_NAMES.slice();
 	const PHASE_COLORS = KC_PHASE_COLORS.slice();
 	function renderEntry(e) {
-		const raw0 = e.text || "";
+		const raw0 = e.text ?? "";
 		if (e.kind === THE_KIND_OF_A_FORCE_DRAWN_UP_FOR_BATTLE) try {
 			const f = JSON.parse(raw0.slice(7));
-			const col = f.neutral ? "#555" : aColourOfSixHexDigitsOrNone(f.color) || "#555";
-			const rows = (f.armies || []).length ? f.armies.map((a) => kcHtml`<div style="padding-left:14px;font-size:.78rem">• ${a.unitName ? a.unitName + " — " : ""}${a.quality} ${a.type}</div>`) : kcHtml`<div style="padding-left:14px;font-size:.78rem;opacity:.7">— no armies —</div>`;
-			return kcHtml`<div class="log-entry combat" style="border-left:4px solid var(--crimson);background:#fdf0f0;padding:4px 8px;margin-top:4px"><div style="font-weight:600">⚔ <span style="color:${col}">${f.name}</span> ${f.verb || ""}:</div>${rows}</div>`;
-		} catch (_) {}
+			const col = theField(f, "neutral") ? "#555" : aColourOfSixHexDigitsOrNone(theField(f, "color")) ?? "#555";
+			const rows = theField(thisOrElse(theField(f, "armies"), []), "length") ? theListToSearch(theField(f, "armies")).map((a) => {
+				const unitName = theField(a, "unitName");
+				return kcHtml`<div style="padding-left:14px;font-size:.78rem">• ${unitName ? theSumAsJavaScriptMakesIt(unitName, " — ") : ""}${theField(a, "quality")} ${theField(a, "type")}</div>`;
+			}) : kcHtml`<div style="padding-left:14px;font-size:.78rem;opacity:.7">— no armies —</div>`;
+			return kcHtml`<div class="log-entry combat" style="border-left:4px solid var(--crimson);background:#fdf0f0;padding:4px 8px;margin-top:4px"><div style="font-weight:600">⚔ <span style="color:${col}">${theField(f, "name")}</span> ${thisOrElse(theField(f, "verb"), "")}:</div>${rows}</div>`;
+		} catch {}
 		const text = kcHtml`${raw0.split(/\*\*(.+?)\*\*/).map((s, i) => i % 2 ? kcHtml`<strong>${s}</strong>` : s)}`;
 		const isStat = raw0.startsWith("📊");
 		const isBattle = raw0.startsWith("⚔") || raw0.startsWith("⚠");
-		if (isStat) return kcHtml`<div class="log-entry stat" style="font-size:.78rem;color:#231e16;padding:2px 6px;background:#f5f0e8${/│/.test(raw0) ? ";font-family:monospace;white-space:pre;overflow-x:auto" : ""}">${text}</div>`;
+		if (isStat) return kcHtml`<div class="log-entry stat" style="font-size:.78rem;color:#231e16;padding:2px 6px;background:#f5f0e8${raw0.includes("│") ? ";font-family:monospace;white-space:pre;overflow-x:auto" : ""}">${text}</div>`;
 		if (isBattle) return kcHtml`<div class="log-entry combat" style="border-left:4px solid var(--crimson);background:#fdf0f0;padding:4px 8px;margin-top:4px;font-weight:600">${text}</div>`;
-		return kcHtml`<div class="log-entry ${e.type || ""}" style="padding:2px 6px">${text}</div>`;
+		return kcHtml`<div class="log-entry ${e.type ?? ""}" style="padding:2px 6px">${text}</div>`;
 	}
 	function phaseHeader(ph) {
 		return kcHtml`<div style="font-family:'Cinzel',serif;font-size:.68rem;color:${PHASE_COLORS[ph]};
@@ -39186,13 +39294,13 @@ async function loadTurnLog(gameId, turn) {
 		4: [],
 		99: []
 	};
-	new Set(allChars.map((c) => c.id));
-	[...allChars].sort((a, b) => (b.isKing ? 1 : 0) - (a.isKing ? 1 : 0)).forEach((c) => {
-		charGroups[c.id] = {
-			id: c.id,
-			name: c.name,
-			isKing: c.isKing,
-			player: c.player,
+	allChars.map((c) => theField(c, "id"));
+	[...allChars].sort((a, b) => (theField(b, "isKing") ? 1 : 0) - (theField(a, "isKing") ? 1 : 0)).forEach((c) => {
+		charGroups[inWords$3(theField(c, "id"))] = {
+			id: theField(c, "id"),
+			name: theField(c, "name"),
+			isKing: theField(c, "isKing"),
+			player: theField(c, "player"),
 			phases: [
 				[],
 				[],
@@ -39204,25 +39312,29 @@ async function loadTurnLog(gameId, turn) {
 		};
 	});
 	allEntries.forEach((e) => {
+		if (e === null || e === void 0) throw new TypeError(`Cannot read properties of ${String(e)} (reading 'phase')`);
+		if (!isALineOfTheGmsLog(e)) return;
 		const ph = e.phase != null && e.phase >= 0 && e.phase <= 4 ? e.phase : 99;
-		const isIntel = (e.text || "").startsWith("[Intelligence]") || (e.text || "").startsWith("[Intel]");
-		const _secCharId = e.charId != null && charGroups[e.charId] ? e.charId : Array.isArray(e.charIds) ? e.charIds.find((id) => charGroups[id]) : void 0;
-		if (isIntel) (intelByPhase[ph] = intelByPhase[ph] || []).push(e);
-		else if (_secCharId != null && _secCharId !== void 0) charGroups[_secCharId].phases[ph >= 0 && ph <= 4 ? ph : 5].push(e);
+		const isIntel = (e.text ?? "").startsWith("[Intelligence]") || (e.text ?? "").startsWith("[Intel]");
+		const _secCharId = e.charId != null && charGroups[inWords$3(e.charId)] ? e.charId : isAList(e.charIds) ? e.charIds.find((id) => charGroups[inWords$3(id)]) : void 0;
+		if (isIntel) {
+			const here = intelByPhase[ph] ?? [];
+			intelByPhase[ph] = here;
+			here.push(e);
+		} else if (_secCharId != null) thePhasesLines(theHerosSection(charGroups, inWords$3(_secCharId)).phases, ph >= 0 && ph <= 4 ? ph : 5).push(e);
 	});
 	const html = [];
 	const playerGroups = {};
 	Object.values(charGroups).forEach((cg) => {
 		const pi = cg.player ?? "unowned";
-		if (!playerGroups[pi]) playerGroups[pi] = [];
-		playerGroups[pi].push(cg);
+		(playerGroups[inWords$3(pi)] ??= []).push(cg);
 	});
 	Object.entries(playerGroups).forEach(([pi, chars]) => {
-		const player = allPlayers[pi] || { name: `Player ${pi}` };
+		const player = thisOrElse(theField(allPlayers, pi), { name: `Player ${pi}` });
 		const accentColor = pi === "unowned" ? "#888" : "var(--crimson)";
 		html.push(kcHtml`<div style="margin-bottom:6px;font-family:Cinzel,serif;font-size:.78rem;color:#fff;
       padding:5px 10px;background:${accentColor};border-radius:2px 2px 0 0;letter-spacing:.04em">
-      👑 ${player.name || "Unknown"}
+      👑 ${thisOrElse(theField(player, "name"), "Unknown")}
     </div>`);
 		chars.forEach((cg) => {
 			if (!cg.phases.some((ph) => ph.length > 0)) return;
@@ -39255,65 +39367,86 @@ async function loadTurnLog(gameId, turn) {
 			4,
 			99
 		].forEach((ph) => {
-			if (!(intelByPhase[ph] || []).length) return;
+			if (!(intelByPhase[ph] ?? []).length) return;
 			if (ph < 5) html.push(phaseHeader(ph));
-			(intelByPhase[ph] || []).forEach((e) => {
+			(intelByPhase[ph] ?? []).forEach((e) => {
 				html.push(renderEntry(e));
 			});
 		});
 		html.push(kcHtml`</div></div>`);
 	}
-	el.innerHTML = html.length ? kcHtml`${html}` : "<div style=\"color:#3a3224;font-size:.85rem\">No entries.</div>";
+	const theChronicle = html.length ? String(kcHtml`${html}`) : "<div style=\"color:#3a3224;font-size:.85rem\">No entries.</div>";
+	theElementWithTheId("detail-log", HTMLElement).innerHTML = theChronicle;
 }
 async function deleteGame(gameId) {
 	if (!confirm("Delete this game permanently?\n\nThe world, the players, every turn report and dispatch, all recorded statistics AND its Hall-of-Fame leaderboard entry are destroyed. This cannot be undone.\n\nTo keep the game but take it out of your list, cancel and use Archive instead.")) return;
 	const msg = document.getElementById("detail-msg");
-	msg.innerHTML = "<div class=\"msg-info\">Deleting…</div>";
+	theElementFound(msg).innerHTML = "<div class=\"msg-info\">Deleting…</div>";
 	await thePagesDb.theDeletionOfAGame.removeThisGamesTurnLogs(gameId);
 	if (_kcHasMsg) try {
-		await thePagesDb.theDeletionOfAGame.removeThisGamesDispatches(String(gameId));
-		await thePagesDb.theDeletionOfAGame.removeThisGamesReadMarks(String(gameId));
+		await thePagesDb.theDeletionOfAGame.removeThisGamesDispatches(gameId);
+		await thePagesDb.theDeletionOfAGame.removeThisGamesReadMarks(gameId);
 	} catch (e) {
 		console.warn("dispatch cleanup:", e);
 	}
 	if (_kcHasTel) try {
-		await thePagesDb.theDeletionOfAGame.removeThisGamesTurnEvents(String(gameId));
-		await thePagesDb.theDeletionOfAGame.removeThisGamesResults(String(gameId));
+		await thePagesDb.theDeletionOfAGame.removeThisGamesTurnEvents(gameId);
+		await thePagesDb.theDeletionOfAGame.removeThisGamesResults(gameId);
 	} catch (e) {
 		console.warn("telemetry cleanup:", e);
 	}
 	if (_kcHasLb) try {
-		await thePagesDb.theDeletionOfAGame.removeThisGamesHallOfFameEntry(String(gameId));
+		await thePagesDb.theDeletionOfAGame.removeThisGamesHallOfFameEntry(gameId);
 	} catch (e) {
 		console.warn("leaderboard cleanup:", e);
 	}
 	await thePagesDb.theDeletionOfAGame.removeThisGamesRealms(gameId);
 	const { error } = await thePagesDb.theDeletionOfAGame.removeThisGame(gameId);
 	if (error) {
-		msg.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		theElementFound(msg).innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 		return;
 	}
 	show("sec-games");
 	loadGames();
 }
 // src/ui/gm/game-detail.ts
+/** The game the GM has open, read again after an await (another handler may have changed it meanwhile): for none, the
+*  TypeError the read or write (`theReadOrWrite`, in V8's words) threw. */
+function theGameOpenNow(theReadOrWrite) {
+	if (currentGame === null) throw new TypeError(`Cannot ${theReadOrWrite}`);
+	return currentGame;
+}
+/** The realms of the game the GM has open, where the code reads them unguarded: for none, the TypeError that read
+*  threw. */
+function theRealmsOfTheGameOpen() {
+	if (currentGamePlayers === null || currentGamePlayers === void 0) throw new TypeError(`Cannot read properties of ${String(currentGamePlayers)} (reading 'filter')`);
+	return currentGamePlayers;
+}
+/** A game's state as parsed, before a field is written on it: anything but an object throws the TypeError that write
+*  threw in a module. */
+function theStateToWriteOn(gs, field) {
+	if (typeof gs !== "object" || gs === null) throw new TypeError(`Cannot create property '${field}' on ${typeof gs} '${String(gs)}'`);
+	return gs;
+}
 async function openGame(gameId) {
 	show("sec-game-detail");
-	document.getElementById("detail-game-name").textContent = "Loading…";
-	document.getElementById("detail-msg").innerHTML = "";
-	document.getElementById("detail-players-list").innerHTML = "";
-	document.getElementById("detail-orders-card").style.display = "none";
-	document.getElementById("detail-log-card").style.display = "none";
-	document.getElementById("detail-run-turn0-wrap").style.display = "none";
+	theElementWithTheId("detail-game-name", HTMLElement).textContent = "Loading…";
+	theElementWithTheId("detail-msg", HTMLElement).innerHTML = "";
+	theElementWithTheId("detail-players-list", HTMLElement).innerHTML = "";
+	theElementWithTheId("detail-orders-card", HTMLElement).style.display = "none";
+	theElementWithTheId("detail-log-card", HTMLElement).style.display = "none";
+	theElementWithTheId("detail-run-turn0-wrap", HTMLElement).style.display = "none";
 	const { data: game, error } = await thePagesDb.theGameMastersGames.thisGameWithItsRealms(gameId);
 	if (error) {
-		document.getElementById("detail-msg").innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+		const theRefusal = String(kcHtml`<div class="msg-error">${error.message}</div>`);
+		theElementWithTheId("detail-msg", HTMLElement).innerHTML = theRefusal;
 		return;
 	}
 	currentGame = game;
-	currentGamePlayers = game.game_players || [];
+	if (game === null) throw new TypeError("Cannot read properties of null (reading 'game_players')");
+	currentGamePlayers = asItsGuardReadsIt(game.game_players) ?? [];
 	loadReportedDispatches(game);
-	document.getElementById("detail-game-name").textContent = game.name;
+	theElementWithTheId("detail-game-name", HTMLElement).textContent = game.name;
 	const maxP = game.max_players || 4;
 	const { botCount, allBot } = botConfigFor(game);
 	const plannedBots = allBot ? maxP : botCount;
@@ -39321,12 +39454,13 @@ async function openGame(gameId) {
 	const existingBots = currentGamePlayers.filter(isBotRow).length;
 	const reservedBots = game.status === "setup" ? Math.max(0, plannedBots - existingBots) : 0;
 	const humanCap = allBot ? 0 : maxP - plannedBots;
-	const statusLabel = game.status === "setup" ? "Setup" : game.status === "active" ? `Turn ${game.turn}` : "Complete";
+	const statusLabel = game.status === "setup" ? "Setup" : game.status === "active" ? `Turn ${String(game.turn)}` : "Complete";
 	const _isArch = gameArchived(game);
-	document.getElementById("detail-status-pill").innerHTML = kcHtml`<span class="pill ${game.status === "active" ? "pill-blue" : "pill-amber"}">${statusLabel}</span>${_isArch ? kcHtml` <span class="pill pill-amber" title="Archived — every scrap of this game is kept">🗄 Archived${(() => {
+	const theStatusPill = String(kcHtml`<span class="pill ${game.status === "active" ? "pill-blue" : "pill-amber"}">${statusLabel}</span>${_isArch ? kcHtml` <span class="pill pill-amber" title="Archived — every scrap of this game is kept">🗄 Archived${(() => {
 		const a = gameArchivedAt(game);
 		return a ? ` ${fmtLastRun(a)}` : "";
-	})()}</span>` : ""}`;
+	})()}</span>` : ""}`);
+	theElementWithTheId("detail-status-pill", HTMLElement).innerHTML = theStatusPill;
 	{
 		const _ab = document.getElementById("detail-archive-btn");
 		if (_ab) {
@@ -39334,7 +39468,8 @@ async function openGame(gameId) {
 			_ab.title = _isArch ? "Bring this game back into the main list. Nothing was lost while it was archived." : "Put this game away. Everything is kept — the world, the players, every report, the statistics and the Hall-of-Fame record — it simply leaves the main list and the auto-turn watcher stops watching it.";
 		}
 	}
-	document.getElementById("detail-player-count").textContent = game.status === "setup" ? `${joined}/${humanCap} human${humanCap !== 1 ? "s" : ""}${plannedBots ? ` · ${plannedBots} bot${plannedBots !== 1 ? "s" : ""}` : ""} · sea ${seaPctOf(game)}%` : `${joined} human${joined !== 1 ? "s" : ""}${existingBots ? ` · ${existingBots} bot${existingBots !== 1 ? "s" : ""}` : ""} / ${maxP}`;
+	const thePlayersCount = game.status === "setup" ? `${String(joined)}/${String(humanCap)} human${humanCap !== 1 ? "s" : ""}${plannedBots ? ` · ${String(plannedBots)} bot${plannedBots !== 1 ? "s" : ""}` : ""} · sea ${String(seaPctOf(game))}%` : `${String(joined)} human${joined !== 1 ? "s" : ""}${existingBots ? ` · ${String(existingBots)} bot${existingBots !== 1 ? "s" : ""}` : ""} / ${String(maxP)}`;
+	theElementWithTheId("detail-player-count", HTMLElement).textContent = thePlayersCount;
 	const slotsHtml = currentGamePlayers.map((p) => {
 		const bot = isBotRow(p);
 		const statusPill = bot ? kcHtml`<span class="pill pill-green">🤖 Bot</span>` : p.user_id ? kcHtml`<span class="pill pill-green">Joined</span>` : kcHtml`<span class="pill pill-amber">Waiting</span>`;
@@ -39347,7 +39482,7 @@ async function openGame(gameId) {
       ${_con ? kcHtml`<span class="pill pill-red">🏳 Conceded</span>` : ""}
       ${p.orders_submitted && !bot ? kcHtml`<span class="pill pill-blue">Orders in</span>` : ""}
       ${!p.user_id && !bot && p.invite_code ? kcHtml`<div class="slot-code">Invite: ${p.invite_code}</div>` : ""}
-      <button class="btn btn-ghost" style="color:#8a1010;border-color:#8a1010;font-size:.62rem;padding:4px 9px" title="${_rmLabel}" onclick="removePlayer(${kcArg(String(p.id))})">✖ Remove</button>
+      <button class="btn btn-ghost" style="color:#8a1010;border-color:#8a1010;font-size:.62rem;padding:4px 9px" title="${_rmLabel}" onclick="removePlayer(${kcArg(p.id)})">✖ Remove</button>
     </div>`;
 	});
 	const reservedBotHtml = Array(reservedBots).fill(0).map(() => kcHtml`
@@ -39361,7 +39496,8 @@ async function openGame(gameId) {
       <div class="slot-name">(open slot)</div>
       <div class="slot-status">Waiting for player</div>
     </div>`);
-	document.getElementById("detail-players-list").innerHTML = kcHtml`${slotsHtml}${reservedBotHtml}${emptySlotsHtml}`;
+	const theSlots = String(kcHtml`${slotsHtml}${reservedBotHtml}${emptySlotsHtml}`);
+	theElementWithTheId("detail-players-list", HTMLElement).innerHTML = theSlots;
 	const _visWrap = document.getElementById("detail-visibility-wrap");
 	if (_visWrap) {
 		if (game.status !== "setup") _visWrap.innerHTML = "";
@@ -39369,43 +39505,43 @@ async function openGame(gameId) {
 			const vis = gameVisibility(game);
 			if (!vis.private) _visWrap.innerHTML = `<div class="msg-info" style="margin:0">🌍 <strong>Public game</strong> — any registered player can see and join it.</div>`;
 			else {
-				let namesHtml = kcHtml`<span style="color:var(--stone)">${vis.invited.length} invited</span>`;
+				let namesHtml;
 				try {
 					await loadInvitablePlayers();
 					const names = invitedNames(vis.invited);
 					namesHtml = names.length ? names.map((n) => kcHtml`<span class="pill pill-blue" style="margin:2px 4px 2px 0">${n || ""}</span>`) : kcHtml`<span style="color:#c88">nobody invited yet — no one can join</span>`;
 				} catch (e) {
-					namesHtml = kcHtml`<span style="color:#c88">${vis.invited.length} invited (couldn't load names: ${e.message})</span>`;
+					namesHtml = kcHtml`<span style="color:#c88">${vis.invited.length} invited (couldn't load names: ${theField(e, "message")})</span>`;
 				}
-				_visWrap.innerHTML = kcHtml`<div style="border:1px solid var(--gold);border-radius:4px;padding:10px;background:#20160c">
+				_visWrap.innerHTML = String(kcHtml`<div style="border:1px solid var(--gold);border-radius:4px;padding:10px;background:#20160c">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
             <span style="color:var(--parchment);font-weight:600">🔒 Private game</span>
             <span style="color:var(--stone);font-size:.8rem">— only the players below can see and join it.</span>
             <button class="btn btn-gold" style="margin-left:auto;font-size:.72rem;padding:4px 10px" onclick="openEditInvites()">✎ Edit invited players</button>
           </div>
           <div>${namesHtml}</div>
-        </div>`;
+        </div>`);
 			}
 		}
 	}
 	renderTurnModePanel(game);
-	if (game.status === "setup" && joined + plannedBots >= 2) document.getElementById("detail-run-turn0-wrap").style.display = "block";
+	if (game.status === "setup" && joined + plannedBots >= 2) theElementWithTheId("detail-run-turn0-wrap", HTMLElement).style.display = "block";
 	if (game.status === "active") {
-		document.getElementById("detail-orders-card").style.display = "block";
+		theElementWithTheId("detail-orders-card", HTMLElement).style.display = "block";
 		renderOrdersStatus(game);
 	}
 	if (game.turn > 0) {
-		document.getElementById("detail-log-card").style.display = "block";
+		theElementWithTheId("detail-log-card", HTMLElement).style.display = "block";
 		loadTurnLog(game.id, game.turn - 1);
 	}
 }
 function renderOrdersStatus(game) {
-	const players = currentGamePlayers.filter((p) => p.user_id);
-	const bots = currentGamePlayers.filter(isBotRow);
+	const players = theRealmsOfTheGameOpen().filter((p) => p.user_id);
+	const bots = theRealmsOfTheGameOpen().filter(isBotRow);
 	const allIn = ordersWaitingOn(players, game).length === 0 && players.length + bots.length > 0;
 	const _tm = turnModeOf(game);
 	const _tmLine = _tm.mode === "manual" ? "" : kcHtml`<div class="msg-info" style="margin-bottom:8px">${turnModeSummary(_tm)} — ${_tm.mode === "auto" ? "the watcher runs the turn as soon as every realm's orders are in." : "the watcher runs the turn when every realm's orders are in, or at the deadline."}</div>`;
-	document.getElementById("detail-orders-status").innerHTML = kcHtml`${_tmLine}
+	const theOrdersStatus = String(kcHtml`${_tmLine}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       ${players.map((p) => {
 		const ex = realmExemptIn(game, p.player_index);
@@ -39419,10 +39555,11 @@ function renderOrdersStatus(game) {
         background:#eae3d2;border:1px solid #c9bd9e">
         🤖 ${b.display_name}: auto
       </div>`)}
-    </div>`;
-	document.getElementById("detail-run-turn-btn").innerHTML = _kcOverlord ? "⚡ Run turn now" : "⚡ Resolve Turn &amp; Generate New Reports";
-	document.getElementById("detail-run-now-note").style.display = _kcOverlord ? "block" : "none";
-	if (allIn || _kcOverlord) document.getElementById("detail-run-turn-wrap").style.display = "block";
+    </div>`);
+	theElementWithTheId("detail-orders-status", HTMLElement).innerHTML = theOrdersStatus;
+	theElementWithTheId("detail-run-turn-btn", HTMLElement).innerHTML = _kcOverlord ? "⚡ Run turn now" : "⚡ Resolve Turn &amp; Generate New Reports";
+	theElementWithTheId("detail-run-now-note", HTMLElement).style.display = _kcOverlord ? "block" : "none";
+	if (allIn || _kcOverlord) theElementWithTheId("detail-run-turn-wrap", HTMLElement).style.display = "block";
 }
 async function saveEditInvites() {
 	const msg = document.getElementById("edit-invite-msg");
@@ -39431,71 +39568,77 @@ async function saveEditInvites() {
 		return;
 	}
 	const invited = [..._editInviteSelected];
-	let cfg = {};
+	let cfg;
 	try {
-		cfg = typeof currentGame.game_state === "string" ? JSON.parse(currentGame.game_state) : currentGame.game_state || {};
-	} catch (e) {
+		cfg = typeof currentGame.game_state === "string" ? JSON.parse(currentGame.game_state) : thisOrElse(currentGame.game_state, {});
+	} catch {
 		cfg = {};
 	}
-	cfg.visibility = "private";
-	cfg.invited = invited;
+	Reflect.set(theStateToWriteOn(cfg, "visibility"), "visibility", "private");
+	Reflect.set(theStateToWriteOn(cfg, "invited"), "invited", invited);
 	if (msg) msg.innerHTML = "<span style=\"color:var(--stone)\">Saving…</span>";
 	const { error } = await thePagesDb.theGameMastersGames.changeThisGame(currentGame.id, {
 		game_state: JSON.stringify(cfg),
 		...metaPatch(cfg)
 	});
 	if (error) {
-		if (msg) msg.innerHTML = kcHtml`<span style="color:#e88">${error.message}</span>`;
+		if (msg) msg.innerHTML = String(kcHtml`<span style="color:#e88">${error.message}</span>`);
 		return;
 	}
-	currentGame.game_state = JSON.stringify(cfg);
-	Object.assign(currentGame, metaPatch(cfg));
+	const theGame = theGameOpenNow("set properties of null (setting 'game_state')");
+	theGame.game_state = JSON.stringify(cfg);
+	Object.assign(theGame, metaPatch(cfg));
 	closeEditInvites();
-	openGame(currentGame.id);
+	openGame(theGame.id);
 }
 async function removePlayer(gamePlayerId) {
 	if (!currentGame) return;
-	const row = (currentGamePlayers || []).find((p) => String(p.id) === String(gamePlayerId));
+	const row = (currentGamePlayers ?? []).find((p) => p.id === gamePlayerId);
 	if (!row) return;
 	const msg = document.getElementById("detail-msg");
-	const who = row.display_name || `Realm ${row.player_index + 1}`;
+	const who = row.display_name || `Realm ${String(row.player_index + 1)}`;
 	const live = currentGame.status !== "setup";
 	const warn = live ? `Remove ${who} from "${currentGame.name}"?\n\nTheir realm CONCEDES the game immediately: every one of its characters will do nothing but Defend from now on, it can make no declarations and cannot win, and it is never waited on for orders. Its lands and armies stay on the map.\n\nThe player loses access to this game. This cannot be undone.` : `Remove ${who} from "${currentGame.name}"?\n\nThe game has not started, so their slot simply reopens for another player. This cannot be undone.`;
 	if (!confirm(warn)) return;
-	msg.innerHTML = "<div class=\"msg-info\">Removing player…</div>";
+	theElementFound$1(msg).innerHTML = "<div class=\"msg-info\">Removing player…</div>";
 	try {
 		if (live) {
 			const gs = parseGameState(currentGame);
-			const pl = (gs && gs.players || [])[row.player_index];
-			if (pl && !pl.conceded) {
-				pl.conceded = true;
-				pl.concededTurn = currentGame.turn;
-				pl._gmRemoved = true;
-				gs._gmRemovedRealms = Array.isArray(gs._gmRemovedRealms) ? gs._gmRemovedRealms : [];
-				if (!gs._gmRemovedRealms.includes(row.player_index)) gs._gmRemovedRealms.push(row.player_index);
+			const pl = theField(thisOrElse(gs ? theField(gs, "players") : gs, []), row.player_index);
+			if (pl && !theField(pl, "conceded")) {
+				const theRealm = theStateToWriteOn(pl, "conceded");
+				Reflect.set(theRealm, "conceded", true);
+				Reflect.set(theRealm, "concededTurn", currentGame.turn);
+				Reflect.set(theRealm, "_gmRemoved", true);
+				const theState = theStateToWriteOn(gs, "_gmRemovedRealms");
+				const removed = Reflect.get(theState, "_gmRemovedRealms");
+				Reflect.set(theState, "_gmRemovedRealms", isAList(removed) ? removed : []);
+				const theRemoved = Reflect.get(theState, "_gmRemovedRealms");
+				if (Array.isArray(theRemoved) && !theRemoved.includes(row.player_index)) theRemoved.push(row.player_index);
 				const { error: sErr } = await thePagesDb.theGameMastersGames.changeThisGame(currentGame.id, {
 					game_state: JSON.stringify(gs),
 					...metaPatch(gs)
 				});
 				if (sErr) {
-					msg.innerHTML = kcHtml`<div class="msg-error">Could not record the concession: ${sErr.message}</div>`;
+					theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Could not record the concession: ${sErr.message}</div>`);
 					return;
 				}
-				currentGame.game_state = JSON.stringify(gs);
-				Object.assign(currentGame, metaPatch(gs));
+				const theGame = theGameOpenNow("set properties of null (setting 'game_state')");
+				theGame.game_state = JSON.stringify(gs);
+				Object.assign(theGame, metaPatch(gs));
 			}
 		}
 		const { error } = await thePagesDb.theGameMastersRealms.removeThisRealm(row.id);
 		if (error) {
-			msg.innerHTML = kcHtml`<div class="msg-error">${error.message}</div>`;
+			theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">${error.message}</div>`);
 			return;
 		}
-		msg.innerHTML = kcHtml`<div class="msg-success">${who} has been removed${live ? " — their realm has conceded and will only defend from here on." : " and their slot is open again."}</div>`;
-		await openGame(currentGame.id);
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-success">${who} has been removed${live ? " — their realm has conceded and will only defend from here on." : " and their slot is open again."}</div>`);
+		await openGame(theGameOpenNow("read properties of null (reading 'id')").id);
 		const _m2 = document.getElementById("detail-msg");
-		if (_m2) _m2.innerHTML = kcHtml`<div class="msg-success">${who} has been removed${live ? " — their realm has conceded and will only defend from here on." : " and their slot is open again."}</div>`;
+		if (_m2) _m2.innerHTML = String(kcHtml`<div class="msg-success">${who} has been removed${live ? " — their realm has conceded and will only defend from here on." : " and their slot is open again."}</div>`);
 	} catch (e) {
-		msg.innerHTML = kcHtml`<div class="msg-error">${e.message || "Could not remove the player."}</div>`;
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">${thisOrElse(theField(e, "message"), "Could not remove the player.")}</div>`);
 	}
 }
 async function saveTurnMode() {
@@ -39505,27 +39648,28 @@ async function saveTurnMode() {
 	const tm = readTurnModeForm("detail");
 	if (tm.mode === "deadline") tm.nextDeadlineAt = prev.mode !== "deadline" || prev.time !== tm.time || prev.everyDays !== tm.everyDays || !prev.nextDeadlineAt ? computeNextDeadline(tm, /* @__PURE__ */ new Date()) : prev.nextDeadlineAt;
 	else tm.nextDeadlineAt = null;
-	tm.turnRanAt = prev.turnRanAt || null;
+	tm.turnRanAt = thisOrElse(prev.turnRanAt, null);
 	const gs = parseGameState(currentGame);
-	gs.turnMode = tm;
+	Reflect.set(theStateToWriteOn(gs, "turnMode"), "turnMode", tm);
 	if (msg) msg.innerHTML = "<span style=\"color:var(--stone)\">Saving…</span>";
 	const { data, error } = await thePagesDb.theGameMastersGames.changeThisGameWhileOnThisTurnAndAnswerItsId(currentGame.id, currentGame.turn, {
 		game_state: JSON.stringify(gs),
 		...metaPatch(gs)
 	});
 	if (error) {
-		if (msg) msg.innerHTML = kcHtml`<span style="color:#e88">${error.message}</span>`;
+		if (msg) msg.innerHTML = String(kcHtml`<span style="color:#e88">${error.message}</span>`);
 		return;
 	}
 	if (!data) {
 		if (msg) msg.innerHTML = "<span style=\"color:#e88\">The turn advanced while you were editing — reload the game and try again.</span>";
 		return;
 	}
-	currentGame.game_state = JSON.stringify(gs);
-	Object.assign(currentGame, metaPatch(gs));
+	const theGame = theGameOpenNow("set properties of null (setting 'game_state')");
+	theGame.game_state = JSON.stringify(gs);
+	Object.assign(theGame, metaPatch(gs));
 	if (msg) msg.innerHTML = "<span style=\"color:#8c8\">Saved.</span>";
-	renderTurnModePanel(currentGame);
-	if (currentGame.status === "active") renderOrdersStatus(currentGame);
+	renderTurnModePanel(theGame);
+	if (theGame.status === "active") renderOrdersStatus(theGame);
 }
 // src/engine/rules-on-plain-values/skills-in-order-and-a-heros-fame-in-words.ts
 var ALL_SKILLS = KC_SKILLS.slice();
@@ -39627,6 +39771,18 @@ var _TITLE_LABEL = {
 	beast: "Beastlord",
 	wild: "Wildwarden"
 };
+// src/engine/rules-on-plain-values/a-copy-made-through-json-and-typed-as-its-original.ts
+/** A copy of `value` made through JSON, as the Hunting Rumours fight on: the copy has the original's type once
+*  `itsJsonIsTheOriginals` has found its JSON the same as the original's (Theo's form, 2026-10-30, plan P1-10b14). */
+function aCopyMadeThroughJson(value) {
+	const copy = JSON.parse(JSON.stringify(value));
+	if (!itsJsonIsTheOriginals(copy, value)) throw new Error("a copy made through JSON differs from its original");
+	return copy;
+}
+/** Whether a copy's JSON is its original's: the check that types a copy made through JSON as its original. */
+function itsJsonIsTheOriginals(copy, original) {
+	return JSON.stringify(copy) === JSON.stringify(original);
+}
 // src/engine/realms/the-corpse-carters-price-for-a-realm.ts
 /** The corpse-carters' price for a realm, as Harvest the Field charges it and the report shows it: its row's price, plus
 *  what the realm's discoveries add (a cut is less than 0: az06 Corpse-Carters, the discoveries' registry's since plan
@@ -40264,7 +40420,8 @@ function buildTurnReport(view, itsLines = null) {
 			itsDruidicWonderHalvesItsBeastsWages: view.books.wonderBlesses.Druidic,
 			theUpkeepDiscoveriesCutsAndTheirRoom,
 			theHeroWageDiscoveriesCutsAndTheirRoom: theHeroWageDiscoveriesCutsCeilingsAndRoom.theCuts,
-			theHeroWageDiscoveriesCeilingsAndTheirRoom: theHeroWageDiscoveriesCutsCeilingsAndRoom.theCeilings
+			theHeroWageDiscoveriesCeilingsAndTheirRoom: theHeroWageDiscoveriesCutsCeilingsAndRoom.theCeilings,
+			theUnitStrengthEffectsOfItsDiscoveries: aCopyMadeThroughJson(theEffectsARealmsDiscoveriesStrengthenAUnitWith(player))
 		},
 		exploreDiscMult: Object.fromEntries([
 			"plain",
@@ -41803,1964 +41960,6 @@ function playerView(state, realm, itsLines) {
 			}))
 		}
 	};
-}
-// src/ui/gm/turn-zero.ts
-globalThis._pendingTurn0 = null;
-async function runTurn0() {
-	const msg = document.getElementById("detail-msg");
-	msg.innerHTML = "<div class=\"msg-info\">⏳ Preparing world setup…</div>";
-	const { data: players, error: pErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.everyRealmOfThisGame(currentGame.id);
-	if (pErr) {
-		msg.innerHTML = kcHtml`<div class="msg-error">Could not load players: ${pErr.message}</div>`;
-		return;
-	}
-	let cfg = {};
-	try {
-		cfg = typeof currentGame.game_state === "string" ? JSON.parse(currentGame.game_state) : currentGame.game_state || {};
-	} catch (e) {}
-	const mapSize = cfg.mapSize || "p5";
-	const maxTurns = cfg.maxTurns || 12;
-	const sizemap = {
-		p2: {
-			cols: 8,
-			rows: 5
-		},
-		p3: {
-			cols: 8,
-			rows: 7
-		},
-		p4: {
-			cols: 9,
-			rows: 7
-		},
-		p5: {
-			cols: 12,
-			rows: 7
-		},
-		p6: {
-			cols: 15,
-			rows: 7
-		},
-		p7: {
-			cols: 16,
-			rows: 7
-		},
-		p8: {
-			cols: 17,
-			rows: 8
-		},
-		p9: {
-			cols: 16,
-			rows: 11
-		},
-		p10: {
-			cols: 16,
-			rows: 11
-		}
-	};
-	const sz = sizemap[mapSize] || sizemap.p5;
-	const { botCount, allBot } = botConfigFor(currentGame);
-	const humanSetups = (players || []).filter((p) => !isBotRow(p)).map((p) => {
-		let setup = {};
-		try {
-			setup = (typeof p.turn_report === "string" ? JSON.parse(p.turn_report) : p.turn_report || {}).playerSetup || {};
-		} catch (e) {}
-		return {
-			id: p.player_index,
-			gamePlayerId: p.id,
-			isBot: false,
-			name: p.display_name || `Player ${p.player_index + 1}`,
-			kingName: setup.kingName || p.display_name || `King ${p.player_index + 1}`,
-			kingdomName: setup.kingdomName || p.display_name || `Realm ${p.player_index + 1}`,
-			race: setup.race || "Human",
-			alignment: setup.alignment || "Neutral",
-			temper: setup.temper || "Brave",
-			skills: setup.skills || {}
-		};
-	}).sort((a, b) => a.id - b.id);
-	const plannedBots = allBot ? currentGame.max_players || 0 : botCount;
-	const totalKingdoms = humanSetups.length + plannedBots;
-	if (totalKingdoms < 2) {
-		msg.innerHTML = kcHtml`<div class="msg-error">Need at least 2 realms to start (currently ${humanSetups.length} human${humanSetups.length !== 1 ? "s" : ""} + ${plannedBots} bot${plannedBots !== 1 ? "s" : ""}). ${allBot ? "Raise Maximum Players." : "Wait for another player to join, or add bots at game creation."}</div>`;
-		return;
-	}
-	const startIndex = humanSetups.length;
-	const botSetups = plannedBots > 0 ? generateBotSetups(humanSetups, plannedBots, startIndex) : [];
-	let _szUse = sz, _mapUse = mapSize;
-	if (totalKingdoms > (MAP_MAX_PLAYERS[mapSize] || 10)) {
-		_mapUse = "p" + Math.min(10, totalKingdoms);
-		_szUse = sizemap[_mapUse] || sz;
-		console.warn(`Turn 0: ${totalKingdoms} realms on a ${mapSize} map — using the ${_mapUse} map (${_szUse.cols}x${_szUse.rows}) so capitals stay 3+ provinces apart.`);
-	}
-	_pendingTurn0 = {
-		humanSetups,
-		botSetups,
-		sz: _szUse,
-		maxTurns,
-		mapSize: _mapUse,
-		seaPct: normSeaPct(cfg.seaPct),
-		botDifficulty: cfg.botDifficulty || null,
-		botDiplomacy: cfg.botDiplomacy === "hostile" ? "hostile" : "normal",
-		safeStart: !!cfg.safeStart
-	};
-	if (botSetups.length > 0) renderTurn0Preview();
-	else commitTurn0();
-}
-function renderTurn0Preview() {
-	const msg = document.getElementById("detail-msg");
-	if (!_pendingTurn0) {
-		msg.innerHTML = "";
-		return;
-	}
-	const { humanSetups, botSetups } = _pendingTurn0;
-	const skillStr = (s) => Object.entries(s || {}).filter(([, v]) => v > 0).map(([k, v]) => `${SKILL_LABELS[k] || k} ${v}`).join(", ") || "—";
-	const row = (sp) => kcHtml`
-    <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;padding:7px 10px;border:1px solid #d8cbb0;border-radius:3px;margin-bottom:6px;background:${sp.isBot ? "#f4efe4" : "#fff"}">
-      <strong style="min-width:150px">${sp.isBot ? "🤖 " : ""}${sp.kingdomName}</strong>
-      <span style="color:var(--stone);font-size:.82rem">${sp.kingName} · ${sp.alignment} · ${sp.race} · ${sp.temper}</span>
-      <span style="font-size:.78rem;opacity:.85;margin-left:auto">Skills: ${skillStr(sp.skills)}</span>
-    </div>`;
-	msg.innerHTML = kcHtml`
-    <div class="card" style="border-color:var(--crimson)">
-      <h3 style="margin-top:0">Confirm the starting roster</h3>
-      <div class="msg-info" style="margin-bottom:8px">Review the generated bot realms below. Generate the world to lock them in, or re-roll the bots.</div>
-      ${humanSetups.length ? kcHtml`<div style="font-size:.8rem;color:var(--stone);margin:2px 0 4px">Human players (${humanSetups.length})</div>${humanSetups.map((sp) => row(sp))}` : ""}
-      ${kcHtml`<div style="font-size:.8rem;color:var(--stone);margin:8px 0 4px">🤖 Bot realms (${botSetups.length})</div>${botSetups.map((sp) => row(sp))}`}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button class="btn btn-crimson" onclick="commitTurn0()">⚡ Generate World &amp; Start</button>
-        <button class="btn btn-gold" onclick="runTurn0()">🎲 Re-roll Bots</button>
-        <button class="btn btn-ghost" onclick="_pendingTurn0=null;document.getElementById('detail-msg').innerHTML=''">Cancel</button>
-      </div>
-    </div>`;
-}
-async function commitTurn0() {
-	const msg = document.getElementById("detail-msg");
-	if (!_pendingTurn0) {
-		msg.innerHTML = "<div class=\"msg-error\">No pending setup — press Run Turn 0 again.</div>";
-		return;
-	}
-	const { humanSetups, botSetups, sz, maxTurns, seaPct, botDifficulty, botDiplomacy, safeStart } = _pendingTurn0;
-	msg.innerHTML = "<div class=\"msg-info\">⏳ Generating world map and starting positions…</div>";
-	try {
-		if (botSetups.length > 0) {
-			await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.removeEveryBotsRealmOfThisGame(currentGame.id);
-			for (const b of botSetups) {
-				const { data: brow, error: bErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.makeThisBotsRealm({
-					game_id: currentGame.id,
-					user_id: null,
-					player_index: b.id,
-					display_name: b.kingdomName,
-					orders_submitted: false,
-					turn_report: JSON.stringify({
-						isBot: true,
-						playerSetup: {
-							kingName: b.kingName,
-							kingdomName: b.kingdomName,
-							race: b.race,
-							alignment: b.alignment,
-							temper: b.temper,
-							skills: b.skills
-						},
-						status: "bot",
-						waitingForTurn0: true
-					})
-				});
-				if (bErr) {
-					msg.innerHTML = kcHtml`<div class="msg-error">Could not create bot realm: ${bErr.message}</div>`;
-					return;
-				}
-				b.gamePlayerId = brow.id;
-			}
-		}
-		const setupPlayers = [...humanSetups, ...botSetups].map((sp) => ({
-			id: sp.id,
-			gamePlayerId: sp.gamePlayerId,
-			isBot: !!sp.isBot,
-			name: sp.kingdomName,
-			kingName: sp.kingName,
-			kingdomName: sp.kingdomName,
-			race: sp.race,
-			alignment: sp.alignment,
-			temper: sp.temper,
-			skills: sp.skills
-		})).sort((a, b) => a.id - b.id);
-		const gameState = await generateNewGame(setupPlayers, sz, maxTurns, { seaPct });
-		if (safeStart) gameState.safeStart = true;
-		gameState.botDiplomacy = botDiplomacy === "hostile" ? "hostile" : "normal";
-		gameState.botDifficulty = "hard";
-		{
-			const _tm = normalizeTurnMode(parseGameState(currentGame).turnMode);
-			_tm.turnRanAt = (/* @__PURE__ */ new Date()).toISOString();
-			_tm.nextDeadlineAt = _tm.mode === "deadline" ? computeNextDeadline(_tm, /* @__PURE__ */ new Date()) : null;
-			gameState.turnMode = _tm;
-		}
-		seedUsedArmyNames(gameState);
-		seedUsedHeroNames(gameState);
-		const { error: saveErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.startThisGame(currentGame.id, {
-			status: "active",
-			turn: 1,
-			game_state: JSON.stringify(gameState),
-			...metaPatch(gameState)
-		});
-		if (saveErr) {
-			msg.innerHTML = kcHtml`<div class="msg-error">Error saving game: ${saveErr.message}</div>`;
-			return;
-		}
-		let reportErrors = [];
-		for (const sp of setupPlayers) {
-			const report = buildTurnReport(playerView(gameState, sp.id));
-			report.engineStamp = typeof runningBuildStamp === "function" ? runningBuildStamp() : null;
-			const { error: rErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.giveThisRealmItsFirstReport(sp.gamePlayerId, sp.isBot ? JSON.stringify({
-				isBot: true,
-				report,
-				playerSetup: {
-					kingName: sp.kingName,
-					kingdomName: sp.kingdomName,
-					race: sp.race,
-					alignment: sp.alignment,
-					temper: sp.temper,
-					skills: sp.skills
-				}
-			}) : JSON.stringify(report));
-			if (rErr) reportErrors.push(rErr.message);
-			try {
-				await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.writeThisLog({
-					game_id: currentGame.id,
-					player_index: sp.id,
-					turn: 0,
-					entries: report
-				});
-			} catch (snapErr) {}
-		}
-		const botN = setupPlayers.filter((s) => s.isBot).length, humN = setupPlayers.length - botN;
-		if (reportErrors.length > 0) msg.innerHTML = kcHtml`<div class="msg-error">Game created but some reports failed: ${reportErrors.join(", ")}</div>`;
-		else msg.innerHTML = kcHtml`<div class="msg-success">✅ Turn 0 complete! Map generated for ${humN} human${humN !== 1 ? "s" : ""}${botN ? ` + ${botN} bot${botN !== 1 ? "s" : ""}` : ""}. Players can now log in and see their realms.</div>`;
-		_pendingTurn0 = null;
-		currentGame.status = "active";
-		currentGame.turn = 1;
-		document.getElementById("detail-run-turn0-wrap").style.display = "none";
-		document.getElementById("detail-orders-card").style.display = "block";
-		document.getElementById("detail-log-card").style.display = "none";
-		const { data: refreshed } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.thisGameWithItsRealms(currentGame.id);
-		if (refreshed) {
-			currentGame = refreshed;
-			currentGamePlayers = refreshed.game_players || [];
-		}
-		renderOrdersStatus(currentGame);
-	} catch (e) {
-		msg.innerHTML = kcHtml`<div class="msg-error">Generation error: ${e.message}</div>`;
-		console.error(e);
-	}
-}
-// src/ui/gm/stats-tab.ts
-var _stats = {
-	rows: null,
-	results: null,
-	games: null,
-	loadedAt: 0
-};
-var STATS_ACTION_LABEL = {
-	move: "Move",
-	defend: "Defend",
-	explore: "Explore",
-	search: "Search lair",
-	hunt_rumours: "Hunt rumours",
-	recruit: "Recruit",
-	hire: "Hire hero",
-	release: "Release hero",
-	leave_army: "Leave army",
-	pickup_army: "Pick up army",
-	disband_army: "Disband",
-	practice: "Practice",
-	rest: "Rest",
-	research: "Research",
-	spy: "Spy",
-	steal: "Steal",
-	cast_spell: "Cast spell",
-	use_item: "Use item",
-	equip_items: "Equip",
-	give_item: "Give item",
-	encounter: "Encounter",
-	consecrate: THE_ALIGNMENT_ORDERS.consecrate.name,
-	call_to_arms: THE_ALIGNMENT_ORDERS["call-to-arms"].name,
-	broker: THE_ALIGNMENT_ORDERS.broker.name,
-	awaken_wild: "Awaken Wild",
-	call_pit: "Call from the Pit",
-	harvest_field: "Harvest Field",
-	rite: "Rite"
-};
-var STATS_COL = {
-	crimson: "#7a1c1c",
-	forest: "#2d4a1e",
-	gold: "#c8922a",
-	blue: "#2f5f8f",
-	stone: "#6b5a42"
-};
-async function openStats(force) {
-	show("sec-stats");
-	const msg = document.getElementById("stats-msg"), body = document.getElementById("stats-body");
-	if (!_kcHasTel) {
-		msg.innerHTML = `<div class="msg-info">Telemetry is not active: the database has no telemetry tables (see the message on the game list). Nothing has been recorded.</div>`;
-		body.innerHTML = "";
-		return;
-	}
-	if (force || !_stats.rows || Date.now() - _stats.loadedAt > 12e4) {
-		msg.innerHTML = "<div class=\"msg-info\">⏳ Loading recorded turns…</div>";
-		body.innerHTML = "";
-		try {
-			const rows = [];
-			for (let from = 0;; from += 1e3) {
-				const { data, error } = await thePagesDb.theStatistics.everyTurnRecordFromRowToRow(from, from + 999);
-				if (error) throw error;
-				rows.push(...data || []);
-				if (!data || data.length < 1e3) break;
-			}
-			const res = [];
-			for (let from = 0;; from += 1e3) {
-				const { data, error } = await thePagesDb.theStatistics.everyResultFromRowToRow(from, from + 999);
-				if (error) throw error;
-				res.push(...data || []);
-				if (!data || data.length < 1e3) break;
-			}
-			const { data: games } = await (_kcOverlord ? thePagesDb.theHallOfFamesGames.everyGamesNameStatusAndTurn() : thePagesDb.theHallOfFamesGames.theNameStatusAndTurnOfTheGamesThisGameMasterRuns(currentUser.id));
-			_stats.rows = rows.map((r) => ({
-				...r,
-				orders: _statsJ(r.orders),
-				pre: _statsJ(r.pre),
-				post: _statsJ(r.post),
-				outcomes: _statsJ(r.outcomes)
-			}));
-			_stats.results = res.map((r) => ({
-				...r,
-				setup: _statsJ(r.setup),
-				final: _statsJ(r.final)
-			}));
-			_stats.games = games || [];
-			_stats.loadedAt = Date.now();
-		} catch (e) {
-			msg.innerHTML = kcHtml`<div class="msg-error">Could not load statistics: ${e.message || e}</div>`;
-			return;
-		}
-	}
-	msg.innerHTML = "";
-	const sel = document.getElementById("stats-game");
-	const keep = sel.value;
-	const names = {};
-	(_stats.games || []).forEach((g) => {
-		names[String(g.id)] = g.name;
-	});
-	(_stats.results || []).forEach((r) => {
-		if (!names[r.game_id] && r.game_name) names[r.game_id] = r.game_name;
-	});
-	const ids = [...new Set(_stats.rows.map((r) => r.game_id))];
-	sel.innerHTML = kcHtml`<option value="">All games</option>${ids.map((id) => kcHtml`<option value="${id}">${names[id] || "deleted game " + id.slice(0, 8)}${_statsFinished(id) ? " ✓" : ""}</option>`)}`;
-	sel.value = ids.includes(keep) ? keep : "";
-	renderStats();
-}
-function _statsJ(v) {
-	if (v == null) return null;
-	if (typeof v === "string") try {
-		return JSON.parse(v);
-	} catch (e) {
-		return null;
-	}
-	return v;
-}
-function _statsFinished(gameId) {
-	return (_stats.results || []).some((r) => r.game_id === gameId);
-}
-function _statsFilter() {
-	const gid = document.getElementById("stats-game").value, who = document.getElementById("stats-who").value, diff = document.getElementById("stats-diff").value, fin = document.getElementById("stats-fin").value;
-	const okGame = (id) => (!gid || id === gid) && (!fin || fin === "finished" === _statsFinished(id));
-	const okRealm = (r) => (!who || who === "bot" === !!r.is_bot) && (!diff || !r.is_bot || r.bot_difficulty === diff);
-	return {
-		rows: (_stats.rows || []).filter((r) => okGame(r.game_id) && okRealm(r)),
-		results: (_stats.results || []).filter((r) => okGame(r.game_id) && okRealm(r)),
-		allRows: (_stats.rows || []).filter((r) => okGame(r.game_id))
-	};
-}
-function statsBars(items, opt) {
-	opt = opt || {};
-	const max = Math.max(1e-9, ...items.map((i) => i.v || 0), opt.max || 0);
-	return kcHtml`<div style="display:grid;grid-template-columns:${opt.labelW || 150}px 1fr auto;gap:4px 8px;align-items:center;font-size:.8rem">${items.map((i) => kcHtml`
-    <div style="color:var(--ink-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.label || ""}">${i.label}</div>
-    <div style="background:#eee4cc;border-radius:3px;height:12px;position:relative"><div style="width:${Math.max(0, Math.min(100, 100 * (i.v || 0) / max))}%;height:100%;border-radius:3px;background:${i.col || STATS_COL.crimson}"></div>${i.mark != null ? kcHtml`<div title="expected" style="position:absolute;top:-2px;left:${Math.max(0, Math.min(100, 100 * i.mark / max))}%;width:2px;height:16px;background:${STATS_COL.blue}"></div>` : ""}</div>
-    <div style="font-family:monospace;font-size:.74rem;color:var(--stone);white-space:nowrap">${i.txt != null ? i.txt : i.v}</div>`)}</div>`;
-}
-function statsLines(series, opt) {
-	opt = opt || {};
-	const W = 560, H = 170, L = 40, T = 12;
-	const xs = series.flatMap((s) => s.pts.map((p) => p[0])), ys = series.flatMap((s) => s.pts.map((p) => p[1]));
-	if (!xs.length) return kcHtml`<div style="color:var(--stone);font-size:.8rem">No data.</div>`;
-	const x0 = Math.min(...xs), x1 = Math.max(...xs), y1 = Math.max(1e-9, ...ys), y0 = 0;
-	const X = (x) => L + (x1 === x0 ? 0 : (x - x0) / (x1 - x0)) * 508, Y = (y) => T + (1 - (y - y0) / (y1 - y0)) * 132;
-	const ticks = [
-		0,
-		.5,
-		1
-	].map((f) => y0 + f * (y1 - y0));
-	const svg = [kcHtml`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;font-family:'Crimson Text',serif;font-size:10px">`];
-	ticks.forEach((t) => {
-		svg.push(kcHtml`<line x1="${L}" x2="${548}" y1="${Y(t)}" y2="${Y(t)}" stroke="#d8cbb0" stroke-width="1"/><text x="${36}" y="${Y(t) + 3}" text-anchor="end" fill="#6b5a42">${Math.round(t * 10) / 10}</text>`);
-	});
-	for (let x = x0; x <= x1; x++) {
-		if (x1 - x0 > 12 && x % Math.ceil((x1 - x0) / 12)) continue;
-		svg.push(kcHtml`<text x="${X(x)}" y="${162}" text-anchor="middle" fill="#6b5a42">${x}</text>`);
-	}
-	series.forEach((s) => {
-		const pts = s.pts.slice().sort((a, b) => a[0] - b[0]);
-		if (!pts.length) return;
-		svg.push(kcHtml`<polyline fill="none" stroke="${s.col}" stroke-width="2" stroke-linejoin="round" points="${pts.map((p) => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ")}"/>`);
-		pts.forEach((p) => {
-			svg.push(kcHtml`<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.5" fill="${s.col}"><title>${s.name} · turn ${p[0]}: ${Math.round(p[1] * 10) / 10}</title></circle>`);
-		});
-	});
-	svg.push(kcHtml`<text x="${548}" y="${162}" text-anchor="start" fill="#6b5a42" font-size="9" dx="6">turn</text></svg>`);
-	return kcHtml`<div>${svg}<div style="font-size:.74rem;color:var(--stone);margin-top:2px">${series.map((s, i) => kcHtml`${i ? kcHtml` &nbsp; ` : ""}<span style="display:inline-block;width:10px;height:10px;background:${s.col};border-radius:2px;vertical-align:middle;margin-right:4px"></span>${s.name}`)}${opt.note ? " · " + opt.note : ""}</div></div>`;
-}
-function statsCard(title, body, note) {
-	return kcHtml`<div class="card"><h2>${title}</h2>${note ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin:-6px 0 10px">${note}</div>` : ""}${body}</div>`;
-}
-var _pct = (a, b) => b > 0 ? Math.round(100 * a / b) : 0;
-var _avg = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
-function renderStats() {
-	const body = document.getElementById("stats-body");
-	if (!body || !_stats.rows) return;
-	const { rows, results, allRows } = _statsFilter();
-	if (!rows.length) {
-		body.innerHTML = "<div class=\"msg-info\">No recorded turns match these filters yet. Rows are written each time a turn is resolved.</div>";
-		return;
-	}
-	const games = [...new Set(rows.map((r) => r.game_id))];
-	const winners = new Set(results.filter((r) => r.winner).map((r) => r.game_id + "#" + r.player_index));
-	const isWinner = (r) => winners.has(r.game_id + "#" + r.player_index);
-	const finishedGames = new Set(results.map((r) => r.game_id));
-	const html = [];
-	const humansRT = rows.filter((r) => !r.is_bot).length, botsRT = rows.length - humansRT;
-	html.push(statsCard("Overview", kcHtml`<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:.85rem">
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${games.length}</div><div style="color:var(--stone)">games recorded</div></div>
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${finishedGames.size}</div><div style="color:var(--stone)">finished</div></div>
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${rows.length}</div><div style="color:var(--stone)">realm-turns (${humansRT} human · ${botsRT} bot)</div></div>
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${rows.reduce((s, r) => s + ((r.outcomes || {}).battles || {}).asAttacker || 0, 0)}</div><div style="color:var(--stone)">battles</div></div>
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${rows.reduce((s, r) => s + ((r.outcomes || {}).encounters || {}).fought || 0, 0)}</div><div style="color:var(--stone)">lair fights</div></div>
-    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${rows.reduce((s, r) => s + ((r.outcomes || {}).deaths || {}).own || 0, 0)}</div><div style="color:var(--stone)">characters killed</div></div>
-  </div>`));
-	if (results.length) {
-		const by = (key) => {
-			const m = {};
-			results.forEach((r) => {
-				const k = key(r);
-				if (k == null) return;
-				const o = m[k] || (m[k] = {
-					n: 0,
-					w: 0,
-					rank: []
-				});
-				o.n++;
-				if (r.winner) o.w++;
-				if (r.rank) o.rank.push(r.rank);
-			});
-			return Object.entries(m).map(([k, o]) => ({
-				label: k,
-				v: _pct(o.w, o.n),
-				txt: `${_pct(o.w, o.n)}% won · ${o.n} realm${o.n !== 1 ? "s" : ""} · avg rank ${_avg(o.rank).toFixed(1)}`
-			})).sort((a, b) => b.v - a.v);
-		};
-		const gv = {}, glen = {};
-		results.forEach((r) => {
-			gv[r.game_id] = r.victory;
-			glen[r.game_id] = r.turns;
-		});
-		const vict = {};
-		Object.values(gv).forEach((v) => {
-			vict[v] = (vict[v] || 0) + 1;
-		});
-		const gN = Object.keys(glen).length;
-		html.push(statsCard("Who wins", kcHtml`<h3>Humans vs bots</h3>${statsBars(by((r) => r.is_bot ? `Bot (${r.bot_difficulty || "?"})` : "Human"))}
-       <h3 style="margin-top:14px">By race</h3>${statsBars(by((r) => r.race))}
-       <h3 style="margin-top:14px">By alignment</h3>${statsBars(by((r) => r.alignment))}
-       <h3 style="margin-top:14px">How games end</h3>${statsBars(Object.entries(vict).map(([k, n]) => ({
-			label: k,
-			v: n,
-			txt: `${n} game${n !== 1 ? "s" : ""}`,
-			col: STATS_COL.forest
-		})))}
-       <div style="font-size:.8rem;margin-top:8px">Average game length: <strong>${_avg(Object.values(glen)).toFixed(1)} turns</strong> over ${gN} finished game${gN !== 1 ? "s" : ""}. Realms that dropped out early: ${results.filter((r) => r.out_how).length} (${results.filter((r) => r.out_how === "conceded").length} conceded, ${results.filter((r) => r.out_how === "eliminated").length} eliminated).</div>`, "From the game_results rows — one per realm per finished game. Win rates are per realm, so with 4 realms a fair race sits at 25%."));
-		const T5 = 5;
-		let lead = 0, leadWon = 0;
-		const corr = [];
-		finishedGames.forEach((gid) => {
-			const at = allRows.filter((r) => r.game_id === gid && r.turn === T5);
-			if (!at.length) return;
-			const top = at.slice().sort((a, b) => ((b.post || {}).taxShare || 0) - ((a.post || {}).taxShare || 0))[0];
-			lead++;
-			if (isWinner(top)) leadWon++;
-			at.forEach((r) => {
-				const fr = results.find((x) => x.game_id === gid && x.player_index === r.player_index);
-				if (fr && fr.rank) corr.push([r.post.taxShare || 0, fr.rank]);
-			});
-		});
-		if (lead) html.push(statsCard("Does an early lead decide it?", kcHtml`<div style="font-size:.85rem">The realm holding the most of the world's tax base at the end of turn ${T5} went on to win <strong>${leadWon} of ${lead}</strong> finished games (${_pct(leadWon, lead)}%). ${_pct(leadWon, lead) >= 75 ? "That is a strong snowball — the mid-game may be too kind to the leader (coalitions, catch-up mechanics, lair rewards for the trailing realms are the usual levers)." : _pct(leadWon, lead) <= 35 ? "Early leads are not sticking — the game has real come-backs." : "A lead helps but does not settle it — a healthy place to be."}</div>
-        <h3 style="margin-top:12px">Turn-${T5} tax share vs final rank</h3>${statsBars(corr.sort((a, b) => b[0] - a[0]).slice(0, 16).map(([sh, rk]) => ({
-			label: `${sh}% of world`,
-			v: sh,
-			txt: `finished #${rk}`,
-			col: rk === 1 ? STATS_COL.gold : STATS_COL.stone
-		})), { labelW: 110 })}`, "Needs finished games with at least 5 turns recorded."));
-	} else html.push(statsCard("Who wins", kcHtml`<div style="font-size:.85rem;color:var(--stone)">No finished games in this selection yet — win rates, victory types and the early-lead test appear once a game ends (or once you Record Results for a game that finished before telemetry existed: this happens automatically at sign-in for finished games).</div>`));
-	{
-		const key = (r) => isWinner(r) ? "winners" : finishedGames.has(r.game_id) ? "others" : "running";
-		const mk = (f, name) => {
-			const byT = {};
-			rows.forEach((r) => {
-				if (!r.post) return;
-				const k = key(r);
-				if (k === "running" && finishedGames.size) return;
-				const o = byT[r.turn] = byT[r.turn] || {};
-				(o[k] = o[k] || []).push(f(r.post));
-			});
-			const ser = [];
-			[
-				"winners",
-				"others",
-				"running"
-			].forEach((k, i) => {
-				const pts = Object.entries(byT).map(([t, o]) => o[k] ? [+t, _avg(o[k])] : null).filter(Boolean);
-				if (pts.length) ser.push({
-					name: k === "running" ? "all realms (games still running)" : k === "winners" ? "eventual winners" : "the rest",
-					pts,
-					col: [
-						STATS_COL.gold,
-						STATS_COL.stone,
-						STATS_COL.blue
-					][i]
-				});
-			});
-			return kcHtml`<h3 style="margin-top:12px">${name}</h3>${statsLines(ser)}`;
-		};
-		html.push(statsCard("How realms grow", [
-			mk((p) => p.provinces, "Provinces held"),
-			mk((p) => p.gold, "Treasury (gold)"),
-			mk((p) => p.str, "Army strength (led + garrison)"),
-			mk((p) => p.heroes, "Heroes in service")
-		], "Average per realm at the end of each turn. Where a game has finished, eventual winners are drawn apart from the rest — the gap between the two lines is what winning looks like in this ruleset, and the turn where it opens is where the game is decided."));
-	}
-	{
-		const mix = (sub) => {
-			const m = {};
-			let tot = 0;
-			sub.forEach((r) => Object.values((r.orders || {}).chars || {}).forEach((c) => (c.ph || []).forEach((o) => {
-				m[o.a] = (m[o.a] || 0) + 1;
-				tot++;
-			})));
-			return {
-				m,
-				tot
-			};
-		};
-		const H = mix(rows.filter((r) => !r.is_bot)), Bt = mix(rows.filter((r) => r.is_bot)), Wn = mix(rows.filter((r) => isWinner(r))), Ls = mix(rows.filter((r) => finishedGames.has(r.game_id) && !isWinner(r)));
-		const acts = [.../* @__PURE__ */ new Set([...Object.keys(H.m), ...Object.keys(Bt.m)])].sort((a, b) => (H.m[b] || 0) + (Bt.m[b] || 0) - ((H.m[a] || 0) + (Bt.m[a] || 0)));
-		const lab = (a) => STATS_ACTION_LABEL[a] || a.replace(/_/g, " ");
-		const twoCol = (A, B, an, bn) => kcHtml`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px"><div><h3>${an} (${A.tot} character-phases)</h3>${statsBars(acts.map((a) => ({
-			label: lab(a),
-			v: _pct(A.m[a] || 0, A.tot),
-			txt: `${_pct(A.m[a] || 0, A.tot)}%`
-		})), {
-			labelW: 110,
-			max: 60
-		})}</div><div><h3>${bn} (${B.tot})</h3>${statsBars(acts.map((a) => ({
-			label: lab(a),
-			v: _pct(B.m[a] || 0, B.tot),
-			txt: `${_pct(B.m[a] || 0, B.tot)}%`,
-			col: STATS_COL.forest
-		})), {
-			labelW: 110,
-			max: 60
-		})}</div></div>`;
-		const ob = [twoCol(H, Bt, "Humans", "Bots")];
-		if (Wn.tot && Ls.tot) ob.push(kcHtml`<div style="margin-top:14px">${twoCol(Wn, Ls, "Eventual winners", "The rest")}</div>`);
-		html.push(statsCard("What players order", ob, "Share of every character-phase given each order. Orders humans give that bots never do (and the reverse) are the first thing to teach the bots; orders winners give more than losers are the ones that matter. A \"defend\" share above ~40% usually means idle heroes."));
-		const rec = {};
-		rows.forEach((r) => Object.values((r.orders || {}).chars || {}).forEach((c) => (c.ph || []).forEach((o) => {
-			if (o.a !== "recruit" || !o.t) return;
-			const m = String(o.t).match(/^([^|]+)\|(\d+)/);
-			if (m) rec[m[1]] = (rec[m[1]] || 0) + parseInt(m[2]);
-		})));
-		const inPlay = {};
-		rows.filter((r) => r.post).forEach((r) => (r.post.characters || []).forEach((c) => (c.units || []).forEach((u) => {
-			inPlay[u.t] = (inPlay[u.t] || 0) + 1;
-		})));
-		const types = Object.keys(ARMY_COST_MASTER).filter((t) => rec[t] || inPlay[t]).sort((a, b) => (rec[b] || 0) - (rec[a] || 0));
-		const never = Object.keys(ARMY_COST_MASTER).filter((t) => !rec[t] && !inPlay[t] && !/Garrison/.test(t));
-		html.push(statsCard("Units recruited", [statsBars(types.slice(0, 24).map((t) => ({
-			label: t,
-			v: rec[t] || 0,
-			txt: `${rec[t] || 0} ordered · ${inPlay[t] || 0} unit-turns led`
-		})), { labelW: 150 }), never.length ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Never recruited or led in these rows: ${never.join(", ")}.</div>` : ""], "Units ordered by type (from Recruit orders) beside how often each type is actually seen in a led column. A unit nobody buys is either priced wrong, unavailable, or not understood."));
-	}
-	{
-		const B = [];
-		const seen = /* @__PURE__ */ new Set();
-		rows.forEach((r) => (((r.outcomes || {}).battles || {}).list || []).forEach((b) => {
-			const k = r.game_id + "#" + r.turn + "#" + b.ph + "#" + b.prov + "#" + b.atkChar + "#" + b.atkStr + "#" + b.defStr;
-			if (seen.has(k)) return;
-			seen.add(k);
-			B.push({
-				...b,
-				game: r.game_id,
-				turn: r.turn,
-				atkBot: r.is_bot && b.atkPi === r.player_index
-			});
-		}));
-		if (B.length) {
-			const items = [
-				[
-					"< 0.5×",
-					0,
-					.5
-				],
-				[
-					"0.5–0.8×",
-					.5,
-					.8
-				],
-				[
-					"0.8–1.25× (even)",
-					.8,
-					1.25
-				],
-				[
-					"1.25–2×",
-					1.25,
-					2
-				],
-				[
-					"2–3×",
-					2,
-					3
-				],
-				[
-					"3–4×",
-					3,
-					4
-				],
-				[
-					"≥ 4×",
-					4,
-					1e9
-				]
-			].map(([label, lo, hi]) => {
-				const sub = B.filter((b) => {
-					const r = b.defStr > 0 ? b.atkStr / b.defStr : 1e9;
-					return r >= lo && r < hi;
-				});
-				if (!sub.length) return null;
-				const exp = _avg(sub.map((b) => 100 * fortuneWinChance(b.defStr > 0 ? b.atkStr / b.defStr : 1e9)));
-				return {
-					label,
-					v: _pct(sub.filter((b) => b.won).length, sub.length),
-					mark: exp,
-					txt: `${_pct(sub.filter((b) => b.won).length, sub.length)}% attacker wins · expected ${Math.round(exp)}% · ${sub.length} battle${sub.length !== 1 ? "s" : ""}`
-				};
-			}).filter(Boolean);
-			const byT = {};
-			B.forEach((b) => {
-				const o = byT[b.terrain] || (byT[b.terrain] = {
-					n: 0,
-					w: 0
-				});
-				o.n++;
-				if (b.won) o.w++;
-			});
-			const byK = {};
-			B.forEach((b) => {
-				const o = byK[b.kind] || (byK[b.kind] = {
-					n: 0,
-					w: 0,
-					al: 0,
-					dl: 0
-				});
-				o.n++;
-				if (b.won) o.w++;
-				o.al += b.atkLost || 0;
-				o.dl += b.defLost || 0;
-			});
-			const kindLab = {
-				neutral: "vs neutral defenders",
-				garrison: "vs an enemy garrison",
-				guard: "vs a neutral chieftain",
-				pvp: "vs an enemy commander"
-			};
-			html.push(statsCard("Battles", kcHtml`<div style="font-size:.85rem;margin-bottom:8px">${B.length} battles · attackers won <strong>${_pct(B.filter((b) => b.won).length, B.length)}%</strong> · average losses ${_avg(B.map((b) => b.atkLost || 0)).toFixed(2)} units (attacker) / ${_avg(B.map((b) => b.defLost || 0)).toFixed(2)} (defender) · ${B.filter((b) => b.carry > 0).length} carried on into a later phase.</div>
-         <h3>Attacker win rate by strength ratio (attacker ÷ defender, before the dice)</h3>${statsBars(items, {
-				labelW: 130,
-				max: 100
-			})}
-         <div style="font-size:.76rem;color:var(--stone);margin:4px 0 12px">The blue tick is what the fortune-of-battle curve says should happen at that ratio (2× → 80%, 3× → 90%, 4× → certain). Bars well off their ticks over many battles mean something outside the strength maths is deciding fights — pre-battle magic, archery, or a bug.</div>
-         <h3>By terrain</h3>${statsBars(Object.entries(byT).map(([t, o]) => ({
-				label: t,
-				v: _pct(o.w, o.n),
-				txt: `${_pct(o.w, o.n)}% attacker wins · ${o.n}`,
-				col: STATS_COL.forest
-			})), { max: 100 })}
-         <h3 style="margin-top:12px">By opponent</h3>${statsBars(Object.entries(byK).map(([k, o]) => ({
-				label: kindLab[k] || k,
-				v: _pct(o.w, o.n),
-				txt: `${_pct(o.w, o.n)}% attacker wins · ${o.n} · losses ${(o.al / o.n).toFixed(1)} / ${(o.dl / o.n).toFixed(1)}`,
-				col: STATS_COL.blue
-			})), {
-				labelW: 170,
-				max: 100
-			})}`, "Every field battle, once (a battle appears in both sides' rows; it is counted here a single time)."));
-		}
-	}
-	{
-		const E = [];
-		rows.forEach((r) => (((r.outcomes || {}).encounters || {}).list || []).forEach((e) => E.push({
-			...e,
-			bot: r.is_bot
-		})));
-		if (E.length) {
-			const byP = {};
-			E.forEach((e) => {
-				const o = byP[e.power || "?"] || (byP[e.power || "?"] = {
-					n: 0,
-					w: 0,
-					f: 0,
-					k: 0,
-					d: []
-				});
-				o.n++;
-				if (e.won) o.w++;
-				if (e.fled) o.f++;
-				if (e.killed) o.k++;
-				o.d.push(e.dmg || 0);
-			});
-			const order = [
-				"Weak",
-				"Moderate",
-				"Powerful",
-				"Legendary"
-			];
-			html.push(statsCard("Lair fights", [statsBars(Object.entries(byP).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([p, o]) => ({
-				label: p,
-				v: _pct(o.w, o.n),
-				txt: `${_pct(o.w, o.n)}% cleared · ${o.n} fight${o.n !== 1 ? "s" : ""} · ${o.f} fled · ${o.k} hero${o.k !== 1 ? "es" : ""} killed · avg ${_avg(o.d).toFixed(1)} damage taken`
-			})), { max: 100 }), kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Bots fought ${E.filter((e) => e.bot).length} of these; humans ${E.filter((e) => !e.bot).length}. The guardian ladder was tuned to a ~95% clear rate for a hero built for the band — a band far below that is being attempted too early.</div>`]));
-		}
-	}
-	{
-		const S = {};
-		rows.forEach((r) => (((r.outcomes || {}).spells || {}).list || []).forEach((s) => {
-			const o = S[s.spell] || (S[s.spell] = {
-				n: 0,
-				ok: 0,
-				bot: 0,
-				ch: []
-			});
-			o.n++;
-			if (s.ok) o.ok++;
-			if (r.is_bot) o.bot++;
-			o.ch.push(s.chance || 0);
-		}));
-		const ents = Object.entries(S).sort((a, b) => b[1].n - a[1].n);
-		if (ents.length) {
-			const never = Object.keys(SPELL_DEFS_P || {}).filter((n) => SPELL_DEFS_P[n] && SPELL_DEFS_P[n].phase && !S[n]);
-			html.push(statsCard("Spells cast (phase orders)", [statsBars(ents.map(([n, o]) => ({
-				label: n,
-				v: o.n,
-				txt: `${o.n} cast · ${_pct(o.ok, o.n)}% took (avg chance ${Math.round(_avg(o.ch))}%) · ${o.bot} by bots`
-			})), { labelW: 150 }), never.length ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Never cast as a phase order: ${never.join(", ")}.</div>` : ""], "Battle-magic and duel spells are not counted here (they are chosen in encounter plans, not as orders)."));
-		}
-	}
-	{
-		const D = [];
-		const seen = /* @__PURE__ */ new Set();
-		rows.forEach((r) => (((r.outcomes || {}).deaths || {}).list || []).forEach((d) => {
-			const k = r.game_id + "#" + r.turn + "#" + d.charId;
-			if (seen.has(k)) return;
-			seen.add(k);
-			D.push({
-				...d,
-				game: r.game_id,
-				turn: r.turn
-			});
-		}));
-		const C = [];
-		const seenC = /* @__PURE__ */ new Set();
-		rows.forEach((r) => (((r.outcomes || {}).captures || {}).list || []).forEach((c) => {
-			const k = r.game_id + "#" + r.turn + "#" + c.ph + "#" + c.prov + "#" + c.to;
-			if (seenC.has(k)) return;
-			seenC.add(k);
-			C.push(c);
-		}));
-		const byTurn = {};
-		D.forEach((d) => {
-			byTurn[d.turn] = (byTurn[d.turn] || 0) + 1;
-		});
-		const how = {};
-		D.forEach((d) => {
-			how[d.how || "other"] = (how[d.how || "other"] || 0) + 1;
-		});
-		const Dr = D.filter((d) => d.pi != null), Dn = D.length - Dr.length;
-		html.push(statsCard("Deaths and conquests", kcHtml`<div style="font-size:.85rem">${Dr.length} realm character${Dr.length !== 1 ? "s" : ""} killed (${Dr.filter((d) => d.king).length} king${Dr.filter((d) => d.king).length !== 1 ? "s" : ""}) over ${rows.length} realm-turns — one every ${Dr.length ? (rows.length / Dr.length).toFixed(1) : "∞"} realm-turns — plus ${Dn} neutral hero${Dn !== 1 ? "es" : ""} / chieftain${Dn !== 1 ? "s" : ""} slain. ${C.length} provinces changed hands: ${C.filter((c) => c.from == null).length} taken from neutrals, ${C.filter((c) => c.from != null).length} taken from rivals.</div>
-      <h3 style="margin-top:12px">Deaths by cause (realm characters and neutrals)</h3>${statsBars(Object.entries(how).map(([k, n]) => ({
-			label: {
-				character: "killed by an enemy character",
-				neutral: "killed by a neutral / guardian",
-				other: "other (duel, spell, execution…)"
-			}[k] || k,
-			v: n
-		})), { labelW: 220 })}
-      <h3 style="margin-top:12px">Deaths by turn</h3>${statsBars(Object.entries(byTurn).sort((a, b) => +a[0] - +b[0]).map(([t, n]) => ({
-			label: "turn " + t,
-			v: n,
-			col: STATS_COL.stone
-		})), { labelW: 70 })}`));
-	}
-	body.innerHTML = kcHtml`${html}`;
-}
-function _csv(rows, cols) {
-	const esc = (v) => {
-		if (v == null) return "";
-		const s = typeof v === "object" ? JSON.stringify(v) : String(v);
-		return /[",\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
-	};
-	return [cols.join(",")].concat(rows.map((r) => cols.map((c) => esc(typeof c === "function" ? c(r) : r[c])).join(","))).join("\n");
-}
-function _download(name, text, type) {
-	const a = document.createElement("a");
-	a.href = URL.createObjectURL(new Blob([text], { type: type || "text/csv" }));
-	a.download = name;
-	document.body.appendChild(a);
-	a.click();
-	setTimeout(() => {
-		URL.revokeObjectURL(a.href);
-		a.remove();
-	}, 500);
-}
-function exportStats(kind) {
-	if (!_stats.rows) return;
-	const { rows, results } = _statsFilter();
-	const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-	const pk = (o, k) => (o || {})[k];
-	if (kind === "turns") _download(`kc-turns-${stamp}.csv`, _csv(rows, [
-		"game_id",
-		"turn",
-		"player_index",
-		"realm",
-		"is_bot",
-		"bot_difficulty",
-		"race",
-		"alignment",
-		(r) => pk(r.pre, "gold"),
-		(r) => pk(r.post, "gold"),
-		(r) => pk(r.pre, "provinces"),
-		(r) => pk(r.post, "provinces"),
-		(r) => pk(r.post, "tax"),
-		(r) => pk(r.post, "taxShare"),
-		(r) => pk(r.post, "units"),
-		(r) => pk(r.post, "str"),
-		(r) => pk(r.post, "heroes"),
-		(r) => pk(r.post, "kingAlive"),
-		(r) => pk(r.post, "items"),
-		(r) => pk(r.post, "discoveries"),
-		(r) => pk(pk(r.outcomes, "battles"), "fought"),
-		(r) => pk(pk(r.outcomes, "battles"), "won"),
-		(r) => pk(pk(r.outcomes, "encounters"), "fought"),
-		(r) => pk(pk(r.outcomes, "encounters"), "won"),
-		(r) => pk(pk(r.outcomes, "captures"), "gained"),
-		(r) => pk(pk(r.outcomes, "captures"), "lost"),
-		(r) => pk(pk(r.outcomes, "deaths"), "own"),
-		(r) => pk(pk(r.outcomes, "deaths"), "killed"),
-		(r) => pk(pk(r.outcomes, "spells"), "cast"),
-		(r) => pk(r.outcomes, "rank"),
-		(r) => pk(r.outcomes, "score"),
-		(r) => Object.values(pk(r.orders, "chars") || {}).map((c) => (c.ph || []).map((o) => o.a).join(">")).join(" | ")
-	]).replace(/^[^\n]*/, [
-		"game_id",
-		"turn",
-		"player_index",
-		"realm",
-		"is_bot",
-		"bot_difficulty",
-		"race",
-		"alignment",
-		"gold_before",
-		"gold_after",
-		"provinces_before",
-		"provinces_after",
-		"tax",
-		"tax_share_pct",
-		"units",
-		"army_strength",
-		"heroes",
-		"king_alive",
-		"items",
-		"discoveries",
-		"battles",
-		"battles_won",
-		"lair_fights",
-		"lairs_cleared",
-		"provinces_gained",
-		"provinces_lost",
-		"own_deaths",
-		"enemies_killed",
-		"spells_cast",
-		"rank",
-		"score",
-		"orders_by_character"
-	].join(",")));
-	else if (kind === "battles") {
-		const B = [];
-		const seen = /* @__PURE__ */ new Set();
-		rows.forEach((r) => (pk(pk(r.outcomes, "battles"), "list") || []).forEach((b) => {
-			const k = r.game_id + "#" + r.turn + "#" + b.ph + "#" + b.prov + "#" + b.atkChar + "#" + b.atkStr + "#" + b.defStr;
-			if (seen.has(k)) return;
-			seen.add(k);
-			B.push({
-				game_id: r.game_id,
-				turn: r.turn,
-				phase: b.ph,
-				province: b.prov,
-				terrain: b.terrain,
-				kind: b.kind,
-				attacker: b.atkPi,
-				defender: b.defPi,
-				atk_strength: b.atkStr,
-				def_strength: b.defStr,
-				ratio: b.defStr > 0 ? Math.round(100 * b.atkStr / b.defStr) / 100 : "",
-				fortune_swing: b.S,
-				expected_atk_win_pct: Math.round(100 * fortuneWinChance(b.defStr > 0 ? b.atkStr / b.defStr : 1e9)),
-				attacker_won: b.won,
-				atk_units: b.atkUnits,
-				def_units: b.defUnits,
-				atk_lost: b.atkLost,
-				def_lost: b.defLost,
-				carry_on_round: b.carry
-			});
-		}));
-		_download(`kc-battles-${stamp}.csv`, _csv(B, Object.keys(B[0] || { game_id: 1 })));
-	} else if (kind === "results") _download(`kc-results-${stamp}.csv`, _csv(results, [
-		"game_id",
-		"game_name",
-		"player_index",
-		"realm",
-		"is_bot",
-		"bot_difficulty",
-		"race",
-		"alignment",
-		"rank",
-		"score",
-		"winner",
-		"victory",
-		"turns",
-		"out_turn",
-		"out_how",
-		(r) => pk(r.setup, "realms"),
-		(r) => pk(r.setup, "humans"),
-		(r) => pk(r.setup, "seaPct"),
-		(r) => pk(r.final, "provinces"),
-		(r) => pk(r.final, "gold"),
-		(r) => pk(r.final, "str"),
-		(r) => pk(r.final, "heroes")
-	]).replace(/^[^\n]*/, [
-		"game_id",
-		"game_name",
-		"player_index",
-		"realm",
-		"is_bot",
-		"bot_difficulty",
-		"race",
-		"alignment",
-		"rank",
-		"score",
-		"winner",
-		"victory",
-		"turns",
-		"out_turn",
-		"out_how",
-		"realms",
-		"humans",
-		"sea_pct",
-		"final_provinces",
-		"final_gold",
-		"final_strength",
-		"final_heroes"
-	].join(",")));
-	else if (kind === "json") {
-		const byKey = {};
-		results.forEach((r) => {
-			byKey[r.game_id + "#" + r.player_index] = r;
-		});
-		const out = rows.map((r) => {
-			const fr = byKey[r.game_id + "#" + r.player_index];
-			return {
-				game_id: r.game_id,
-				turn: r.turn,
-				player_index: r.player_index,
-				is_bot: r.is_bot,
-				bot_difficulty: r.bot_difficulty,
-				realm: r.realm,
-				race: r.race,
-				alignment: r.alignment,
-				situation: r.pre,
-				orders: r.orders,
-				result: r.post,
-				outcomes: r.outcomes,
-				final: fr ? {
-					rank: fr.rank,
-					winner: fr.winner,
-					victory: fr.victory,
-					turns: fr.turns,
-					out_how: fr.out_how
-				} : null
-			};
-		});
-		_download(`kc-training-${stamp}.json`, JSON.stringify({
-			v: KC_TEL_V,
-			exported: (/* @__PURE__ */ new Date()).toISOString(),
-			build: KC_BUILD_STAMP,
-			rows: out
-		}, null, 0), "application/json");
-	}
-}
-async function forgetDeletedGames() {
-	if (!_stats.rows) return;
-	const recorded = [.../* @__PURE__ */ new Set([..._stats.rows.map((r) => r.game_id), ..._stats.results.map((r) => r.game_id)])];
-	const live = /* @__PURE__ */ new Set();
-	for (let i = 0; i < recorded.length; i += 100) {
-		const { data, error } = await thePagesDb.theHallOfFamesGames.whichOfTheseGamesStillExist(recorded.slice(i, i + 100));
-		if (error) {
-			alert("Could not check which games still exist: " + error.message + ". Nothing was deleted.");
-			return;
-		}
-		(data || []).forEach((g) => live.add(String(g.id)));
-	}
-	const gone = recorded.filter((id) => !live.has(String(id)));
-	if (!gone.length) {
-		alert("Every recorded game still exists — nothing to forget.");
-		return;
-	}
-	if (!confirm(`Delete the recorded turns and results of ${gone.length} game${gone.length !== 1 ? "s" : ""} that no longer exist? This cannot be undone.`)) return;
-	await thePagesDb.theStatistics.deleteTheseGamesTurnRecords(gone);
-	await thePagesDb.theStatistics.deleteTheseGamesResults(gone);
-	if (_kcHasLb) await thePagesDb.theHallOfFame.deleteTheseGamesEntries(gone);
-	openStats(true);
-}
-// src/engine/turn/log-line-helpers.ts
-var telSpell = (turnContext, ch, spell, school, lvl, chance, roll, ctx) => {
-	try {
-		if (ch?.player != null) recordForTheStatistics(turnContext, {
-			kind: "a spell worked in a battle or a duel, for the statistics",
-			record: {
-				ph: turnContext._logCtx.phase ?? turnContext._currentPhase,
-				pi: ch.player,
-				charId: ch.id,
-				spell,
-				school,
-				lvl,
-				chance,
-				ok: roll <= chance,
-				ctx
-			}
-		});
-	} catch (_te) {}
-};
-function noteSilentHeroes(turnContext, ph, startLoc) {
-	const { turnLog, battleCommanders } = turnContext;
-	const { G } = turnContext;
-	const heard = /* @__PURE__ */ new Set();
-	turnLog.forEach((e) => {
-		if (e.phase !== ph) return;
-		if (e.charId != null) heard.add(e.charId);
-		if (Array.isArray(e.charIds)) e.charIds.forEach((id) => heard.add(id));
-	});
-	const theCommanders = battleCommanders;
-	Object.keys(battleCommanders).forEach((k) => {
-		if (k.endsWith(`@${String(ph)}`)) (theCommanders[k] ?? []).forEach((id) => heard.add(id));
-	});
-	(G.characters ?? []).forEach((c) => {
-		if (!c?.alive || c.player == null || heard.has(c.id)) return;
-		const from = startLoc ? startLoc[c.id] : void 0;
-		emit(turnContext, {
-			type: "move",
-			fact: from != null && from !== c.location ? {
-				kind: "a hero with no line of his own leaves a province and ends the season in another",
-				heroName: c.name,
-				fromProvinceName: (G.world.provinces[from]?.name ?? "") || null,
-				provinceName: (c.location != null ? G.world.provinces[c.location]?.name ?? "" : "") || null
-			} : {
-				kind: "a hero with no line of his own remains where he is this season",
-				heroName: c.name,
-				provinceName: (c.location != null ? G.world.provinces[c.location]?.name ?? "" : "") || null
-			},
-			audience: {
-				actor: c.player,
-				realms: [c.player]
-			},
-			hero: c.id,
-			phase: ph,
-			province: c.location ?? null
-		});
-	});
-}
-function theNameOfAPlayersRealm(turnContext, pi) {
-	const { G } = turnContext;
-	const theRealm = pi != null ? G.players[pi] : void 0;
-	return theRealm ? theRealm.name : null;
-}
-function telRealmSnapshot(gs, pi) {
-	if (!gs) return null;
-	const pl = (gs.players ?? [])[pi];
-	if (!pl) return null;
-	const provs = gs.world?.provinces ?? [];
-	const owned = provs.filter((p) => p?.owner === pi);
-	const chars = (gs.characters ?? []).filter((c) => c?.player === pi && c.alive === true);
-	const king = chars.find((c) => c.isKing) ?? null;
-	const unitRec = (a) => ({
-		t: a.type,
-		q: (a.quality ?? "") || "Average",
-		...a._isSkeletal ? { sk: 1 } : {}
-	});
-	let ledUnits = 0, ledStr = 0, garUnits = 0, garStr = 0;
-	const characters = chars.map((c) => {
-		const units = (c.armies ?? []).filter((a) => !!a && !a._phantom);
-		units.forEach((a) => {
-			ledUnits++;
-			ledStr += unitBaseStrength(a);
-		});
-		const pv = c.location != null ? provs[c.location] : null;
-		const skills = {};
-		Object.entries(c.skills ?? {}).forEach(([k, v]) => {
-			if (v !== void 0 && v > 0) skills[k] = v;
-		});
-		return {
-			id: c.id,
-			name: c.name,
-			king: !!c.isKing,
-			loc: c.location,
-			terrain: pv ? pv.terrain : null,
-			home: pv?.owner === pi,
-			hp: c.hp,
-			maxHp: c.maxHp,
-			skills,
-			units: units.map(unitRec),
-			items: (c.items ?? []).map((it) => it?.name).filter(Boolean)
-		};
-	});
-	owned.forEach((p) => {
-		(p.garrisonArmies ?? []).forEach((a) => {
-			if (a) {
-				garUnits++;
-				garStr += unitBaseStrength(a);
-			}
-		});
-	});
-	const fallen = (gs.characters ?? []).filter((c) => c?.player === pi && !c.alive && c.killedThisTurn === true).map((c) => {
-		const skills = {};
-		Object.entries(c.skills ?? {}).forEach(([k, v]) => {
-			if (v !== void 0 && v > 0) skills[k] = v;
-		});
-		return {
-			id: c.id,
-			name: c.name,
-			king: !!c.isKing,
-			fell: 1,
-			hp: 0,
-			maxHp: c.maxHp,
-			skills,
-			units: (c.armies ?? []).filter((a) => !!a && !a._phantom).map(unitRec),
-			items: (c.items ?? []).map((it) => it?.name).filter(Boolean)
-		};
-	});
-	const tax = owned.reduce((s, p) => s + (Number(p.tax) || 0), 0);
-	const worldTax = provs.reduce((s, p) => s + (Number(p?.tax) || 0), 0);
-	const rel = {
-		enemies: [],
-		allies: []
-	};
-	(gs.players ?? []).forEach((o, oi) => {
-		if (oi === pi || !o) return;
-		const r = relOfReport(gs, pi, oi);
-		if (r === "enemy") rel.enemies.push(oi);
-		else if (r === "allied") rel.allies.push(oi);
-	});
-	const explored = provs.filter((p) => p && Array.isArray(p.visitedBy) && p.visitedBy.includes(pi)).length;
-	const legNames = typeof LEGENDARY_NAMES_P !== "undefined" ? LEGENDARY_NAMES_P : /* @__PURE__ */ new Set();
-	let items = 0, relics = 0;
-	chars.forEach((c) => {
-		(c.items ?? []).forEach((it) => {
-			if (!it) return;
-			items++;
-			if (legNames.has(it.name)) relics++;
-		});
-	});
-	return {
-		gold: Math.round(Number(pl.gold) || 0),
-		provinces: owned.length,
-		land: owned.filter((p) => p.terrain !== "sea").length,
-		sea: owned.filter((p) => p.terrain === "sea").length,
-		tax,
-		taxShare: worldTax > 0 ? Math.round(1e3 * tax / worldTax) / 10 : 0,
-		chars: chars.length,
-		heroes: chars.length - (king ? 1 : 0),
-		kingAlive: !!king,
-		kingHp: king ? king.hp : null,
-		ledUnits,
-		ledStr: Math.round(ledStr),
-		garUnits,
-		garStr: Math.round(garStr),
-		units: ledUnits + garUnits,
-		str: Math.round(ledStr + garStr),
-		items,
-		relics,
-		discoveries: (pl.discoveries ?? []).length,
-		consecrated: consecratedIds(pl).length,
-		explored,
-		conceded: !!pl.conceded,
-		eliminated: !!pl._eliminated,
-		rel,
-		characters,
-		...fallen.length ? { fallen } : {}
-	};
-}
-function telOrdersFor(gs, pi, extras) {
-	const chars = (gs.characters ?? []).filter((c) => c?.player === pi && c.alive === true);
-	const byChar = {};
-	chars.forEach((c) => {
-		const slots = gs.turnOrders?.[c.id] ?? [];
-		byChar[c.id] = {
-			name: c.name,
-			king: !!c.isKing,
-			ph: [
-				0,
-				1,
-				2,
-				3,
-				4
-			].map((i) => {
-				const o = slots[i];
-				if (!o) return { a: "defend" };
-				const r = { a: ((o.action ?? "") || "defend").toLowerCase() };
-				if (o.target != null && o.target !== "") r.t = String(o.target).slice(0, 80);
-				if (o.extra != null && o.extra !== "") r.x = String(o.extra).slice(0, 80);
-				if (o.desc) r.d = o.desc.slice(0, 140);
-				if (o._pinned) r.pinned = 1;
-				if (o._unifiedWith != null) r.unified = o._unifiedWith;
-				return r;
-			})
-		};
-	});
-	const out = { chars: byChar };
-	if (extras) Object.entries(extras).forEach(([k, v]) => {
-		if (v !== void 0 && v !== null && !(Array.isArray(v) && !v.length) && !(typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length)) out[k] = v;
-	});
-	return out;
-}
-// src/ui/gm/hall-of-fame.ts
-var KC_LB_V = 3;
-globalThis._kcHasLb = false;
-globalThis._kcLbLastErr = null;
-async function probeLeaderboard() {
-	try {
-		const { error } = await thePagesDb.theHallOfFame.oneEntrysGame();
-		_kcHasLb = !error;
-		if (error) console.warn("game_records probe:", error.message);
-	} catch (e) {
-		_kcHasLb = false;
-	}
-	renderLeaderboardBanner();
-	return _kcHasLb;
-}
-function renderLeaderboardBanner() {
-	const el = document.getElementById("msg-leaderboard");
-	if (!el) return;
-	if (!_kcHasLb) el.innerHTML = kcMissingMsg("🏆 Leaderboard not active", kcHtml`<code>game_records</code> table`, "finished games are not being added to the Hall of Fame");
-	else if (_kcLbLastErr) el.innerHTML = kcHtml`<div class="msg-error"><strong>🏆 Leaderboard write failed</strong>: ${_kcLbLastErr}. The turn and its statistics were saved; only the Hall-of-Fame row was lost. Use ↻ Rebuild on the Stats tab.</div>`;
-	else el.innerHTML = "";
-}
-var _LB_SEA = new Set(KC_UNIT_CLASS.sea);
-var _LB_AIR = new Set(KC_UNIT_CLASS.aerial);
-var _LB_BEAST = /* @__PURE__ */ new Set([...KC_UNIT_CLASS.creature, ...KC_UNIT_CLASS.monster]);
-var _LB_MISSILE = new Set(KC_UNIT_CLASS.missile);
-var _LB_CAV = new Set(KC_UNIT_CLASS.cavalry);
-var _lbArr = (v) => Array.isArray(v) ? v : [];
-var _lbObj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var _lbN = (v) => {
-	const n = Number(v);
-	return isFinite(n) ? n : 0;
-};
-function lbUnitStr(u) {
-	return u && typeof u === "object" ? (UNIT_BASE_STR[u.t] || 4) * (UNIT_Q_MULT[u.q || "Average"] || 2) : 0;
-}
-function lbSumStr(units, pred) {
-	return _lbArr(units).reduce((s, u) => s + (!pred || pred(u) ? lbUnitStr(u) : 0), 0);
-}
-function lbRecorder() {
-	const R = {};
-	return {
-		R,
-		put(key, v, ctx, dir) {
-			if (v == null) return;
-			v = Number(v);
-			if (!isFinite(v)) return;
-			const d = dir === "min" ? "min" : "max";
-			if (d === "max" && !(v > 0)) return;
-			const pi = ctx && ctx.pi != null ? ctx.pi : null;
-			const list = R[key] = R[key] || [];
-			const i = list.findIndex((e) => e.pi === pi);
-			if (i >= 0 && !(d === "min" ? v < list[i].v : v > list[i].v)) return;
-			const e = Object.assign({
-				v: Math.round(v * 100) / 100,
-				d
-			}, ctx || {});
-			if (i < 0) list.push(e);
-			else list[i] = e;
-		},
-		finish() {
-			Object.values(R).forEach((l) => l.sort((a, b) => (a.d === "min" ? a.v - b.v : b.v - a.v) || (a.pi == null ? -1 : a.pi) - (b.pi == null ? -1 : b.pi)));
-			return R;
-		}
-	};
-}
-function lbCtx(pi, turn, extra) {
-	return Object.assign({
-		pi: pi == null ? null : pi,
-		t: turn == null ? null : turn
-	}, extra || {});
-}
-function buildGameRecords(gameId, gameRow, players, results, events, gs, profNames) {
-	results = (results || []).filter(Boolean);
-	events = (events || []).filter(Boolean);
-	if (!results.length) return null;
-	profNames = _lbObj(profNames);
-	const uidByIdx = {}, kingdomByIdx = {};
-	(players || []).forEach((p) => {
-		if (!p || p.player_index == null) return;
-		if (p.user_id) uidByIdx[p.player_index] = p.user_id;
-		if (p.display_name) kingdomByIdx[p.player_index] = p.display_name;
-	});
-	const uidOf = (pi) => uidByIdx[pi] || null;
-	const personOf = (pi) => {
-		const u = uidOf(pi);
-		return u && profNames[u] || null;
-	};
-	const any = results[0];
-	const setupIn = _lbObj(any.setup);
-	const meta = gameRow ? gameMetaOf(gameRow) : null;
-	const setup = {
-		realms: setupIn.realms || results.length,
-		humans: setupIn.humans != null ? setupIn.humans : results.filter((r) => !r.is_bot).length,
-		bots: setupIn.bots != null ? setupIn.bots : results.filter((r) => r.is_bot).length,
-		diplomacy: setupIn.diplomacy || gs && gs.botDiplomacy || meta && meta.botDiplomacy || "normal",
-		difficulty: setupIn.difficulty || gs && gs.botDifficulty || meta && meta.botDifficulty || null,
-		mapSize: setupIn.mapSize || meta && meta.mapSize || null,
-		cols: setupIn.cols || gs && gs.world && gs.world.cols || null,
-		rows: setupIn.rows || gs && gs.world && gs.world.rows || null,
-		seaPct: setupIn.seaPct != null ? setupIn.seaPct : meta && meta.seaPct != null ? meta.seaPct : null,
-		maxTurns: gameRow && gameRow.max_turns || gs && gs.maxTurns || null
-	};
-	const turns = any.turns || Math.max(0, ...events.map((e) => e.turn || 0));
-	let titleTop = null;
-	if (gs && gs.players) try {
-		const st = computeStandings(gs);
-		titleTop = {};
-		TITLE_DEFS.forEach((t) => {
-			const h = _lbObj(st.titles)[t.key];
-			if (!h || h.playerIndex == null || !(h.merit > 0)) return;
-			const ch = h.charId != null ? _lbArr(gs.characters).find((c) => c && c.id === h.charId) : null;
-			titleTop[t.key] = {
-				name: t.name,
-				merit: Math.round(h.merit * 100) / 100,
-				pi: h.playerIndex,
-				who: ch ? ch.name : null
-			};
-		});
-	} catch (e) {
-		titleTop = null;
-	}
-	const titlesByPi = {};
-	if (titleTop) Object.entries(titleTop).forEach(([k, v]) => {
-		(titlesByPi[v.pi] = titlesByPi[v.pi] || []).push(k);
-	});
-	const standings = results.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99)).map((r) => {
-		const f = _lbObj(r.final);
-		return {
-			pi: r.player_index,
-			realm: r.realm || kingdomByIdx[r.player_index] || null,
-			uid: r.is_bot ? null : uidOf(r.player_index),
-			player: r.is_bot ? null : personOf(r.player_index),
-			race: r.race,
-			al: r.alignment,
-			bot: !!r.is_bot,
-			rank: r.rank || null,
-			score: r.score || 0,
-			winner: !!r.winner,
-			outTurn: r.out_turn || null,
-			outHow: r.out_how || null,
-			prov: f.provinces || 0,
-			land: f.land || 0,
-			sea: f.sea || 0,
-			gold: f.gold || 0,
-			tax: f.tax || 0,
-			taxShare: f.taxShare || 0,
-			str: f.str || 0,
-			units: f.units || 0,
-			heroes: f.heroes || 0,
-			items: f.items || 0,
-			relics: f.relics || 0,
-			disc: f.discoveries || 0,
-			consec: f.consecrated || 0,
-			explored: f.explored || 0,
-			titles: titlesByPi[r.player_index] || []
-		};
-	});
-	const win = results.find((r) => r.winner) || null;
-	const rk = lbRecorder(), put = rk.put;
-	const agg = {};
-	const A = (pi) => agg[pi] = agg[pi] || {
-		caps: 0,
-		lost: 0,
-		battles: 0,
-		won: 0,
-		unitsLost: 0,
-		unitsKilled: 0,
-		lairs: 0,
-		lairsWon: 0,
-		fled: 0,
-		spells: 0,
-		spellsOk: 0,
-		deaths: 0,
-		kills: 0,
-		kingKills: 0,
-		spellCount: {},
-		killsByChar: {}
-	};
-	const seenTen = {};
-	const uniqBattles = /* @__PURE__ */ new Set();
-	let gameBattles = 0, gameCasualties = 0, gameSpells = 0, gameCaps = 0, gameDeaths = 0, gameLairs = 0;
-	events.forEach((ev) => {
-		const pi = ev.player_index, post = _lbObj(ev.post), out = _lbObj(ev.outcomes), t = ev.turn;
-		const a = A(pi), C = (x) => lbCtx(pi, t, x);
-		put("most_provinces", post.provinces, C());
-		put("most_land", post.land, C());
-		put("most_sea", post.sea, C());
-		put("top_tax_share", post.taxShare, C());
-		put("richest", post.gold, C());
-		put("most_explored", post.explored, C());
-		put("most_discoveries", post.discoveries, C());
-		put("most_consecrated", post.consecrated, C());
-		put("most_relics", post.relics, C());
-		put("most_heroes", post.heroes, C());
-		put("most_units_realm", post.units, C());
-		put("mightiest_host", post.str, C());
-		put("largest_garrison", post.garStr, C());
-		if ((post.provinces || 0) >= 10 && seenTen[pi] == null) {
-			seenTen[pi] = t;
-			put("fastest_ten", t, C({ det: "10 provinces" }), "min");
-		}
-		const dl = _lbObj(out.delta);
-		put("gold_gain_turn", dl.gold, C());
-		put("str_gain_turn", dl.str, C());
-		_lbArr(post.characters).concat(_lbArr(post.fallen)).forEach((c) => {
-			if (!c || typeof c !== "object") return;
-			const who = c.name || null, units = _lbArr(c.units);
-			const ctx = (x) => C(Object.assign({ who }, x || {}));
-			put("biggest_field_army", lbSumStr(units), ctx({ det: `${units.length} units` }));
-			put("most_units_one_char", units.length, ctx());
-			put("grand_armada", lbSumStr(units, (u) => _LB_SEA.has(u.t)), ctx({ det: `${units.filter((u) => _LB_SEA.has(u.t)).length} hulls & sea-beasts` }));
-			put("sky_host", lbSumStr(units, (u) => _LB_AIR.has(u.t)), ctx({ det: `${units.filter((u) => _LB_AIR.has(u.t)).length} airborne units` }));
-			put("beast_host", lbSumStr(units, (u) => _LB_BEAST.has(u.t)), ctx({ det: `${units.filter((u) => _LB_BEAST.has(u.t)).length} creatures & monsters` }));
-			put("horse_host", lbSumStr(units, (u) => _LB_CAV.has(u.t)), ctx());
-			put("arrow_storm", lbSumStr(units, (u) => _LB_MISSILE.has(u.t)), ctx());
-			put("undead_legion", units.filter((u) => u.sk).length, ctx());
-			put("most_items_one_char", _lbArr(c.items).length, ctx({ det: _lbArr(c.items).filter((x) => typeof x === "string").slice(0, 3).join(", ") || null }));
-			put("hardiest", c.maxHp, ctx());
-			const sk = _lbObj(c.skills), tot = Object.values(sk).reduce((s, v) => s + (Number(v) || 0), 0);
-			put("greatest_hero", tot, ctx({ det: `${Object.keys(sk).length} skills` }));
-			Object.entries(sk).forEach(([k, v]) => {
-				const lv = _lbN(v);
-				put("sk_" + k, lv, ctx({
-					lbl: "Highest " + (SKILL_LABELS[k] || k),
-					det: (SKILL_LABELS[k] || k) + " " + lv
-				}));
-			});
-		});
-		_lbArr(post.titles).forEach((h) => {
-			if (!h || typeof h.key !== "string") return;
-			const def = (typeof TITLE_DEFS !== "undefined" ? TITLE_DEFS : []).find((x) => x.key === h.key);
-			const nm = def && def.name || h.key;
-			put("title_" + h.key, h.merit, C({
-				who: typeof h.who === "string" && h.who || null,
-				lbl: nm + " — highest rating",
-				det: nm
-			}));
-		});
-		const B = _lbObj(out.battles);
-		put("battles_turn", B.fought, C());
-		put("kills_turn", B.unitsKilled, C());
-		put("losses_turn", B.unitsLost, C());
-		a.battles += B.fought || 0;
-		a.won += B.won || 0;
-		a.unitsLost += B.unitsLost || 0;
-		a.unitsKilled += B.unitsKilled || 0;
-		_lbArr(B.list).forEach((b) => {
-			if (!b || typeof b !== "object") return;
-			const atk = b.side === "atk", aS = _lbN(b.atkStr), dS = _lbN(b.defStr);
-			const aL = _lbN(b.atkLost), dL = _lbN(b.defLost);
-			const mine = atk ? aS : dS, theirs = atk ? dS : aS;
-			const key = [
-				t,
-				b.prov,
-				b.atkPi,
-				b.defPi,
-				aS,
-				dS
-			].join("|");
-			if (!uniqBattles.has(key)) {
-				uniqBattles.add(key);
-				gameBattles++;
-				gameCasualties += aL + dL;
-			}
-			const det = `${Math.round(aS)} vs ${Math.round(dS)}${typeof b.terrain === "string" ? " · " + b.terrain : ""}`;
-			const ctx = C({
-				det,
-				kind: typeof b.kind === "string" ? b.kind : null
-			});
-			put("biggest_battle", aS + dS, ctx);
-			if (b.kind === "pvp") put("biggest_pvp", aS + dS, ctx);
-			put("bloodiest_battle", aL + dL, C({ det }));
-			put("longest_siege", _lbN(b.carry), C({ det }));
-			put("worst_rout", atk ? aL : dL, C({ det }));
-			if (b.win && theirs > 0 && mine > 0) {
-				put("greatest_upset", Math.round(1e3 * mine / theirs) / 1e3, C({ det: `${Math.round(mine)} beat ${Math.round(theirs)}` }), "min");
-				if (atk === false) put("stubbornest_defence", Math.round(1e3 * mine / theirs) / 1e3, C({ det: `${Math.round(mine)} held off ${Math.round(theirs)}` }), "min");
-				if ((atk ? aL : dL) === 0) put("flawless_victory", theirs, C({ det: `${Math.round(theirs)} destroyed, nothing lost` }));
-			}
-		});
-		const E = _lbObj(out.encounters);
-		a.lairs += E.fought || 0;
-		a.lairsWon += E.won || 0;
-		a.fled += E.fled || 0;
-		gameLairs += E.fought || 0;
-		put("lairs_turn", E.won, C());
-		_lbArr(E.list).forEach((e) => {
-			if (!e || typeof e !== "object") return;
-			const pw = GUARDIAN_POWER_RANK[typeof e.power === "string" ? e.power : ""] || 0;
-			const gname = typeof e.guardian === "string" && e.guardian || typeof e.feature === "string" && e.feature || "a guardian";
-			const ctx = C({
-				who: null,
-				det: `${gname}${e.power ? " (" + e.power + ")" : ""}`
-			});
-			if (e.won) {
-				put("guardian_slain", pw, ctx);
-				put("narrowest_escape", e.hpAfter, ctx, "min");
-				if (pw >= 3) put("luckiest_kill", e.hpAfter, C({ det: `${gname} (${e.power}) — ${_lbN(e.hpAfter)} hp left` }), "min");
-				put("hardest_fight", e.dmg, ctx);
-			}
-			if (e.killed) put("deadliest_guardian", pw, C({ det: `${gname}${e.power ? " (" + e.power + ")" : ""} slew a champion` }));
-		});
-		const Cp = _lbObj(out.captures);
-		a.caps += Cp.gained || 0;
-		a.lost += Cp.lost || 0;
-		gameCaps += Cp.gained || 0;
-		put("captures_turn", Cp.gained, C());
-		put("lost_turn", Cp.lost, C());
-		_lbArr(Cp.list).forEach((cp) => {
-			if (cp && cp.to === pi) put("richest_capture", cp.tax, C({ det: `a ${typeof cp.terrain === "string" && cp.terrain || "province"} worth ${_lbN(cp.tax)} tax` }));
-		});
-		const D = _lbObj(out.deaths);
-		a.deaths += D.own || 0;
-		a.kills += D.killed || 0;
-		gameDeaths += D.own || 0;
-		put("deaths_turn", D.own, C());
-		_lbArr(D.list).forEach((d) => {
-			if (d && d.killerPi === pi && d.pi !== pi) {
-				if (d.killerId != null) a.killsByChar[d.killerId] = (a.killsByChar[d.killerId] || 0) + 1;
-				if (d.king) a.kingKills++;
-			}
-		});
-		const S = _lbObj(out.spells);
-		a.spells += S.cast || 0;
-		a.spellsOk += S.ok || 0;
-		gameSpells += S.cast || 0;
-		put("spells_turn", S.cast, C());
-		_lbArr(S.list).forEach((s) => {
-			if (!s || typeof s !== "object") return;
-			const sname = typeof s.spell === "string" && s.spell || "an unnamed spell";
-			a.spellCount[sname] = (a.spellCount[sname] || 0) + 1;
-			if (s.ok && _lbN(s.chance) > 0) put("longest_shot", s.chance, C({ det: `${sname} at ${_lbN(s.chance)}%` }), "min");
-			if (s.ok) put("grandest_casting", s.lvl, C({ det: sname }));
-		});
-	});
-	Object.entries(agg).forEach(([k, a]) => {
-		const pi = Number(k), C = (x) => lbCtx(pi, null, x);
-		put("captures_game", a.caps, C());
-		put("lost_game", a.lost, C());
-		put("battles_game", a.battles, C());
-		put("battles_won_game", a.won, C());
-		put("kills_game", a.unitsKilled, C());
-		put("losses_game", a.unitsLost, C());
-		put("lairs_game", a.lairsWon, C());
-		put("flights_game", a.fled, C());
-		put("spells_game", a.spells, C());
-		put("failed_spells_game", a.spells - a.spellsOk, C());
-		put("champions_lost", a.deaths, C());
-		put("champions_slain", a.kills, C());
-		put("kingslayer", a.kingKills, C());
-		if (a.battles >= 4) put("best_win_rate", Math.round(1e3 * a.won / a.battles) / 10, C({ det: `${a.won} of ${a.battles} battles` }));
-		const topChar = Object.entries(a.killsByChar).sort((x, y) => y[1] - x[1])[0];
-		if (topChar) {
-			const ch = _lbArr(_lbObj((events.find((e) => e && e.player_index === pi && _lbArr(_lbObj(e.post).characters).some((c) => c && String(c.id) === String(topChar[0]))) || {}).post).characters).find((c) => c && String(c.id) === String(topChar[0]));
-			put("deadliest_champion", topChar[1], C({ who: ch ? ch.name : null }));
-		}
-		const topSpell = Object.entries(a.spellCount).sort((x, y) => y[1] - x[1])[0];
-		if (topSpell) put("favourite_spell", topSpell[1], C({ det: topSpell[0] }));
-	});
-	results.forEach((r) => {
-		const pi = r.player_index, f = _lbObj(r.final), C = (x) => lbCtx(pi, turns, x);
-		put("final_score", r.score, C());
-		put("final_provinces", f.provinces, C());
-		put("final_gold", f.gold, C());
-		put("final_strength", f.str, C());
-		put("final_tax_share", f.taxShare, C());
-		if (r.out_turn) put("earliest_out", r.out_turn, C({ det: r.out_how || "out" }), "min");
-	});
-	if (titleTop) Object.entries(titleTop).forEach(([k, v]) => {
-		put("title_" + k, v.merit, lbCtx(v.pi, turns, {
-			who: v.who,
-			lbl: v.name + " — highest rating",
-			det: v.name
-		}));
-	});
-	const G0 = {
-		pi: null,
-		t: null
-	};
-	put("longest_game", turns, G0);
-	put("shortest_game", turns, G0, "min");
-	put("most_realms", setup.realms, G0);
-	put("most_humans", setup.humans, G0);
-	put("biggest_world", (setup.cols || 0) * (setup.rows || 0), G0, "max");
-	put("most_battles_game", gameBattles, G0);
-	put("bloodiest_game", gameCasualties, G0);
-	put("most_spells_game", gameSpells, G0);
-	put("most_captures_game", gameCaps, G0);
-	put("most_deaths_game", gameDeaths, G0);
-	put("most_lairs_game", gameLairs, G0);
-	const finishedAt = results.map((r) => r.created_at).filter(Boolean).sort()[0] || kcClock.date().toISOString();
-	return {
-		game_id: String(gameId),
-		game_name: gameRow && gameRow.name || any.game_name || "Game " + gameId,
-		gm_user_id: gameRow && gameRow.gm_user_id || (currentUser ? currentUser.id : null),
-		started_at: gameRow && gameRow.created_at || null,
-		finished_at: finishedAt,
-		turns,
-		winner_realm: win ? win.realm : null,
-		winner_player: win ? win.is_bot ? null : personOf(win.player_index) : null,
-		winner_is_bot: win ? !!win.is_bot : null,
-		victory: any.victory || null,
-		setup,
-		standings,
-		records: rk.finish(),
-		totals: {
-			battles: gameBattles,
-			casualties: gameCasualties,
-			spells: gameSpells,
-			captures: gameCaps,
-			deaths: gameDeaths,
-			lairs: gameLairs,
-			events: events.length
-		},
-		build: `GM ${KC_BUILD_STAMP} lb${KC_LB_V}`
-	};
-}
-async function writeGameRecord(gameId, opts) {
-	if (!_kcHasLb) return false;
-	opts = opts || {};
-	try {
-		const gid = String(gameId);
-		const { data: results, error: rErr } = await thePagesDb.theStatistics.theResultsOfThisGame(gid);
-		if (rErr || !results || !results.length) return false;
-		const events = [];
-		for (let from = 0;; from += 500) {
-			const { data, error } = await thePagesDb.theStatistics.thisGamesTurnRecordsForItsEntryFromRowToRow(gid, from, from + 499);
-			if (error) {
-				_kcLbLastErr = "Could not read the turn history of game " + gid + ": " + error.message;
-				renderLeaderboardBanner();
-				return false;
-			}
-			events.push(...data || []);
-			if (!data || data.length < 500) break;
-		}
-		let gameRow = opts.gameRow || null, players = opts.players || null, gs = opts.gs || null;
-		if (!gameRow || !players || !gs) {
-			const { data: full } = await thePagesDb.theHallOfFamesGames.thisGameWithItsWorldAndRealms(gid);
-			if (full) {
-				gameRow = gameRow || full;
-				players = players || full.game_players || [];
-				if (!gs) {
-					const p = parseGameState(full);
-					if (p && p.players) gs = p;
-				}
-			}
-		}
-		const row = buildGameRecords(gid, gameRow, players || [], results, events, gs, await lbProfileNames(players));
-		if (!row) return false;
-		lbCountRow(row);
-		const { data: old } = await thePagesDb.theHallOfFame.theGameMastersNotesOnThisGamesEntry(gid);
-		if (old) {
-			if (old.note) row.note = old.note;
-			if (old.hidden) row.hidden = true;
-			if (old.game_name) row.game_name = old.game_name;
-		}
-		const { error } = await thePagesDb.theHallOfFame.writeTheseEntries([row]);
-		if (error) {
-			_kcLbLastErr = error.message;
-			renderLeaderboardBanner();
-			return false;
-		}
-		_kcLbLastErr = null;
-		renderLeaderboardBanner();
-		return true;
-	} catch (e) {
-		_kcLbLastErr = String(e && e.message || e);
-		return false;
-	}
-}
-var _lbProfCache = null;
-var _lbProfErr = null;
-async function lbProfileNames(players) {
-	if (!_lbProfCache) {
-		_lbProfCache = {};
-		_lbProfErr = null;
-		try {
-			const { data, error } = await thePagesDb.theAccountsNames.theNameOfEveryAccount();
-			if (error) _lbProfErr = error.message;
-			(data || []).forEach((r) => {
-				if (r && r.id && r.name) _lbProfCache[r.id] = r.name;
-			});
-			if (!error && !Object.keys(_lbProfCache).length) _lbProfErr = "the profiles table returned no names at all";
-		} catch (e) {
-			_lbProfErr = String(e && e.message || e);
-		}
-	}
-	const want = [...new Set((players || []).map((p) => p && p.user_id).filter(Boolean))];
-	const out = {};
-	want.forEach((id) => {
-		if (_lbProfCache[id]) out[id] = _lbProfCache[id];
-	});
-	return out;
-}
-var _lbTally = {
-	games: 0,
-	humans: 0,
-	uids: 0,
-	named: 0
-};
-function lbCountRow(row) {
-	_lbTally.games++;
-	(row.standings || []).forEach((st) => {
-		if (!st || st.bot) return;
-		_lbTally.humans++;
-		if (st.uid) _lbTally.uids++;
-		if (st.player) _lbTally.named++;
-	});
-}
-async function backfillGameRecords(force) {
-	if (!_kcHasLb || !currentUser) return 0;
-	const btn = document.getElementById("lb-build-btn");
-	const say = (t) => {
-		const el = document.getElementById("lb-build-msg");
-		if (el) el.textContent = t;
-	};
-	try {
-		const { data: games } = await thePagesDb.theHallOfFamesGames.theFinishedGamesThisGameMasterRuns(currentUser.id);
-		const res = [];
-		for (let from = 0;; from += 1e3) {
-			const { data, error } = await thePagesDb.theStatistics.theGameOfEveryResultFromRowToRow(from, from + 999);
-			if (error) {
-				say("Could not read the finished games: " + error.message);
-				return 0;
-			}
-			res.push(...data || []);
-			if (!data || data.length < 1e3) break;
-		}
-		const withResults = new Set(res.map((r) => r.game_id));
-		const { data: have } = await thePagesDb.theHallOfFame.theGameOfEveryEntry();
-		const done = new Set((have || []).map((r) => r.game_id));
-		const todo = [...withResults].filter((id) => force || !done.has(id));
-		if (!todo.length) {
-			say("Every finished game already has a Hall-of-Fame record.");
-			return 0;
-		}
-		if (btn) btn.disabled = true;
-		_lbProfCache = null;
-		_lbTally.games = _lbTally.humans = _lbTally.uids = _lbTally.named = 0;
-		let n = 0;
-		for (let i = 0; i < todo.length; i++) {
-			say(`Building ${i + 1} of ${todo.length}…`);
-			const g = (games || []).find((x) => String(x.id) === todo[i]) || null;
-			if (await writeGameRecord(todo[i], { gameRow: g })) n++;
-		}
-		const el = document.getElementById("lb-build-msg");
-		const t = _lbTally;
-		const out = [kcHtml`Recorded ${n} game${n !== 1 ? "s" : ""} · ${t.humans} human realm${t.humans !== 1 ? "s" : ""} · ${t.uids} with a player account · <strong>${t.named} with a name</strong> · built by <code>${KC_BUILD_STAMP} lb${KC_LB_V}</code>`];
-		if (t.humans && !t.named) out.push(kcHtml`<div class="msg-warning" style="margin-top:6px"><strong>No player names were resolved.</strong> A player's name lives in the <code>profiles</code> table (<code>game_players.display_name</code> is their realm), and this build could not read one for any of them.${_lbProfErr ? kcHtml` The table said: <em>${_lbProfErr}</em>.` : ""}<br>Either those accounts have no name saved — each player can set one with <strong>✏ Change Display Name</strong> in the player portal — or this GM account cannot read <code>profiles</code> under its Row-Level Security policy (the same policy the invite picker needs).</div>`);
-		else if (t.uids > t.named) out.push(kcHtml` <span style="color:#8a5a00">(${t.uids - t.named} account${t.uids - t.named !== 1 ? "s have" : " has"} no name saved yet)</span>`);
-		if (el) el.innerHTML = kcHtml`${out}`;
-		else say(String(kcHtml`${out}`));
-		if (btn) btn.disabled = false;
-		return n;
-	} catch (e) {
-		say("Failed: " + (e && e.message || e));
-		if (btn) btn.disabled = false;
-		return 0;
-	}
-}
-function buildGameResultRows(gs, gameRow, players) {
-	if (!gs || !gs.players) return [];
-	const bots = new Set((players || []).filter(isBotRow).map((p) => p.player_index));
-	const { rank } = telRankOrder(gs);
-	const go = gs.gameOver || {};
-	const victory = go.byReckoning ? "reckoning" : go.byElimination ? "elimination" : go.byConcession ? "concession" : gs.gameOver ? "other" : "unfinished";
-	const setup = {
-		mapSize: gs.mapSize || (gameMetaOf(gameRow) || {}).mapSize || null,
-		cols: gs.world && gs.world.cols,
-		rows: gs.world && gs.world.rows,
-		seaPct: gs.seaPct != null ? gs.seaPct : gs.world && gs.world.seaPct,
-		realms: gs.players.length,
-		bots: bots.size,
-		humans: gs.players.length - bots.size,
-		difficulty: telBotDifficultyOf(gs),
-		diplomacy: gs.botDiplomacy === "hostile" ? "hostile" : "normal"
-	};
-	return gs.players.map((pl, pi) => {
-		if (!pl) return null;
-		const snap = telRealmSnapshot(gs, pi);
-		let outTurn = null, outHow = null;
-		if (pl.conceded) {
-			outTurn = pl.concededTurn || null;
-			outHow = "conceded";
-		} else if (pl._eliminated) {
-			outTurn = pl._eliminatedTurn || null;
-			outHow = "eliminated";
-		}
-		return {
-			game_id: String(gameRow.id),
-			game_name: gameRow.name || null,
-			player_index: pi,
-			is_bot: bots.has(pi),
-			bot_difficulty: bots.has(pi) ? telBotDifficultyOf(gs) : null,
-			realm: pl.name || null,
-			race: pl.race || null,
-			alignment: pl.alignment || null,
-			rank: rank[pi] || null,
-			score: Math.round((gs.gameOver && gs.gameOver.standings || []).find((s) => s && s.index === pi)?.score ?? 0),
-			winner: go.winner === pi,
-			victory,
-			turns: go.turn || gs.turn || 0,
-			out_turn: outTurn,
-			out_how: outHow,
-			setup,
-			final: snap,
-			build: `GM ${KC_BUILD_STAMP} tel${KC_TEL_V}`
-		};
-	}).filter(Boolean);
-}
-async function writeGameResults(gs, gameRow, players) {
-	if (!_kcHasTel) return false;
-	const rows = buildGameResultRows(gs, gameRow, players);
-	if (!rows.length) return false;
-	const { error } = await thePagesDb.theStatistics.writeTheseResults(rows);
-	if (error) {
-		_kcTelLastErr = error.message;
-		renderTelemetryBanner();
-		return false;
-	}
-	return true;
-}
-async function backfillGameResults() {
-	if (!_kcHasTel || !currentUser) return 0;
-	try {
-		const { data: games, error } = await thePagesDb.theHallOfFamesGames.theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns(currentUser.id);
-		if (error || !games || !games.length) return 0;
-		const { data: have } = await thePagesDb.theStatistics.theGamesOfTheseGamesResults(games.map((g) => String(g.id)));
-		const done = new Set((have || []).map((r) => r.game_id));
-		let n = 0;
-		for (const g of games) {
-			if (done.has(String(g.id))) continue;
-			const { data: full } = await thePagesDb.theHallOfFamesGames.thisGamesIdNameAndWorldWithEveryColumnOfItsRealms(g.id);
-			if (!full) continue;
-			const gs = parseGameState(full);
-			if (!gs || !gs.players) continue;
-			if (await writeGameResults(gs, full, full.game_players || [])) n++;
-		}
-		if (n) console.log(`[telemetry] recorded results for ${n} finished game(s)`);
-		return n;
-	} catch (e) {
-		return 0;
-	}
-}
-async function writeTurnTelemetry(gs, gameRow, players, tel, turn) {
-	if (!_kcHasTel || !gs || !gs.players) return false;
-	const bots = new Set((players || []).filter(isBotRow).map((p) => p.player_index));
-	const { rank, standings } = telRankOrder(gs);
-	const rows = [];
-	gs.players.forEach((pl, pi) => {
-		if (!pl) return;
-		const post = telRealmSnapshot(gs, pi);
-		if (post) post._score = (standings.standings[pi] || {}).score || 0;
-		if (post) {
-			const held = [];
-			(TITLE_DEFS || []).forEach((t) => {
-				const h = (standings.titles || {})[t.key];
-				if (!h || h.playerIndex !== pi || !(h.merit > 0)) return;
-				const ch = h.charId != null ? (gs.characters || []).find((c) => c && c.id === h.charId) : null;
-				held.push({
-					key: t.key,
-					merit: Math.round(h.merit * 100) / 100,
-					who: ch ? ch.name : null
-				});
-			});
-			if (held.length) post.titles = held;
-		}
-		const pre = (tel.pre || {})[pi] || null;
-		rows.push({
-			game_id: String(gameRow.id),
-			turn,
-			player_index: pi,
-			is_bot: bots.has(pi),
-			bot_difficulty: bots.has(pi) ? telBotDifficultyOf(gs) : null,
-			realm: pl.name || null,
-			race: pl.race || null,
-			alignment: pl.alignment || null,
-			orders: (tel.orders || {})[pi] || null,
-			pre,
-			post,
-			outcomes: telOutcomesFor(gs, pi, tel, pre, post, rank[pi]),
-			build: `GM ${KC_BUILD_STAMP} tel${KC_TEL_V}`
-		});
-	});
-	const { error } = await thePagesDb.theStatistics.writeTheseTurnRecords(rows);
-	if (error) {
-		_kcTelLastErr = error.message;
-		renderTelemetryBanner();
-		return false;
-	}
-	_kcTelLastErr = null;
-	if (gs.gameOver) {
-		await writeGameResults(gs, gameRow, players);
-		try {
-			await writeGameRecord(gameRow.id, {
-				gameRow,
-				players,
-				gs
-			});
-		} catch (_le) {}
-	}
-	return true;
 }
 // src/content/the-corsair-fleet-retired-from-the-pools-and-the-unit-in-its-place.ts
 /** The retired Corsair Fleet, and the Galleon Fleet a province offers in its place. */
@@ -50472,6 +48671,2163 @@ function upgradeGameState(save) {
 		heroesInARealmsServiceWhoseWanderingTagWasTakenOff
 	};
 }
+// src/ui/gm/turn-zero.ts
+/** Settings parsed from JSON, as an object: their fields are read as their type claims (a maintainer's answer, 14
+*  November). */
+function isTheSettingsTurnZeroReads(settings) {
+	return typeof settings === "object" && settings !== null;
+}
+/** A game's settings as held: none throws the TypeError reading its map size threw; a value that is no object holds
+*  none of the fields read (`cfg.mapSize` on words or a number is `undefined`). */
+function theSettingsAsHeld(cfg) {
+	if (cfg === null || cfg === void 0) throw new TypeError(`Cannot read properties of ${String(cfg)} (reading 'mapSize')`);
+	return isTheSettingsTurnZeroReads(cfg) ? cfg : {};
+}
+/** A player's setup parsed from JSON, as an object: its fields are read as their type claims (a maintainer's answer,
+*  14 November). */
+function isASetUpAPlayerJoinedWith(setup) {
+	return typeof setup === "object" && setup !== null;
+}
+/** A setup's skills as held, else none (`s || {}`). */
+function theSkillsOrNone(skills) {
+	if (skills) return skills;
+	return {};
+}
+/** A value of any kind in words, as `String` writes it: the key a table is read by (`table[value]` reads it so). */
+function inWords$2(value) {
+	return String(value);
+}
+/** The row the database made for a bot's realm: none throws the TypeError reading its id threw. */
+function theRowMade(row) {
+	if (row === null) throw new TypeError("Cannot read properties of null (reading 'id')");
+	return row;
+}
+/** A realm's row id in the plan: every bot's is written when its realm is made, above (none throws). */
+function theRowIdOf(setup) {
+	if (setup.gamePlayerId === void 0) throw new TypeError("a realm of the plan has no row");
+	return setup.gamePlayerId;
+}
+globalThis._pendingTurn0 = null;
+async function runTurn0() {
+	const msg = document.getElementById("detail-msg");
+	theElementFound$1(msg).innerHTML = "<div class=\"msg-info\">⏳ Preparing world setup…</div>";
+	const { data: players, error: pErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.everyRealmOfThisGame(theGameOpenNow("read properties of null (reading 'id')").id);
+	if (pErr) {
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Could not load players: ${pErr.message}</div>`);
+		return;
+	}
+	const theGame = theGameOpenNow("read properties of null (reading 'game_state')");
+	let cfgHeld = {};
+	try {
+		cfgHeld = typeof theGame.game_state === "string" ? JSON.parse(theGame.game_state) : thisOrElse(theGame.game_state, {});
+	} catch {}
+	const cfg = theSettingsAsHeld(cfgHeld);
+	const mapSize = thisOrElse(cfg.mapSize, "p5");
+	const maxTurns = (cfg.maxTurns ?? 0) || 12;
+	const theSizes = {
+		p2: {
+			cols: 8,
+			rows: 5
+		},
+		p3: {
+			cols: 8,
+			rows: 7
+		},
+		p4: {
+			cols: 9,
+			rows: 7
+		},
+		p5: {
+			cols: 12,
+			rows: 7
+		},
+		p6: {
+			cols: 15,
+			rows: 7
+		},
+		p7: {
+			cols: 16,
+			rows: 7
+		},
+		p8: {
+			cols: 17,
+			rows: 8
+		},
+		p9: {
+			cols: 16,
+			rows: 11
+		},
+		p10: {
+			cols: 16,
+			rows: 11
+		}
+	};
+	const sizemap = theSizes;
+	const sz = sizemap[inWords$2(mapSize)] ?? theSizes.p5;
+	const { botCount, allBot } = botConfigFor(theGame);
+	const humanSetups = (players ?? []).filter((p) => !isBotRow(p)).map((p) => {
+		let setup = {};
+		try {
+			const held = thisOrElse(theField(typeof p.turn_report === "string" ? JSON.parse(p.turn_report) : thisOrElse(p.turn_report, {}), "playerSetup"), {});
+			if (isASetUpAPlayerJoinedWith(held)) setup = held;
+		} catch {}
+		return {
+			id: p.player_index,
+			gamePlayerId: p.id,
+			isBot: false,
+			name: p.display_name || `Player ${String(p.player_index + 1)}`,
+			kingName: (setup.kingName ?? "") || p.display_name || `King ${String(p.player_index + 1)}`,
+			kingdomName: (setup.kingdomName ?? "") || p.display_name || `Realm ${String(p.player_index + 1)}`,
+			race: (setup.race ?? "") || "Human",
+			alignment: (setup.alignment ?? "") || "Neutral",
+			temper: (setup.temper ?? "") || "Brave",
+			skills: theSkillsOrNone(setup.skills)
+		};
+	}).sort((a, b) => a.id - b.id);
+	const plannedBots = allBot ? theGame.max_players || 0 : botCount;
+	const totalKingdoms = humanSetups.length + plannedBots;
+	if (totalKingdoms < 2) {
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Need at least 2 realms to start (currently ${humanSetups.length} human${humanSetups.length !== 1 ? "s" : ""} + ${plannedBots} bot${plannedBots !== 1 ? "s" : ""}). ${allBot ? "Raise Maximum Players." : "Wait for another player to join, or add bots at game creation."}</div>`);
+		return;
+	}
+	const startIndex = humanSetups.length;
+	const botSetups = plannedBots > 0 ? generateBotSetups(humanSetups, plannedBots, startIndex) : [];
+	const theCaps = MAP_MAX_PLAYERS;
+	let _szUse = sz, _mapUse = mapSize;
+	if (totalKingdoms > ((theCaps[inWords$2(mapSize)] ?? 0) || 10)) {
+		const theMapUsed = "p" + String(Math.min(10, totalKingdoms));
+		_mapUse = theMapUsed;
+		_szUse = sizemap[theMapUsed] ?? sz;
+		console.warn(`Turn 0: ${String(totalKingdoms)} realms on a ${inWords$2(mapSize)} map — using the ${theMapUsed} map (${String(_szUse.cols)}x${String(_szUse.rows)}) so capitals stay 3+ provinces apart.`);
+	}
+	_pendingTurn0 = {
+		humanSetups,
+		botSetups,
+		sz: _szUse,
+		maxTurns,
+		mapSize: _mapUse,
+		seaPct: normSeaPct(cfg.seaPct),
+		botDifficulty: thisOrElse(cfg.botDifficulty, null),
+		botDiplomacy: cfg.botDiplomacy === "hostile" ? "hostile" : "normal",
+		safeStart: Boolean(cfg.safeStart)
+	};
+	if (botSetups.length > 0) renderTurn0Preview();
+	else commitTurn0();
+}
+function renderTurn0Preview() {
+	const msg = document.getElementById("detail-msg");
+	if (!_pendingTurn0) {
+		theElementFound$1(msg).innerHTML = "";
+		return;
+	}
+	const { humanSetups, botSetups } = _pendingTurn0;
+	const theLabels = SKILL_LABELS;
+	const skillStr = (s) => Object.entries(s ?? {}).filter(([, v]) => Number(v) > 0).map(([k, v]) => `${(theLabels[k] ?? "") || k} ${String(v)}`).join(", ") || "—";
+	const row = (sp) => kcHtml`
+    <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;padding:7px 10px;border:1px solid #d8cbb0;border-radius:3px;margin-bottom:6px;background:${sp.isBot ? "#f4efe4" : "#fff"}">
+      <strong style="min-width:150px">${sp.isBot ? "🤖 " : ""}${sp.kingdomName}</strong>
+      <span style="color:var(--stone);font-size:.82rem">${sp.kingName} · ${sp.alignment} · ${sp.race} · ${sp.temper}</span>
+      <span style="font-size:.78rem;opacity:.85;margin-left:auto">Skills: ${skillStr(sp.skills)}</span>
+    </div>`;
+	const humansHtml = humanSetups.length ? kcHtml`<div style="font-size:.8rem;color:var(--stone);margin:2px 0 4px">Human players (${humanSetups.length})</div>${humanSetups.map((sp) => row(sp))}` : "";
+	const botsHtml = kcHtml`<div style="font-size:.8rem;color:var(--stone);margin:8px 0 4px">🤖 Bot realms (${botSetups.length})</div>${botSetups.map((sp) => row(sp))}`;
+	theElementFound$1(msg).innerHTML = String(kcHtml`
+    <div class="card" style="border-color:var(--crimson)">
+      <h3 style="margin-top:0">Confirm the starting roster</h3>
+      <div class="msg-info" style="margin-bottom:8px">Review the generated bot realms below. Generate the world to lock them in, or re-roll the bots.</div>
+      ${humansHtml}
+      ${botsHtml}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-crimson" onclick="commitTurn0()">⚡ Generate World &amp; Start</button>
+        <button class="btn btn-gold" onclick="runTurn0()">🎲 Re-roll Bots</button>
+        <button class="btn btn-ghost" onclick="_pendingTurn0=null;document.getElementById('detail-msg').innerHTML=''">Cancel</button>
+      </div>
+    </div>`);
+}
+async function commitTurn0() {
+	const msg = document.getElementById("detail-msg");
+	if (!_pendingTurn0) {
+		theElementFound$1(msg).innerHTML = "<div class=\"msg-error\">No pending setup — press Run Turn 0 again.</div>";
+		return;
+	}
+	const { humanSetups, botSetups, sz, maxTurns, seaPct, botDiplomacy, safeStart } = _pendingTurn0;
+	theElementFound$1(msg).innerHTML = "<div class=\"msg-info\">⏳ Generating world map and starting positions…</div>";
+	try {
+		if (botSetups.length > 0) {
+			await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.removeEveryBotsRealmOfThisGame(theGameOpenNow("read properties of null (reading 'id')").id);
+			for (const b of botSetups) {
+				const { data: brow, error: bErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.makeThisBotsRealm({
+					game_id: theGameOpenNow("read properties of null (reading 'id')").id,
+					user_id: null,
+					player_index: b.id,
+					display_name: b.kingdomName,
+					orders_submitted: false,
+					turn_report: JSON.stringify({
+						isBot: true,
+						playerSetup: {
+							kingName: b.kingName,
+							kingdomName: b.kingdomName,
+							race: b.race,
+							alignment: b.alignment,
+							temper: b.temper,
+							skills: b.skills
+						},
+						status: "bot",
+						waitingForTurn0: true
+					})
+				});
+				if (bErr) {
+					theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Could not create bot realm: ${bErr.message}</div>`);
+					return;
+				}
+				b.gamePlayerId = theRowMade(brow).id;
+			}
+		}
+		const setupPlayers = [...humanSetups, ...botSetups].map((sp) => ({
+			id: sp.id,
+			gamePlayerId: sp.gamePlayerId,
+			isBot: sp.isBot,
+			name: sp.kingdomName,
+			kingName: sp.kingName,
+			kingdomName: sp.kingdomName,
+			race: sp.race,
+			alignment: sp.alignment,
+			temper: sp.temper,
+			skills: sp.skills
+		})).sort((a, b) => a.id - b.id);
+		const gameState = await Promise.resolve(generateNewGame(setupPlayers, sz, maxTurns, { seaPct }));
+		refuseASaveThatIsNotAGameInPlay(gameState);
+		if (safeStart) gameState.safeStart = true;
+		gameState.botDiplomacy = botDiplomacy === "hostile" ? "hostile" : "normal";
+		gameState.botDifficulty = "hard";
+		{
+			const _tm = normalizeTurnMode(theField(parseGameState(theGameOpenNow("read properties of null (reading 'game_state')")), "turnMode"));
+			_tm.turnRanAt = (/* @__PURE__ */ new Date()).toISOString();
+			_tm.nextDeadlineAt = _tm.mode === "deadline" ? computeNextDeadline(_tm, /* @__PURE__ */ new Date()) : null;
+			const theWorldsTurnMode = gameState;
+			theWorldsTurnMode.turnMode = _tm;
+		}
+		seedUsedArmyNames(gameState);
+		seedUsedHeroNames(gameState);
+		const { error: saveErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.startThisGame(theGameOpenNow("read properties of null (reading 'id')").id, {
+			status: "active",
+			turn: 1,
+			game_state: JSON.stringify(gameState),
+			...metaPatch(gameState)
+		});
+		if (saveErr) {
+			theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Error saving game: ${saveErr.message}</div>`);
+			return;
+		}
+		const reportErrors = [];
+		for (const sp of setupPlayers) {
+			const report = buildTurnReport(playerView(gameState, sp.id));
+			const theReportStamped = report;
+			theReportStamped.engineStamp = runningBuildStamp();
+			const { error: rErr } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.giveThisRealmItsFirstReport(theRowIdOf(sp), sp.isBot ? JSON.stringify({
+				isBot: true,
+				report,
+				playerSetup: {
+					kingName: sp.kingName,
+					kingdomName: sp.kingdomName,
+					race: sp.race,
+					alignment: sp.alignment,
+					temper: sp.temper,
+					skills: sp.skills
+				}
+			}) : JSON.stringify(report));
+			if (rErr) reportErrors.push(rErr.message);
+			try {
+				await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.writeThisLog({
+					game_id: theGameOpenNow("read properties of null (reading 'id')").id,
+					player_index: sp.id,
+					turn: 0,
+					entries: report
+				});
+			} catch {}
+		}
+		const botN = setupPlayers.filter((s) => s.isBot).length, humN = setupPlayers.length - botN;
+		if (reportErrors.length > 0) theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Game created but some reports failed: ${reportErrors.join(", ")}</div>`);
+		else theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-success">✅ Turn 0 complete! Map generated for ${humN} human${humN !== 1 ? "s" : ""}${botN ? ` + ${String(botN)} bot${botN !== 1 ? "s" : ""}` : ""}. Players can now log in and see their realms.</div>`);
+		_pendingTurn0 = null;
+		const theGameStarted = theGameOpenNow("set properties of null (setting 'status')");
+		theGameStarted.status = "active";
+		theGameStarted.turn = 1;
+		theElementWithTheId("detail-run-turn0-wrap", HTMLElement).style.display = "none";
+		theElementWithTheId("detail-orders-card", HTMLElement).style.display = "block";
+		theElementWithTheId("detail-log-card", HTMLElement).style.display = "none";
+		const { data: refreshed } = await thePagesDb.theTurnZeroAsTheGameMasterRunsIt.thisGameWithItsRealms(theGameOpenNow("read properties of null (reading 'id')").id);
+		if (refreshed) {
+			currentGame = refreshed;
+			currentGamePlayers = asItsGuardReadsIt(refreshed.game_players) ?? [];
+		}
+		renderOrdersStatus(theGameOpenNow("read properties of null (reading 'meta')"));
+	} catch (e) {
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">Generation error: ${theField(e, "message")}</div>`);
+		console.error(e);
+	}
+}
+// src/ui/gm/stats-tab.ts
+var _stats = {
+	rows: null,
+	results: null,
+	games: null,
+	loadedAt: 0
+};
+var STATS_ACTION_LABEL = {
+	move: "Move",
+	defend: "Defend",
+	explore: "Explore",
+	search: "Search lair",
+	hunt_rumours: "Hunt rumours",
+	recruit: "Recruit",
+	hire: "Hire hero",
+	release: "Release hero",
+	leave_army: "Leave army",
+	pickup_army: "Pick up army",
+	disband_army: "Disband",
+	practice: "Practice",
+	rest: "Rest",
+	research: "Research",
+	spy: "Spy",
+	steal: "Steal",
+	cast_spell: "Cast spell",
+	use_item: "Use item",
+	equip_items: "Equip",
+	give_item: "Give item",
+	encounter: "Encounter",
+	consecrate: THE_ALIGNMENT_ORDERS.consecrate.name,
+	call_to_arms: THE_ALIGNMENT_ORDERS["call-to-arms"].name,
+	broker: THE_ALIGNMENT_ORDERS.broker.name,
+	awaken_wild: "Awaken Wild",
+	call_pit: "Call from the Pit",
+	harvest_field: "Harvest Field",
+	rite: "Rite"
+};
+var STATS_COL = {
+	crimson: "#7a1c1c",
+	forest: "#2d4a1e",
+	gold: "#c8922a",
+	blue: "#2f5f8f",
+	stone: "#6b5a42"
+};
+/** `(value || {})[key]` on a value of any kind: the field of a truthy value, else the empty object's. */
+function theFieldOfAValueOrOfNothing(value, key) {
+	return Reflect.get(Object(thisOrElse(value, {})), key);
+}
+/** `(value || [])` walked by `forEach` or `map`: a list as it is, none as an empty one; any other value throws the
+*  TypeError the call threw (only a list has them, and JSON holds no other value that does). */
+function theListOrNothingToWalk(value) {
+	const held = thisOrElse(value, []);
+	if (isAList(held)) return held;
+	throw new TypeError("the value walked is not a list");
+}
+/** `Object.values(value)` on a value of any kind: for none, the TypeError the call threw. */
+function theValuesOf(value) {
+	if (value === null || value === void 0) throw new TypeError("Cannot convert undefined or null to object");
+	return Object.values(value);
+}
+/** `{ ...value }` of a value of any kind: its own fields (none for none), as a spread copies them. */
+function theOwnFieldsOf(value) {
+	if (value === null || value === void 0) return {};
+	return Object.fromEntries(Object.entries(value));
+}
+/** A value of any kind in words, as `String` writes it: the key a table is read by (`table[value]` reads it so), or a
+*  part of a line of words (`'…' + value` and `${value}` write a JSON value so). */
+function inWords$1(value) {
+	return String(value);
+}
+/** The signed-in account's id, where the code reads it unguarded: for none, the TypeError that read threw. */
+function theSignedInAccountsId() {
+	if (currentUser === null) throw new TypeError("Cannot read properties of null (reading 'id')");
+	return currentUser.id;
+}
+/** `e.message || e` on what a `catch` caught: its message, else itself (for none, the TypeError the read threw). */
+function theMessageOrTheValueCaught$1(e) {
+	return thisOrElse(theField(e, "message"), e);
+}
+async function openStats(force) {
+	show("sec-stats");
+	const msg = theElementWithTheId("stats-msg", HTMLElement);
+	if (!_kcHasTel) {
+		msg.innerHTML = `<div class="msg-info">Telemetry is not active: the database has no telemetry tables (see the message on the game list). Nothing has been recorded.</div>`;
+		theElementWithTheId("stats-body", HTMLElement).innerHTML = "";
+		return;
+	}
+	if (force || !_stats.rows || Date.now() - _stats.loadedAt > 12e4) {
+		msg.innerHTML = "<div class=\"msg-info\">⏳ Loading recorded turns…</div>";
+		theElementWithTheId("stats-body", HTMLElement).innerHTML = "";
+		try {
+			const rows = [];
+			for (let from = 0;; from += 1e3) {
+				const { data, error } = await thePagesDb.theStatistics.everyTurnRecordFromRowToRow(from, from + 999);
+				if (error) throw theRefusalAsThrown(error);
+				rows.push(...data ?? []);
+				if (!data || data.length < 1e3) break;
+			}
+			const res = [];
+			for (let from = 0;; from += 1e3) {
+				const { data, error } = await thePagesDb.theStatistics.everyResultFromRowToRow(from, from + 999);
+				if (error) throw theRefusalAsThrown(error);
+				res.push(...data ?? []);
+				if (!data || data.length < 1e3) break;
+			}
+			const { data: games } = await (_kcOverlord ? thePagesDb.theHallOfFamesGames.everyGamesNameStatusAndTurn() : thePagesDb.theHallOfFamesGames.theNameStatusAndTurnOfTheGamesThisGameMasterRuns(theSignedInAccountsId()));
+			_stats.rows = rows.map((r) => ({
+				...r,
+				orders: _statsJ(r.orders),
+				pre: _statsJ(r.pre),
+				post: _statsJ(r.post),
+				outcomes: _statsJ(r.outcomes)
+			}));
+			_stats.results = res.map((r) => ({
+				...r,
+				setup: _statsJ(r.setup),
+				final: _statsJ(r.final)
+			}));
+			_stats.games = games ?? [];
+			_stats.loadedAt = Date.now();
+		} catch (e) {
+			msg.innerHTML = String(kcHtml`<div class="msg-error">Could not load statistics: ${theMessageOrTheValueCaught$1(e)}</div>`);
+			return;
+		}
+	}
+	msg.innerHTML = "";
+	const sel = theElementWithTheId("stats-game", HTMLSelectElement);
+	const keep = sel.value;
+	const names = {};
+	(_stats.games ?? []).forEach((g) => {
+		names[g.id] = g.name;
+	});
+	(_stats.results ?? []).forEach((r) => {
+		if (!names[r.game_id] && r.game_name) names[r.game_id] = r.game_name;
+	});
+	const ids = [...new Set(_stats.rows.map((r) => r.game_id))];
+	sel.innerHTML = String(kcHtml`<option value="">All games</option>${ids.map((id) => kcHtml`<option value="${id}">${(names[id] ?? "") || "deleted game " + id.slice(0, 8)}${_statsFinished(id) ? " ✓" : ""}</option>`)}`);
+	sel.value = ids.includes(keep) ? keep : "";
+	renderStats();
+}
+function _statsJ(v) {
+	if (v == null) return null;
+	if (typeof v === "string") try {
+		return JSON.parse(v);
+	} catch {
+		return null;
+	}
+	return v;
+}
+function _statsFinished(gameId) {
+	return (_stats.results ?? []).some((r) => r.game_id === gameId);
+}
+function _statsFilter() {
+	const gid = theElementWithTheId("stats-game", HTMLSelectElement).value, who = theElementWithTheId("stats-who", HTMLSelectElement).value, diff = theElementWithTheId("stats-diff", HTMLSelectElement).value, fin = theElementWithTheId("stats-fin", HTMLSelectElement).value;
+	const okGame = (id) => (!gid || id === gid) && (!fin || fin === "finished" === _statsFinished(id));
+	const okRealm = (r) => (!who || who === "bot" === !!r.is_bot) && (!diff || !r.is_bot || r.bot_difficulty === diff);
+	return {
+		rows: (_stats.rows ?? []).filter((r) => okGame(r.game_id) && okRealm(r)),
+		results: (_stats.results ?? []).filter((r) => okGame(r.game_id) && okRealm(r)),
+		allRows: (_stats.rows ?? []).filter((r) => okGame(r.game_id))
+	};
+}
+function statsBars(items, opt) {
+	opt = opt ?? {};
+	const max = Math.max(1e-9, ...items.map((i) => Number(thisOrElse(i.v, 0))), (opt.max ?? 0) || 0);
+	return kcHtml`<div style="display:grid;grid-template-columns:${(opt.labelW ?? 0) || 150}px 1fr auto;gap:4px 8px;align-items:center;font-size:.8rem">${items.map((i) => kcHtml`
+    <div style="color:var(--ink-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${thisOrElse(i.label, "")}">${i.label}</div>
+    <div style="background:#eee4cc;border-radius:3px;height:12px;position:relative"><div style="width:${Math.max(0, Math.min(100, 100 * Number(thisOrElse(i.v, 0)) / max))}%;height:100%;border-radius:3px;background:${thisOrElse(i.col, STATS_COL.crimson)}"></div>${i.mark != null ? kcHtml`<div title="expected" style="position:absolute;top:-2px;left:${Math.max(0, Math.min(100, 100 * i.mark / max))}%;width:2px;height:16px;background:${STATS_COL.blue}"></div>` : ""}</div>
+    <div style="font-family:monospace;font-size:.74rem;color:var(--stone);white-space:nowrap">${i.txt ?? i.v}</div>`)}</div>`;
+}
+function statsLines(series, opt) {
+	opt = opt ?? {};
+	const W = 560, H = 170, L = 40, T = 12;
+	const xs = series.flatMap((s) => s.pts.map((p) => p[0])), ys = series.flatMap((s) => s.pts.map((p) => p[1]));
+	if (!xs.length) return kcHtml`<div style="color:var(--stone);font-size:.8rem">No data.</div>`;
+	const x0 = Math.min(...xs), x1 = Math.max(...xs), y1 = Math.max(1e-9, ...ys), y0 = 0;
+	const X = (x) => L + (x1 === x0 ? 0 : (x - x0) / (x1 - x0)) * 508, Y = (y) => T + (1 - (y - y0) / (y1 - y0)) * 132;
+	const ticks = [
+		0,
+		.5,
+		1
+	].map((f) => y0 + f * (y1 - y0));
+	const svg = [kcHtml`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;font-family:'Crimson Text',serif;font-size:10px">`];
+	ticks.forEach((t) => {
+		svg.push(kcHtml`<line x1="${L}" x2="${548}" y1="${Y(t)}" y2="${Y(t)}" stroke="#d8cbb0" stroke-width="1"/><text x="${36}" y="${Y(t) + 3}" text-anchor="end" fill="#6b5a42">${Math.round(t * 10) / 10}</text>`);
+	});
+	for (let x = x0; x <= x1; x++) {
+		if (x1 - x0 > 12 && x % Math.ceil((x1 - x0) / 12)) continue;
+		svg.push(kcHtml`<text x="${X(x)}" y="${162}" text-anchor="middle" fill="#6b5a42">${x}</text>`);
+	}
+	series.forEach((s) => {
+		const pts = s.pts.slice().sort((a, b) => a[0] - b[0]);
+		if (!pts.length) return;
+		svg.push(kcHtml`<polyline fill="none" stroke="${s.col}" stroke-width="2" stroke-linejoin="round" points="${pts.map((p) => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ")}"/>`);
+		pts.forEach((p) => {
+			svg.push(kcHtml`<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.5" fill="${s.col}"><title>${s.name} · turn ${p[0]}: ${Math.round(p[1] * 10) / 10}</title></circle>`);
+		});
+	});
+	svg.push(kcHtml`<text x="${548}" y="${162}" text-anchor="start" fill="#6b5a42" font-size="9" dx="6">turn</text></svg>`);
+	return kcHtml`<div>${svg}<div style="font-size:.74rem;color:var(--stone);margin-top:2px">${series.map((s, i) => kcHtml`${i ? kcHtml` &nbsp; ` : ""}<span style="display:inline-block;width:10px;height:10px;background:${s.col};border-radius:2px;vertical-align:middle;margin-right:4px"></span>${s.name}`)}${opt.note ? " · " + opt.note : ""}</div></div>`;
+}
+function statsCard(title, body, note) {
+	return kcHtml`<div class="card"><h2>${title}</h2>${note ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin:-6px 0 10px">${note}</div>` : ""}${body}</div>`;
+}
+var _pct = (a, b) => b > 0 ? Math.round(100 * a / b) : 0;
+/** The mean of values of any kind (statistics as held), added as `+` adds them, then divided as `/` reads the sum. */
+var _avg = (a) => a.length ? Number(a.reduce((s, x) => theSumAsJavaScriptMakesIt(s, x), 0)) / a.length : 0;
+function renderStats() {
+	const body = document.getElementById("stats-body");
+	if (!body || !_stats.rows) return;
+	const { rows, results, allRows } = _statsFilter();
+	if (!rows.length) {
+		body.innerHTML = "<div class=\"msg-info\">No recorded turns match these filters yet. Rows are written each time a turn is resolved.</div>";
+		return;
+	}
+	const pk = theFieldOfAValueOrOfNothing;
+	const games = [...new Set(rows.map((r) => r.game_id))];
+	const winners = new Set(results.filter((r) => r.winner).map((r) => `${r.game_id}#${String(r.player_index)}`));
+	const isWinner = (r) => winners.has(`${r.game_id}#${String(r.player_index)}`);
+	const finishedGames = new Set(results.map((r) => r.game_id));
+	const html = [];
+	const humansRT = rows.filter((r) => !r.is_bot).length, botsRT = rows.length - humansRT;
+	const theTotalOf = (outcome, count) => rows.reduce((s, r) => thisOrElse(theSumAsJavaScriptMakesIt(s, pk(pk(r.outcomes, outcome), count)), 0), 0);
+	html.push(statsCard("Overview", kcHtml`<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:.85rem">
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${games.length}</div><div style="color:var(--stone)">games recorded</div></div>
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${finishedGames.size}</div><div style="color:var(--stone)">finished</div></div>
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${rows.length}</div><div style="color:var(--stone)">realm-turns (${humansRT} human · ${botsRT} bot)</div></div>
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${theTotalOf("battles", "asAttacker")}</div><div style="color:var(--stone)">battles</div></div>
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${theTotalOf("encounters", "fought")}</div><div style="color:var(--stone)">lair fights</div></div>
+    <div><div style="font-family:Cinzel,serif;font-size:1.4rem;color:var(--crimson)">${theTotalOf("deaths", "own")}</div><div style="color:var(--stone)">characters killed</div></div>
+  </div>`));
+	if (results.length) {
+		const by = (key) => {
+			const m = {};
+			results.forEach((r) => {
+				const k = key(r);
+				if (k == null) return;
+				const o = m[k] ??= {
+					n: 0,
+					w: 0,
+					rank: []
+				};
+				o.n++;
+				if (r.winner) o.w++;
+				if (r.rank) o.rank.push(r.rank);
+			});
+			return Object.entries(m).map(([k, o]) => ({
+				label: k,
+				v: _pct(o.w, o.n),
+				txt: `${String(_pct(o.w, o.n))}% won · ${String(o.n)} realm${o.n !== 1 ? "s" : ""} · avg rank ${_avg(o.rank).toFixed(1)}`
+			})).sort((a, b) => b.v - a.v);
+		};
+		const gv = {}, glen = {};
+		results.forEach((r) => {
+			gv[r.game_id] = r.victory;
+			glen[r.game_id] = r.turns;
+		});
+		const vict = {};
+		Object.values(gv).forEach((v) => {
+			vict[String(v)] = (vict[String(v)] ?? 0) + 1;
+		});
+		const gN = Object.keys(glen).length;
+		html.push(statsCard("Who wins", kcHtml`<h3>Humans vs bots</h3>${statsBars(by((r) => r.is_bot ? `Bot (${(r.bot_difficulty ?? "") || "?"})` : "Human"))}
+       <h3 style="margin-top:14px">By race</h3>${statsBars(by((r) => r.race))}
+       <h3 style="margin-top:14px">By alignment</h3>${statsBars(by((r) => r.alignment))}
+       <h3 style="margin-top:14px">How games end</h3>${statsBars(Object.entries(vict).map(([k, n]) => ({
+			label: k,
+			v: n,
+			txt: `${String(n)} game${n !== 1 ? "s" : ""}`,
+			col: STATS_COL.forest
+		})))}
+       <div style="font-size:.8rem;margin-top:8px">Average game length: <strong>${_avg(Object.values(glen)).toFixed(1)} turns</strong> over ${gN} finished game${gN !== 1 ? "s" : ""}. Realms that dropped out early: ${results.filter((r) => r.out_how).length} (${results.filter((r) => r.out_how === "conceded").length} conceded, ${results.filter((r) => r.out_how === "eliminated").length} eliminated).</div>`, "From the game_results rows — one per realm per finished game. Win rates are per realm, so with 4 realms a fair race sits at 25%."));
+		const T5 = 5;
+		let lead = 0, leadWon = 0;
+		const corr = [];
+		finishedGames.forEach((gid) => {
+			const at = allRows.filter((r) => r.game_id === gid && r.turn === T5);
+			if (!at.length) return;
+			const top = at.slice().sort((a, b) => Number(thisOrElse(pk(b.post, "taxShare"), 0)) - Number(thisOrElse(pk(a.post, "taxShare"), 0)))[0];
+			if (top === void 0) return;
+			lead++;
+			if (isWinner(top)) leadWon++;
+			at.forEach((r) => {
+				const fr = results.find((x) => x.game_id === gid && x.player_index === r.player_index);
+				if (fr?.rank) corr.push([thisOrElse(theField(r.post, "taxShare"), 0), fr.rank]);
+			});
+		});
+		if (lead) html.push(statsCard("Does an early lead decide it?", kcHtml`<div style="font-size:.85rem">The realm holding the most of the world's tax base at the end of turn ${T5} went on to win <strong>${leadWon} of ${lead}</strong> finished games (${_pct(leadWon, lead)}%). ${_pct(leadWon, lead) >= 75 ? "That is a strong snowball — the mid-game may be too kind to the leader (coalitions, catch-up mechanics, lair rewards for the trailing realms are the usual levers)." : _pct(leadWon, lead) <= 35 ? "Early leads are not sticking — the game has real come-backs." : "A lead helps but does not settle it — a healthy place to be."}</div>
+        <h3 style="margin-top:12px">Turn-${T5} tax share vs final rank</h3>${statsBars(corr.sort((a, b) => Number(b[0]) - Number(a[0])).slice(0, 16).map(([sh, rk]) => ({
+			label: `${inWords$1(sh)}% of world`,
+			v: sh,
+			txt: `finished #${String(rk)}`,
+			col: rk === 1 ? STATS_COL.gold : STATS_COL.stone
+		})), { labelW: 110 })}`, `Needs finished games with at least ${String(T5)} turns recorded.`));
+	} else html.push(statsCard("Who wins", kcHtml`<div style="font-size:.85rem;color:var(--stone)">No finished games in this selection yet — win rates, victory types and the early-lead test appear once a game ends (or once you Record Results for a game that finished before telemetry existed: this happens automatically at sign-in for finished games).</div>`));
+	{
+		const key = (r) => isWinner(r) ? "winners" : finishedGames.has(r.game_id) ? "others" : "running";
+		const mk = (f, name) => {
+			const byT = {};
+			rows.forEach((r) => {
+				if (!r.post) return;
+				const k = key(r);
+				if (k === "running" && finishedGames.size) return;
+				const o = byT[String(r.turn)] ??= {};
+				(o[k] ??= []).push(f(r.post));
+			});
+			const ser = [];
+			[
+				"winners",
+				"others",
+				"running"
+			].forEach((k, i) => {
+				const pts = Object.entries(byT).map(([t, o]) => {
+					const atTheTurn = o[k];
+					return atTheTurn ? [+t, _avg(atTheTurn)] : null;
+				}).filter((p) => p !== null);
+				if (pts.length) ser.push({
+					name: k === "running" ? "all realms (games still running)" : k === "winners" ? "eventual winners" : "the rest",
+					pts,
+					col: [
+						STATS_COL.gold,
+						STATS_COL.stone,
+						STATS_COL.blue
+					][i]
+				});
+			});
+			return kcHtml`<h3 style="margin-top:12px">${name}</h3>${statsLines(ser)}`;
+		};
+		html.push(statsCard("How realms grow", [
+			mk((p) => theField(p, "provinces"), "Provinces held"),
+			mk((p) => theField(p, "gold"), "Treasury (gold)"),
+			mk((p) => theField(p, "str"), "Army strength (led + garrison)"),
+			mk((p) => theField(p, "heroes"), "Heroes in service")
+		], "Average per realm at the end of each turn. Where a game has finished, eventual winners are drawn apart from the rest — the gap between the two lines is what winning looks like in this ruleset, and the turn where it opens is where the game is decided."));
+	}
+	{
+		/** Each phase order of every character in a turn record, as the record's orders hold them (`chars[*].ph[*]`). */
+		const eachPhaseOrderOf = (r, onEach) => {
+			theValuesOf(thisOrElse(pk(r.orders, "chars"), {})).forEach((c) => {
+				theListOrNothingToWalk(theField(c, "ph")).forEach(onEach);
+			});
+		};
+		const mix = (sub) => {
+			const m = {};
+			let tot = 0;
+			sub.forEach((r) => {
+				eachPhaseOrderOf(r, (o) => {
+					const a = inWords$1(theField(o, "a"));
+					m[a] = (m[a] ?? 0) + 1;
+					tot++;
+				});
+			});
+			return {
+				m,
+				tot
+			};
+		};
+		const H = mix(rows.filter((r) => !r.is_bot)), Bt = mix(rows.filter((r) => r.is_bot)), Wn = mix(rows.filter((r) => isWinner(r))), Ls = mix(rows.filter((r) => finishedGames.has(r.game_id) && !isWinner(r)));
+		const acts = [.../* @__PURE__ */ new Set([...Object.keys(H.m), ...Object.keys(Bt.m)])].sort((a, b) => (H.m[b] ?? 0) + (Bt.m[b] ?? 0) - ((H.m[a] ?? 0) + (Bt.m[a] ?? 0)));
+		const labels = STATS_ACTION_LABEL;
+		const lab = (a) => (labels[a] ?? "") || a.replace(/_/g, " ");
+		const twoCol = (A, B, an, bn) => kcHtml`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px"><div><h3>${an} (${A.tot} character-phases)</h3>${statsBars(acts.map((a) => ({
+			label: lab(a),
+			v: _pct(A.m[a] ?? 0, A.tot),
+			txt: `${String(_pct(A.m[a] ?? 0, A.tot))}%`
+		})), {
+			labelW: 110,
+			max: 60
+		})}</div><div><h3>${bn} (${B.tot})</h3>${statsBars(acts.map((a) => ({
+			label: lab(a),
+			v: _pct(B.m[a] ?? 0, B.tot),
+			txt: `${String(_pct(B.m[a] ?? 0, B.tot))}%`,
+			col: STATS_COL.forest
+		})), {
+			labelW: 110,
+			max: 60
+		})}</div></div>`;
+		const ob = [twoCol(H, Bt, "Humans", "Bots")];
+		if (Wn.tot && Ls.tot) ob.push(kcHtml`<div style="margin-top:14px">${twoCol(Wn, Ls, "Eventual winners", "The rest")}</div>`);
+		html.push(statsCard("What players order", ob, "Share of every character-phase given each order. Orders humans give that bots never do (and the reverse) are the first thing to teach the bots; orders winners give more than losers are the ones that matter. A \"defend\" share above ~40% usually means idle heroes."));
+		const rec = {};
+		rows.forEach((r) => {
+			eachPhaseOrderOf(r, (o) => {
+				if (theField(o, "a") !== "recruit" || !theField(o, "t")) return;
+				const m = /^([^|]+)\|(\d+)/.exec(inWords$1(theField(o, "t")));
+				if (m) rec[String(m[1])] = (rec[String(m[1])] ?? 0) + parseInt(String(m[2]));
+			});
+		});
+		const inPlay = {};
+		rows.filter((r) => r.post).forEach((r) => {
+			theListOrNothingToWalk(theField(r.post, "characters")).forEach((c) => {
+				theListOrNothingToWalk(theField(c, "units")).forEach((u) => {
+					const t = inWords$1(theField(u, "t"));
+					inPlay[t] = (inPlay[t] ?? 0) + 1;
+				});
+			});
+		});
+		const types = Object.keys(ARMY_COST_MASTER).filter((t) => Boolean(rec[t]) || Boolean(inPlay[t])).sort((a, b) => (rec[b] ?? 0) - (rec[a] ?? 0));
+		const never = Object.keys(ARMY_COST_MASTER).filter((t) => !rec[t] && !inPlay[t] && !t.includes("Garrison"));
+		html.push(statsCard("Units recruited", [statsBars(types.slice(0, 24).map((t) => ({
+			label: t,
+			v: rec[t] ?? 0,
+			txt: `${String(rec[t] ?? 0)} ordered · ${String(inPlay[t] ?? 0)} unit-turns led`
+		})), { labelW: 150 }), never.length ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Never recruited or led in these rows: ${never.join(", ")}.</div>` : ""], "Units ordered by type (from Recruit orders) beside how often each type is actually seen in a led column. A unit nobody buys is either priced wrong, unavailable, or not understood."));
+	}
+	{
+		const B = [];
+		const seen = /* @__PURE__ */ new Set();
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "battles"), "list")).forEach((b) => {
+				const k = `${r.game_id}#${String(r.turn)}#${inWords$1(theField(b, "ph"))}#${inWords$1(theField(b, "prov"))}#${inWords$1(theField(b, "atkChar"))}#${inWords$1(theField(b, "atkStr"))}#${inWords$1(theField(b, "defStr"))}`;
+				if (seen.has(k)) return;
+				seen.add(k);
+				B.push({
+					...theOwnFieldsOf(b),
+					game: r.game_id,
+					turn: r.turn,
+					atkBot: r.is_bot && theField(b, "atkPi") === r.player_index
+				});
+			});
+		});
+		if (B.length) {
+			const buckets = [
+				[
+					"< 0.5×",
+					0,
+					.5
+				],
+				[
+					"0.5–0.8×",
+					.5,
+					.8
+				],
+				[
+					"0.8–1.25× (even)",
+					.8,
+					1.25
+				],
+				[
+					"1.25–2×",
+					1.25,
+					2
+				],
+				[
+					"2–3×",
+					2,
+					3
+				],
+				[
+					"3–4×",
+					3,
+					4
+				],
+				[
+					"≥ 4×",
+					4,
+					1e9
+				]
+			];
+			/** A battle's strength ratio, attacker to defender (`1e9` where the defender has none), as `/` reads them. */
+			const theRatioOf = (b) => Number(b["defStr"]) > 0 ? Number(b["atkStr"]) / Number(b["defStr"]) : 1e9;
+			const items = buckets.map(([label, lo, hi]) => {
+				const sub = B.filter((b) => {
+					const r = theRatioOf(b);
+					return r >= lo && r < hi;
+				});
+				if (!sub.length) return null;
+				const exp = _avg(sub.map((b) => 100 * fortuneWinChance(theRatioOf(b))));
+				return {
+					label,
+					v: _pct(sub.filter((b) => b["won"]).length, sub.length),
+					mark: exp,
+					txt: `${String(_pct(sub.filter((b) => b["won"]).length, sub.length))}% attacker wins · expected ${String(Math.round(exp))}% · ${String(sub.length)} battle${sub.length !== 1 ? "s" : ""}`
+				};
+			}).filter((i) => i !== null);
+			const byT = {};
+			B.forEach((b) => {
+				const o = byT[inWords$1(b["terrain"])] ??= {
+					n: 0,
+					w: 0
+				};
+				o.n++;
+				if (b["won"]) o.w++;
+			});
+			const byK = {};
+			B.forEach((b) => {
+				const o = byK[inWords$1(b["kind"])] ??= {
+					n: 0,
+					w: 0,
+					al: 0,
+					dl: 0
+				};
+				o.n++;
+				if (b["won"]) o.w++;
+				o.al = theSumAsJavaScriptMakesIt(o.al, thisOrElse(b["atkLost"], 0));
+				o.dl = theSumAsJavaScriptMakesIt(o.dl, thisOrElse(b["defLost"], 0));
+			});
+			const kindLab = {
+				neutral: "vs neutral defenders",
+				garrison: "vs an enemy garrison",
+				guard: "vs a neutral chieftain",
+				pvp: "vs an enemy commander"
+			};
+			html.push(statsCard("Battles", kcHtml`<div style="font-size:.85rem;margin-bottom:8px">${B.length} battles · attackers won <strong>${_pct(B.filter((b) => b["won"]).length, B.length)}%</strong> · average losses ${_avg(B.map((b) => thisOrElse(b["atkLost"], 0))).toFixed(2)} units (attacker) / ${_avg(B.map((b) => thisOrElse(b["defLost"], 0))).toFixed(2)} (defender) · ${B.filter((b) => Number(b["carry"]) > 0).length} carried on into a later phase.</div>
+         <h3>Attacker win rate by strength ratio (attacker ÷ defender, before the dice)</h3>${statsBars(items, {
+				labelW: 130,
+				max: 100
+			})}
+         <div style="font-size:.76rem;color:var(--stone);margin:4px 0 12px">The blue tick is what the fortune-of-battle curve says should happen at that ratio (2× → 80%, 3× → 90%, 4× → certain). Bars well off their ticks over many battles mean something outside the strength maths is deciding fights — pre-battle magic, archery, or a bug.</div>
+         <h3>By terrain</h3>${statsBars(Object.entries(byT).map(([t, o]) => ({
+				label: t,
+				v: _pct(o.w, o.n),
+				txt: `${String(_pct(o.w, o.n))}% attacker wins · ${String(o.n)}`,
+				col: STATS_COL.forest
+			})), { max: 100 })}
+         <h3 style="margin-top:12px">By opponent</h3>${statsBars(Object.entries(byK).map(([k, o]) => ({
+				label: kindLab[k] ?? k,
+				v: _pct(o.w, o.n),
+				txt: `${String(_pct(o.w, o.n))}% attacker wins · ${String(o.n)} · losses ${(Number(o.al) / o.n).toFixed(1)} / ${(Number(o.dl) / o.n).toFixed(1)}`,
+				col: STATS_COL.blue
+			})), {
+				labelW: 170,
+				max: 100
+			})}`, "Every field battle, once (a battle appears in both sides' rows; it is counted here a single time)."));
+		}
+	}
+	{
+		const E = [];
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "encounters"), "list")).forEach((e) => E.push({
+				...theOwnFieldsOf(e),
+				bot: r.is_bot
+			}));
+		});
+		if (E.length) {
+			const byP = {};
+			E.forEach((e) => {
+				const o = byP[inWords$1(thisOrElse(e["power"], "?"))] ??= {
+					n: 0,
+					w: 0,
+					f: 0,
+					k: 0,
+					d: []
+				};
+				o.n++;
+				if (e["won"]) o.w++;
+				if (e["fled"]) o.f++;
+				if (e["killed"]) o.k++;
+				o.d.push(thisOrElse(e["dmg"], 0));
+			});
+			const order = [
+				"Weak",
+				"Moderate",
+				"Powerful",
+				"Legendary"
+			];
+			html.push(statsCard("Lair fights", [statsBars(Object.entries(byP).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([p, o]) => ({
+				label: p,
+				v: _pct(o.w, o.n),
+				txt: `${String(_pct(o.w, o.n))}% cleared · ${String(o.n)} fight${o.n !== 1 ? "s" : ""} · ${String(o.f)} fled · ${String(o.k)} hero${o.k !== 1 ? "es" : ""} killed · avg ${_avg(o.d).toFixed(1)} damage taken`
+			})), { max: 100 }), kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Bots fought ${E.filter((e) => e["bot"]).length} of these; humans ${E.filter((e) => !e["bot"]).length}. The guardian ladder was tuned to a ~95% clear rate for a hero built for the band — a band far below that is being attempted too early.</div>`]));
+		}
+	}
+	{
+		const S = {};
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "spells"), "list")).forEach((s) => {
+				const o = S[inWords$1(theField(s, "spell"))] ??= {
+					n: 0,
+					ok: 0,
+					bot: 0,
+					ch: []
+				};
+				o.n++;
+				if (theField(s, "ok")) o.ok++;
+				if (r.is_bot) o.bot++;
+				o.ch.push(thisOrElse(theField(s, "chance"), 0));
+			});
+		});
+		const ents = Object.entries(S).sort((a, b) => b[1].n - a[1].n);
+		if (ents.length) {
+			const spells = SPELL_DEFS_P;
+			const never = Object.keys(spells).filter((n) => Boolean(spells[n]?.phase) && !S[n]);
+			html.push(statsCard("Spells cast (phase orders)", [statsBars(ents.map(([n, o]) => ({
+				label: n,
+				v: o.n,
+				txt: `${String(o.n)} cast · ${String(_pct(o.ok, o.n))}% took (avg chance ${String(Math.round(_avg(o.ch)))}%) · ${String(o.bot)} by bots`
+			})), { labelW: 150 }), never.length ? kcHtml`<div style="font-size:.78rem;color:var(--stone);margin-top:8px">Never cast as a phase order: ${never.join(", ")}.</div>` : ""], "Battle-magic and duel spells are not counted here (they are chosen in encounter plans, not as orders)."));
+		}
+	}
+	{
+		const D = [];
+		const seen = /* @__PURE__ */ new Set();
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "deaths"), "list")).forEach((d) => {
+				const k = `${r.game_id}#${String(r.turn)}#${inWords$1(theField(d, "charId"))}`;
+				if (seen.has(k)) return;
+				seen.add(k);
+				D.push({
+					...theOwnFieldsOf(d),
+					game: r.game_id,
+					turn: r.turn
+				});
+			});
+		});
+		const C = [];
+		const seenC = /* @__PURE__ */ new Set();
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "captures"), "list")).forEach((c) => {
+				const k = `${r.game_id}#${String(r.turn)}#${inWords$1(theField(c, "ph"))}#${inWords$1(theField(c, "prov"))}#${inWords$1(theField(c, "to"))}`;
+				if (seenC.has(k)) return;
+				seenC.add(k);
+				C.push(c);
+			});
+		});
+		const byTurn = {};
+		D.forEach((d) => {
+			byTurn[d.turn] = (byTurn[d.turn] ?? 0) + 1;
+		});
+		const how = {};
+		D.forEach((d) => {
+			const cause = inWords$1(thisOrElse(d["how"], "other"));
+			how[cause] = (how[cause] ?? 0) + 1;
+		});
+		const Dr = D.filter((d) => d["pi"] != null), Dn = D.length - Dr.length;
+		const causes = {
+			character: "killed by an enemy character",
+			neutral: "killed by a neutral / guardian",
+			other: "other (duel, spell, execution…)"
+		};
+		html.push(statsCard("Deaths and conquests", kcHtml`<div style="font-size:.85rem">${Dr.length} realm character${Dr.length !== 1 ? "s" : ""} killed (${Dr.filter((d) => d["king"]).length} king${Dr.filter((d) => d["king"]).length !== 1 ? "s" : ""}) over ${rows.length} realm-turns — one every ${Dr.length ? (rows.length / Dr.length).toFixed(1) : "∞"} realm-turns — plus ${Dn} neutral hero${Dn !== 1 ? "es" : ""} / chieftain${Dn !== 1 ? "s" : ""} slain. ${C.length} provinces changed hands: ${C.filter((c) => theField(c, "from") == null).length} taken from neutrals, ${C.filter((c) => theField(c, "from") != null).length} taken from rivals.</div>
+      <h3 style="margin-top:12px">Deaths by cause (realm characters and neutrals)</h3>${statsBars(Object.entries(how).map(([k, n]) => ({
+			label: causes[k] ?? k,
+			v: n
+		})), { labelW: 220 })}
+      <h3 style="margin-top:12px">Deaths by turn</h3>${statsBars(Object.entries(byTurn).sort((a, b) => +a[0] - +b[0]).map(([t, n]) => ({
+			label: "turn " + t,
+			v: n,
+			col: STATS_COL.stone
+		})), { labelW: 70 })}`));
+	}
+	body.innerHTML = String(kcHtml`${html}`);
+}
+function _csv(rows, cols) {
+	const esc = (v) => {
+		if (v == null) return "";
+		const s = typeof v === "object" ? JSON.stringify(v) : inWords$1(v);
+		return /[",\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
+	};
+	return [cols.join(",")].concat(rows.map((r) => cols.map((c) => esc(typeof c === "function" ? c(r) : Reflect.get(r, c))).join(","))).join("\n");
+}
+function _download(name, text, type) {
+	const a = document.createElement("a");
+	a.href = URL.createObjectURL(new Blob([text], { type: (type ?? "") || "text/csv" }));
+	a.download = name;
+	document.body.appendChild(a);
+	a.click();
+	setTimeout(() => {
+		URL.revokeObjectURL(a.href);
+		a.remove();
+	}, 500);
+}
+function exportStats(kind) {
+	if (!_stats.rows) return;
+	const { rows, results } = _statsFilter();
+	const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+	const pk = theFieldOfAValueOrOfNothing;
+	if (kind === "turns") _download(`kc-turns-${stamp}.csv`, _csv(rows, [
+		"game_id",
+		"turn",
+		"player_index",
+		"realm",
+		"is_bot",
+		"bot_difficulty",
+		"race",
+		"alignment",
+		(r) => pk(r.pre, "gold"),
+		(r) => pk(r.post, "gold"),
+		(r) => pk(r.pre, "provinces"),
+		(r) => pk(r.post, "provinces"),
+		(r) => pk(r.post, "tax"),
+		(r) => pk(r.post, "taxShare"),
+		(r) => pk(r.post, "units"),
+		(r) => pk(r.post, "str"),
+		(r) => pk(r.post, "heroes"),
+		(r) => pk(r.post, "kingAlive"),
+		(r) => pk(r.post, "items"),
+		(r) => pk(r.post, "discoveries"),
+		(r) => pk(pk(r.outcomes, "battles"), "fought"),
+		(r) => pk(pk(r.outcomes, "battles"), "won"),
+		(r) => pk(pk(r.outcomes, "encounters"), "fought"),
+		(r) => pk(pk(r.outcomes, "encounters"), "won"),
+		(r) => pk(pk(r.outcomes, "captures"), "gained"),
+		(r) => pk(pk(r.outcomes, "captures"), "lost"),
+		(r) => pk(pk(r.outcomes, "deaths"), "own"),
+		(r) => pk(pk(r.outcomes, "deaths"), "killed"),
+		(r) => pk(pk(r.outcomes, "spells"), "cast"),
+		(r) => pk(r.outcomes, "rank"),
+		(r) => pk(r.outcomes, "score"),
+		(r) => theValuesOf(thisOrElse(pk(r.orders, "chars"), {})).map((c) => theListOrNothingToWalk(theField(c, "ph")).map((o) => theField(o, "a")).join(">")).join(" | ")
+	]).replace(/^[^\n]*/, [
+		"game_id",
+		"turn",
+		"player_index",
+		"realm",
+		"is_bot",
+		"bot_difficulty",
+		"race",
+		"alignment",
+		"gold_before",
+		"gold_after",
+		"provinces_before",
+		"provinces_after",
+		"tax",
+		"tax_share_pct",
+		"units",
+		"army_strength",
+		"heroes",
+		"king_alive",
+		"items",
+		"discoveries",
+		"battles",
+		"battles_won",
+		"lair_fights",
+		"lairs_cleared",
+		"provinces_gained",
+		"provinces_lost",
+		"own_deaths",
+		"enemies_killed",
+		"spells_cast",
+		"rank",
+		"score",
+		"orders_by_character"
+	].join(",")));
+	else if (kind === "battles") {
+		const B = [];
+		const seen = /* @__PURE__ */ new Set();
+		rows.forEach((r) => {
+			theListOrNothingToWalk(pk(pk(r.outcomes, "battles"), "list")).forEach((b) => {
+				const k = `${r.game_id}#${String(r.turn)}#${inWords$1(theField(b, "ph"))}#${inWords$1(theField(b, "prov"))}#${inWords$1(theField(b, "atkChar"))}#${inWords$1(theField(b, "atkStr"))}#${inWords$1(theField(b, "defStr"))}`;
+				if (seen.has(k)) return;
+				seen.add(k);
+				const atkStr = theField(b, "atkStr"), defStr = theField(b, "defStr");
+				B.push({
+					game_id: r.game_id,
+					turn: r.turn,
+					phase: theField(b, "ph"),
+					province: theField(b, "prov"),
+					terrain: theField(b, "terrain"),
+					kind: theField(b, "kind"),
+					attacker: theField(b, "atkPi"),
+					defender: theField(b, "defPi"),
+					atk_strength: atkStr,
+					def_strength: defStr,
+					ratio: Number(defStr) > 0 ? Math.round(100 * Number(atkStr) / Number(defStr)) / 100 : "",
+					fortune_swing: theField(b, "S"),
+					expected_atk_win_pct: Math.round(100 * fortuneWinChance(Number(defStr) > 0 ? Number(atkStr) / Number(defStr) : 1e9)),
+					attacker_won: theField(b, "won"),
+					atk_units: theField(b, "atkUnits"),
+					def_units: theField(b, "defUnits"),
+					atk_lost: theField(b, "atkLost"),
+					def_lost: theField(b, "defLost"),
+					carry_on_round: theField(b, "carry")
+				});
+			});
+		});
+		_download(`kc-battles-${stamp}.csv`, _csv(B, Object.keys(B[0] ?? { game_id: 1 })));
+	} else if (kind === "results") _download(`kc-results-${stamp}.csv`, _csv(results, [
+		"game_id",
+		"game_name",
+		"player_index",
+		"realm",
+		"is_bot",
+		"bot_difficulty",
+		"race",
+		"alignment",
+		"rank",
+		"score",
+		"winner",
+		"victory",
+		"turns",
+		"out_turn",
+		"out_how",
+		(r) => pk(r.setup, "realms"),
+		(r) => pk(r.setup, "humans"),
+		(r) => pk(r.setup, "seaPct"),
+		(r) => pk(r.final, "provinces"),
+		(r) => pk(r.final, "gold"),
+		(r) => pk(r.final, "str"),
+		(r) => pk(r.final, "heroes")
+	]).replace(/^[^\n]*/, [
+		"game_id",
+		"game_name",
+		"player_index",
+		"realm",
+		"is_bot",
+		"bot_difficulty",
+		"race",
+		"alignment",
+		"rank",
+		"score",
+		"winner",
+		"victory",
+		"turns",
+		"out_turn",
+		"out_how",
+		"realms",
+		"humans",
+		"sea_pct",
+		"final_provinces",
+		"final_gold",
+		"final_strength",
+		"final_heroes"
+	].join(",")));
+	else if (kind === "json") {
+		const byKey = {};
+		results.forEach((r) => {
+			byKey[`${r.game_id}#${String(r.player_index)}`] = r;
+		});
+		const out = rows.map((r) => {
+			const fr = byKey[`${r.game_id}#${String(r.player_index)}`];
+			return {
+				game_id: r.game_id,
+				turn: r.turn,
+				player_index: r.player_index,
+				is_bot: r.is_bot,
+				bot_difficulty: r.bot_difficulty,
+				realm: r.realm,
+				race: r.race,
+				alignment: r.alignment,
+				situation: r.pre,
+				orders: r.orders,
+				result: r.post,
+				outcomes: r.outcomes,
+				final: fr ? {
+					rank: fr.rank,
+					winner: fr.winner,
+					victory: fr.victory,
+					turns: fr.turns,
+					out_how: fr.out_how
+				} : null
+			};
+		});
+		_download(`kc-training-${stamp}.json`, JSON.stringify({
+			v: KC_TEL_V,
+			exported: (/* @__PURE__ */ new Date()).toISOString(),
+			build: KC_BUILD_STAMP,
+			rows: out
+		}, null, 0), "application/json");
+	}
+}
+async function forgetDeletedGames() {
+	if (!_stats.rows) return;
+	const heldResults = _stats.results;
+	if (heldResults === null) throw new TypeError("Cannot read properties of null (reading 'map')");
+	const recorded = [.../* @__PURE__ */ new Set([..._stats.rows.map((r) => r.game_id), ...heldResults.map((r) => r.game_id)])];
+	const live = /* @__PURE__ */ new Set();
+	for (let i = 0; i < recorded.length; i += 100) {
+		const { data, error } = await thePagesDb.theHallOfFamesGames.whichOfTheseGamesStillExist(recorded.slice(i, i + 100));
+		if (error) {
+			alert("Could not check which games still exist: " + error.message + ". Nothing was deleted.");
+			return;
+		}
+		(data ?? []).forEach((g) => live.add(g.id));
+	}
+	const gone = recorded.filter((id) => !live.has(id));
+	if (!gone.length) {
+		alert("Every recorded game still exists — nothing to forget.");
+		return;
+	}
+	if (!confirm(`Delete the recorded turns and results of ${String(gone.length)} game${gone.length !== 1 ? "s" : ""} that no longer exist? This cannot be undone.`)) return;
+	await thePagesDb.theStatistics.deleteTheseGamesTurnRecords(gone);
+	await thePagesDb.theStatistics.deleteTheseGamesResults(gone);
+	if (_kcHasLb) await thePagesDb.theHallOfFame.deleteTheseGamesEntries(gone);
+	openStats(true);
+}
+// src/engine/turn/log-line-helpers.ts
+var telSpell = (turnContext, ch, spell, school, lvl, chance, roll, ctx) => {
+	try {
+		if (ch?.player != null) recordForTheStatistics(turnContext, {
+			kind: "a spell worked in a battle or a duel, for the statistics",
+			record: {
+				ph: turnContext._logCtx.phase ?? turnContext._currentPhase,
+				pi: ch.player,
+				charId: ch.id,
+				spell,
+				school,
+				lvl,
+				chance,
+				ok: roll <= chance,
+				ctx
+			}
+		});
+	} catch (_te) {}
+};
+function noteSilentHeroes(turnContext, ph, startLoc) {
+	const { turnLog, battleCommanders } = turnContext;
+	const { G } = turnContext;
+	const heard = /* @__PURE__ */ new Set();
+	turnLog.forEach((e) => {
+		if (e.phase !== ph) return;
+		if (e.charId != null) heard.add(e.charId);
+		if (Array.isArray(e.charIds)) e.charIds.forEach((id) => heard.add(id));
+	});
+	const theCommanders = battleCommanders;
+	Object.keys(battleCommanders).forEach((k) => {
+		if (k.endsWith(`@${String(ph)}`)) (theCommanders[k] ?? []).forEach((id) => heard.add(id));
+	});
+	(G.characters ?? []).forEach((c) => {
+		if (!c?.alive || c.player == null || heard.has(c.id)) return;
+		const from = startLoc ? startLoc[c.id] : void 0;
+		emit(turnContext, {
+			type: "move",
+			fact: from != null && from !== c.location ? {
+				kind: "a hero with no line of his own leaves a province and ends the season in another",
+				heroName: c.name,
+				fromProvinceName: (G.world.provinces[from]?.name ?? "") || null,
+				provinceName: (c.location != null ? G.world.provinces[c.location]?.name ?? "" : "") || null
+			} : {
+				kind: "a hero with no line of his own remains where he is this season",
+				heroName: c.name,
+				provinceName: (c.location != null ? G.world.provinces[c.location]?.name ?? "" : "") || null
+			},
+			audience: {
+				actor: c.player,
+				realms: [c.player]
+			},
+			hero: c.id,
+			phase: ph,
+			province: c.location ?? null
+		});
+	});
+}
+function theNameOfAPlayersRealm(turnContext, pi) {
+	const { G } = turnContext;
+	const theRealm = pi != null ? G.players[pi] : void 0;
+	return theRealm ? theRealm.name : null;
+}
+function telRealmSnapshot(gs, pi) {
+	if (!gs) return null;
+	const pl = (gs.players ?? [])[pi];
+	if (!pl) return null;
+	const provs = gs.world?.provinces ?? [];
+	const owned = provs.filter((p) => p?.owner === pi);
+	const chars = (gs.characters ?? []).filter((c) => c?.player === pi && c.alive === true);
+	const king = chars.find((c) => c.isKing) ?? null;
+	const unitRec = (a) => ({
+		t: a.type,
+		q: (a.quality ?? "") || "Average",
+		...a._isSkeletal ? { sk: 1 } : {}
+	});
+	let ledUnits = 0, ledStr = 0, garUnits = 0, garStr = 0;
+	const characters = chars.map((c) => {
+		const units = (c.armies ?? []).filter((a) => !!a && !a._phantom);
+		units.forEach((a) => {
+			ledUnits++;
+			ledStr += unitBaseStrength(a);
+		});
+		const pv = c.location != null ? provs[c.location] : null;
+		const skills = {};
+		Object.entries(c.skills ?? {}).forEach(([k, v]) => {
+			if (v !== void 0 && v > 0) skills[k] = v;
+		});
+		return {
+			id: c.id,
+			name: c.name,
+			king: !!c.isKing,
+			loc: c.location,
+			terrain: pv ? pv.terrain : null,
+			home: pv?.owner === pi,
+			hp: c.hp,
+			maxHp: c.maxHp,
+			skills,
+			units: units.map(unitRec),
+			items: (c.items ?? []).map((it) => it?.name).filter(Boolean)
+		};
+	});
+	owned.forEach((p) => {
+		(p.garrisonArmies ?? []).forEach((a) => {
+			if (a) {
+				garUnits++;
+				garStr += unitBaseStrength(a);
+			}
+		});
+	});
+	const fallen = (gs.characters ?? []).filter((c) => c?.player === pi && !c.alive && c.killedThisTurn === true).map((c) => {
+		const skills = {};
+		Object.entries(c.skills ?? {}).forEach(([k, v]) => {
+			if (v !== void 0 && v > 0) skills[k] = v;
+		});
+		return {
+			id: c.id,
+			name: c.name,
+			king: !!c.isKing,
+			fell: 1,
+			hp: 0,
+			maxHp: c.maxHp,
+			skills,
+			units: (c.armies ?? []).filter((a) => !!a && !a._phantom).map(unitRec),
+			items: (c.items ?? []).map((it) => it?.name).filter(Boolean)
+		};
+	});
+	const tax = owned.reduce((s, p) => s + (Number(p.tax) || 0), 0);
+	const worldTax = provs.reduce((s, p) => s + (Number(p?.tax) || 0), 0);
+	const rel = {
+		enemies: [],
+		allies: []
+	};
+	(gs.players ?? []).forEach((o, oi) => {
+		if (oi === pi || !o) return;
+		const r = relOfReport(gs, pi, oi);
+		if (r === "enemy") rel.enemies.push(oi);
+		else if (r === "allied") rel.allies.push(oi);
+	});
+	const explored = provs.filter((p) => p && Array.isArray(p.visitedBy) && p.visitedBy.includes(pi)).length;
+	const legNames = typeof LEGENDARY_NAMES_P !== "undefined" ? LEGENDARY_NAMES_P : /* @__PURE__ */ new Set();
+	let items = 0, relics = 0;
+	chars.forEach((c) => {
+		(c.items ?? []).forEach((it) => {
+			if (!it) return;
+			items++;
+			if (legNames.has(it.name)) relics++;
+		});
+	});
+	return {
+		gold: Math.round(Number(pl.gold) || 0),
+		provinces: owned.length,
+		land: owned.filter((p) => p.terrain !== "sea").length,
+		sea: owned.filter((p) => p.terrain === "sea").length,
+		tax,
+		taxShare: worldTax > 0 ? Math.round(1e3 * tax / worldTax) / 10 : 0,
+		chars: chars.length,
+		heroes: chars.length - (king ? 1 : 0),
+		kingAlive: !!king,
+		kingHp: king ? king.hp : null,
+		ledUnits,
+		ledStr: Math.round(ledStr),
+		garUnits,
+		garStr: Math.round(garStr),
+		units: ledUnits + garUnits,
+		str: Math.round(ledStr + garStr),
+		items,
+		relics,
+		discoveries: (pl.discoveries ?? []).length,
+		consecrated: consecratedIds(pl).length,
+		explored,
+		conceded: !!pl.conceded,
+		eliminated: !!pl._eliminated,
+		rel,
+		characters,
+		...fallen.length ? { fallen } : {}
+	};
+}
+function telOrdersFor(gs, pi, extras) {
+	const chars = (gs.characters ?? []).filter((c) => c?.player === pi && c.alive === true);
+	const byChar = {};
+	chars.forEach((c) => {
+		const slots = gs.turnOrders?.[c.id] ?? [];
+		byChar[c.id] = {
+			name: c.name,
+			king: !!c.isKing,
+			ph: [
+				0,
+				1,
+				2,
+				3,
+				4
+			].map((i) => {
+				const o = slots[i];
+				if (!o) return { a: "defend" };
+				const r = { a: ((o.action ?? "") || "defend").toLowerCase() };
+				if (o.target != null && o.target !== "") r.t = String(o.target).slice(0, 80);
+				if (o.extra != null && o.extra !== "") r.x = String(o.extra).slice(0, 80);
+				if (o.desc) r.d = o.desc.slice(0, 140);
+				if (o._pinned) r.pinned = 1;
+				if (o._unifiedWith != null) r.unified = o._unifiedWith;
+				return r;
+			})
+		};
+	});
+	const out = { chars: byChar };
+	if (extras) Object.entries(extras).forEach(([k, v]) => {
+		if (v !== void 0 && v !== null && !(Array.isArray(v) && !v.length) && !(typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length)) out[k] = v;
+	});
+	return out;
+}
+// src/ui/gm/hall-of-fame.ts
+var KC_LB_V = 3;
+globalThis._kcHasLb = false;
+globalThis._kcLbLastErr = null;
+async function probeLeaderboard() {
+	try {
+		const { error } = await thePagesDb.theHallOfFame.oneEntrysGame();
+		_kcHasLb = !error;
+		if (error) console.warn("game_records probe:", error.message);
+	} catch {
+		_kcHasLb = false;
+	}
+	renderLeaderboardBanner();
+	return _kcHasLb;
+}
+function renderLeaderboardBanner() {
+	const el = document.getElementById("msg-leaderboard");
+	if (!el) return;
+	if (!_kcHasLb) el.innerHTML = String(kcMissingMsg("🏆 Leaderboard not active", kcHtml`<code>game_records</code> table`, "finished games are not being added to the Hall of Fame"));
+	else if (_kcLbLastErr) el.innerHTML = String(kcHtml`<div class="msg-error"><strong>🏆 Leaderboard write failed</strong>: ${_kcLbLastErr}. The turn and its statistics were saved; only the Hall-of-Fame row was lost. Use ↻ Rebuild on the Stats tab.</div>`);
+	else el.innerHTML = "";
+}
+var _LB_SEA = new Set(KC_UNIT_CLASS.sea);
+var _LB_AIR = new Set(KC_UNIT_CLASS.aerial);
+var _LB_BEAST = /* @__PURE__ */ new Set([...KC_UNIT_CLASS.creature, ...KC_UNIT_CLASS.monster]);
+var _LB_MISSILE = new Set(KC_UNIT_CLASS.missile);
+var _LB_CAV = new Set(KC_UNIT_CLASS.cavalry);
+/** Whether a value of the statistics is something read field by field (`v && typeof v === 'object'`: JSON holds no
+*  object that reads as false). */
+function isAnObjectReadByItsFields(v) {
+	return typeof v === "object" && v !== null;
+}
+/** A value of any kind in words as `'…' + v` writes it (the value read as a `+` reads it). */
+function asAPlusWritesIt(v) {
+	return String(theSumAsJavaScriptMakesIt("", v));
+}
+var _lbArr = (v) => isAList(v) ? v : [];
+var _lbObj = (v) => isAnObjectReadByItsFields(v) && !isAList(v) ? v : {};
+var _lbN = (v) => {
+	const n = Number(v);
+	return isFinite(n) ? n : 0;
+};
+function lbUnitStr(u) {
+	return isAnObjectReadByItsFields(u) ? ((UNIT_BASE_STR[String(u["t"])] ?? 0) || 4) * ((UNIT_Q_MULT[String(thisOrElse(u["q"], "Average"))] ?? 0) || 2) : 0;
+}
+function lbSumStr(units, pred) {
+	return _lbArr(units).reduce((s, u) => s + (!pred || pred(u) ? lbUnitStr(u) : 0), 0);
+}
+function lbRecorder() {
+	const R = {};
+	return {
+		R,
+		put: (key, value, ctx, dir) => {
+			if (value == null) return;
+			const v = Number(value);
+			if (!isFinite(v)) return;
+			const d = dir === "min" ? "min" : "max";
+			if (d === "max" && !(v > 0)) return;
+			const pi = ctx?.pi ?? null;
+			const list = R[key] ?? [];
+			R[key] = list;
+			const i = list.findIndex((e) => e.pi === pi);
+			const held = i >= 0 ? list[i] : void 0;
+			if (held !== void 0 && !(d === "min" ? v < held.v : v > held.v)) return;
+			const valued = {
+				v: Math.round(v * 100) / 100,
+				d
+			};
+			const e = Object.assign(valued, ctx ?? {});
+			if (i < 0) list.push(e);
+			else list[i] = e;
+		},
+		finish() {
+			Object.values(R).forEach((l) => l.sort((a, b) => (a.d === "min" ? a.v - b.v : b.v - a.v) || (a.pi ?? -1) - (b.pi ?? -1)));
+			return R;
+		}
+	};
+}
+function lbCtx(pi, turn, extra) {
+	return Object.assign({
+		pi: pi ?? null,
+		t: turn ?? null
+	}, extra ?? {});
+}
+/** `a || b` on a value of any kind where `b` is made only when it is needed: `a` where it is truthy, else what
+*  `makeB` makes. */
+function thisOrElseWhatIsMade(a, makeB) {
+	if (a) return a;
+	return makeB();
+}
+/** A value of any kind in words, as `String` writes it: a key a table is read by (`table[value]` reads it so), or an id
+*  written in words. */
+function inWords(value) {
+	return String(value);
+}
+function buildGameRecords(gameId, gameRow, players, resultsAsHanded, eventsAsHanded, gs, profNames) {
+	const results = (resultsAsHanded ?? []).filter((r) => Boolean(r));
+	const events = (eventsAsHanded ?? []).filter((e) => Boolean(e));
+	if (!results.length) return null;
+	const names = profNames ?? {};
+	const uidByIdx = {}, kingdomByIdx = {};
+	(players ?? []).forEach((p) => {
+		if (p?.player_index == null) return;
+		if (p.user_id) uidByIdx[p.player_index] = p.user_id;
+		if (p.display_name) kingdomByIdx[p.player_index] = p.display_name;
+	});
+	const uidOf = (pi) => uidByIdx[pi] ?? null;
+	const personOf = (pi) => {
+		const u = uidOf(pi);
+		return u ? (names[u] ?? "") || null : null;
+	};
+	const any = results[0];
+	if (any === void 0) return null;
+	const setupIn = _lbObj(any.setup);
+	const meta = gameRow ? gameMetaOf(gameRow) : null;
+	const setup = {
+		realms: thisOrElse(setupIn["realms"], results.length),
+		humans: setupIn["humans"] ?? results.filter((r) => !r.is_bot).length,
+		bots: setupIn["bots"] ?? results.filter((r) => r.is_bot).length,
+		diplomacy: thisOrElse(thisOrElse(thisOrElse(setupIn["diplomacy"], gs ? gs.botDiplomacy : gs), meta ? meta["botDiplomacy"] : meta), "normal"),
+		difficulty: thisOrElse(thisOrElse(thisOrElse(setupIn["difficulty"], gs ? gs.botDifficulty : gs), meta ? meta["botDifficulty"] : meta), null),
+		mapSize: thisOrElse(thisOrElse(setupIn["mapSize"], meta ? meta["mapSize"] : meta), null),
+		cols: thisOrElse(thisOrElse(setupIn["cols"], gs?.world ? gs.world.cols : null), null),
+		rows: thisOrElse(thisOrElse(setupIn["rows"], gs?.world ? gs.world.rows : null), null),
+		seaPct: setupIn["seaPct"] ?? meta?.["seaPct"] ?? null,
+		maxTurns: thisOrElse(thisOrElse(gameRow ? gameRow.max_turns : gameRow, gs ? gs.maxTurns : gs), null)
+	};
+	const turns = (any.turns ?? 0) || Math.max(0, ...events.map((e) => e.turn || 0));
+	let titleTop = null;
+	if (gs?.players) try {
+		const st = computeStandings(gs);
+		const top = {};
+		titleTop = top;
+		TITLE_DEFS.forEach((t) => {
+			const h = st.titles[t.key];
+			if (h?.playerIndex == null || !(h.merit > 0)) return;
+			const charId = h.charId;
+			const ch = charId != null ? _lbArr(gs.characters).find((c) => isAnObjectReadByItsFields(c) && c["id"] === charId) : null;
+			top[t.key] = {
+				name: t.name,
+				merit: Math.round(h.merit * 100) / 100,
+				pi: h.playerIndex,
+				who: ch ? theField(ch, "name") : null
+			};
+		});
+	} catch {
+		titleTop = null;
+	}
+	const titlesByPi = {};
+	if (titleTop) Object.entries(titleTop).forEach(([k, v]) => {
+		const held = titlesByPi[v.pi] ?? [];
+		titlesByPi[v.pi] = held;
+		held.push(k);
+	});
+	const standings = results.slice().sort((a, b) => ((a.rank ?? 0) || 99) - ((b.rank ?? 0) || 99)).map((r) => {
+		const f = _lbObj(r.final);
+		return {
+			pi: r.player_index,
+			realm: (r.realm ?? "") || (kingdomByIdx[r.player_index] ?? null),
+			uid: r.is_bot ? null : uidOf(r.player_index),
+			player: r.is_bot ? null : personOf(r.player_index),
+			race: r.race,
+			al: r.alignment,
+			bot: !!r.is_bot,
+			rank: (r.rank ?? 0) || null,
+			score: (r.score ?? 0) || 0,
+			winner: !!r.winner,
+			outTurn: (r.out_turn ?? 0) || null,
+			outHow: (r.out_how ?? "") || null,
+			prov: thisOrElse(f["provinces"], 0),
+			land: thisOrElse(f["land"], 0),
+			sea: thisOrElse(f["sea"], 0),
+			gold: thisOrElse(f["gold"], 0),
+			tax: thisOrElse(f["tax"], 0),
+			taxShare: thisOrElse(f["taxShare"], 0),
+			str: thisOrElse(f["str"], 0),
+			units: thisOrElse(f["units"], 0),
+			heroes: thisOrElse(f["heroes"], 0),
+			items: thisOrElse(f["items"], 0),
+			relics: thisOrElse(f["relics"], 0),
+			disc: thisOrElse(f["discoveries"], 0),
+			consec: thisOrElse(f["consecrated"], 0),
+			explored: thisOrElse(f["explored"], 0),
+			titles: titlesByPi[r.player_index] ?? []
+		};
+	});
+	const win = results.find((r) => r.winner) ?? null;
+	const rk = lbRecorder(), put = rk.put;
+	const agg = {};
+	const A = (pi) => agg[pi] = agg[pi] ?? {
+		caps: 0,
+		lost: 0,
+		battles: 0,
+		won: 0,
+		unitsLost: 0,
+		unitsKilled: 0,
+		lairs: 0,
+		lairsWon: 0,
+		fled: 0,
+		spells: 0,
+		spellsOk: 0,
+		deaths: 0,
+		kills: 0,
+		kingKills: 0,
+		spellCount: {},
+		killsByChar: {}
+	};
+	const seenTen = {};
+	const uniqBattles = /* @__PURE__ */ new Set();
+	let gameBattles = 0, gameCasualties = 0, gameSpells = 0, gameCaps = 0, gameDeaths = 0, gameLairs = 0;
+	const plus = (total, y) => theSumAsJavaScriptMakesIt(total, thisOrElse(y, 0));
+	events.forEach((ev) => {
+		const pi = ev.player_index, post = _lbObj(ev.post), out = _lbObj(ev.outcomes), t = ev.turn;
+		const a = A(pi), C = (x) => lbCtx(pi, t, x);
+		put("most_provinces", post["provinces"], C());
+		put("most_land", post["land"], C());
+		put("most_sea", post["sea"], C());
+		put("top_tax_share", post["taxShare"], C());
+		put("richest", post["gold"], C());
+		put("most_explored", post["explored"], C());
+		put("most_discoveries", post["discoveries"], C());
+		put("most_consecrated", post["consecrated"], C());
+		put("most_relics", post["relics"], C());
+		put("most_heroes", post["heroes"], C());
+		put("most_units_realm", post["units"], C());
+		put("mightiest_host", post["str"], C());
+		put("largest_garrison", post["garStr"], C());
+		if (Number(thisOrElse(post["provinces"], 0)) >= 10 && seenTen[pi] == null) {
+			seenTen[pi] = t;
+			put("fastest_ten", t, C({ det: "10 provinces" }), "min");
+		}
+		const dl = _lbObj(out["delta"]);
+		put("gold_gain_turn", dl["gold"], C());
+		put("str_gain_turn", dl["str"], C());
+		_lbArr(post["characters"]).concat(_lbArr(post["fallen"])).forEach((c) => {
+			if (!isAnObjectReadByItsFields(c)) return;
+			const who = thisOrElse(c["name"], null), units = _lbArr(c["units"]);
+			const ctx = (x) => C(Object.assign({ who }, x ?? {}));
+			put("biggest_field_army", lbSumStr(units), ctx({ det: `${String(units.length)} units` }));
+			put("most_units_one_char", units.length, ctx());
+			put("grand_armada", lbSumStr(units, (u) => _LB_SEA.has(theField(u, "t"))), ctx({ det: `${String(units.filter((u) => _LB_SEA.has(theField(u, "t"))).length)} hulls & sea-beasts` }));
+			put("sky_host", lbSumStr(units, (u) => _LB_AIR.has(theField(u, "t"))), ctx({ det: `${String(units.filter((u) => _LB_AIR.has(theField(u, "t"))).length)} airborne units` }));
+			put("beast_host", lbSumStr(units, (u) => _LB_BEAST.has(theField(u, "t"))), ctx({ det: `${String(units.filter((u) => _LB_BEAST.has(theField(u, "t"))).length)} creatures & monsters` }));
+			put("horse_host", lbSumStr(units, (u) => _LB_CAV.has(theField(u, "t"))), ctx());
+			put("arrow_storm", lbSumStr(units, (u) => _LB_MISSILE.has(theField(u, "t"))), ctx());
+			put("undead_legion", units.filter((u) => theField(u, "sk")).length, ctx());
+			put("most_items_one_char", _lbArr(c["items"]).length, ctx({ det: _lbArr(c["items"]).filter((x) => typeof x === "string").slice(0, 3).join(", ") || null }));
+			put("hardiest", c["maxHp"], ctx());
+			const sk = _lbObj(c["skills"]), tot = Object.values(sk).reduce((s, v) => s + (Number(v) || 0), 0);
+			put("greatest_hero", tot, ctx({ det: `${String(Object.keys(sk).length)} skills` }));
+			const skillLabels = SKILL_LABELS;
+			Object.entries(sk).forEach(([k, v]) => {
+				const lv = _lbN(v);
+				put("sk_" + k, lv, ctx({
+					lbl: "Highest " + (skillLabels[k] ?? k),
+					det: (skillLabels[k] ?? k) + " " + String(lv)
+				}));
+			});
+		});
+		_lbArr(post["titles"]).forEach((h) => {
+			if (!h) return;
+			const key = theField(h, "key");
+			if (typeof key !== "string") return;
+			const nm = (TITLE_DEFS.find((x) => x.key === key)?.name ?? "") || key;
+			const who = theField(h, "who");
+			put("title_" + key, theField(h, "merit"), C({
+				who: typeof who === "string" && who || null,
+				lbl: nm + " — highest rating",
+				det: nm
+			}));
+		});
+		const B = _lbObj(out["battles"]);
+		put("battles_turn", B["fought"], C());
+		put("kills_turn", B["unitsKilled"], C());
+		put("losses_turn", B["unitsLost"], C());
+		a.battles = plus(a.battles, B["fought"]);
+		a.won = plus(a.won, B["won"]);
+		a.unitsLost = plus(a.unitsLost, B["unitsLost"]);
+		a.unitsKilled = plus(a.unitsKilled, B["unitsKilled"]);
+		_lbArr(B["list"]).forEach((b) => {
+			if (!isAnObjectReadByItsFields(b)) return;
+			const atk = b["side"] === "atk", aS = _lbN(b["atkStr"]), dS = _lbN(b["defStr"]);
+			const aL = _lbN(b["atkLost"]), dL = _lbN(b["defLost"]);
+			const mine = atk ? aS : dS, theirs = atk ? dS : aS;
+			const key = [
+				t,
+				b["prov"],
+				b["atkPi"],
+				b["defPi"],
+				aS,
+				dS
+			].join("|");
+			if (!uniqBattles.has(key)) {
+				uniqBattles.add(key);
+				gameBattles++;
+				gameCasualties += aL + dL;
+			}
+			const terrain = b["terrain"];
+			const det = `${String(Math.round(aS))} vs ${String(Math.round(dS))}${typeof terrain === "string" ? " · " + terrain : ""}`;
+			const kind = b["kind"];
+			const ctx = C({
+				det,
+				kind: typeof kind === "string" ? kind : null
+			});
+			put("biggest_battle", aS + dS, ctx);
+			if (kind === "pvp") put("biggest_pvp", aS + dS, ctx);
+			put("bloodiest_battle", aL + dL, C({ det }));
+			put("longest_siege", _lbN(b["carry"]), C({ det }));
+			put("worst_rout", atk ? aL : dL, C({ det }));
+			if (b["win"] && theirs > 0 && mine > 0) {
+				put("greatest_upset", Math.round(1e3 * mine / theirs) / 1e3, C({ det: `${String(Math.round(mine))} beat ${String(Math.round(theirs))}` }), "min");
+				if (!atk) put("stubbornest_defence", Math.round(1e3 * mine / theirs) / 1e3, C({ det: `${String(Math.round(mine))} held off ${String(Math.round(theirs))}` }), "min");
+				if ((atk ? aL : dL) === 0) put("flawless_victory", theirs, C({ det: `${String(Math.round(theirs))} destroyed, nothing lost` }));
+			}
+		});
+		const E = _lbObj(out["encounters"]);
+		a.lairs = plus(a.lairs, E["fought"]);
+		a.lairsWon = plus(a.lairsWon, E["won"]);
+		a.fled = plus(a.fled, E["fled"]);
+		gameLairs = plus(gameLairs, E["fought"]);
+		put("lairs_turn", E["won"], C());
+		const powerRanks = GUARDIAN_POWER_RANK;
+		_lbArr(E["list"]).forEach((e) => {
+			if (!isAnObjectReadByItsFields(e)) return;
+			const power = e["power"];
+			const pw = powerRanks[typeof power === "string" ? power : ""] ?? 0;
+			const guardian = e["guardian"], feature = e["feature"];
+			const gname = typeof guardian === "string" && guardian || typeof feature === "string" && feature || "a guardian";
+			const ctx = C({
+				who: null,
+				det: `${gname}${power ? " (" + asAPlusWritesIt(power) + ")" : ""}`
+			});
+			if (e["won"]) {
+				put("guardian_slain", pw, ctx);
+				put("narrowest_escape", e["hpAfter"], ctx, "min");
+				if (pw >= 3) put("luckiest_kill", e["hpAfter"], C({ det: `${gname} (${String(power)}) — ${String(_lbN(e["hpAfter"]))} hp left` }), "min");
+				put("hardest_fight", e["dmg"], ctx);
+			}
+			if (e["killed"]) put("deadliest_guardian", pw, C({ det: `${gname}${power ? " (" + asAPlusWritesIt(power) + ")" : ""} slew a champion` }));
+		});
+		const Cp = _lbObj(out["captures"]);
+		a.caps = plus(a.caps, Cp["gained"]);
+		a.lost = plus(a.lost, Cp["lost"]);
+		gameCaps = plus(gameCaps, Cp["gained"]);
+		put("captures_turn", Cp["gained"], C());
+		put("lost_turn", Cp["lost"], C());
+		_lbArr(Cp["list"]).forEach((cp) => {
+			if (cp && theField(cp, "to") === pi) {
+				const terrain = theField(cp, "terrain");
+				put("richest_capture", theField(cp, "tax"), C({ det: `a ${typeof terrain === "string" && terrain || "province"} worth ${String(_lbN(theField(cp, "tax")))} tax` }));
+			}
+		});
+		const D = _lbObj(out["deaths"]);
+		a.deaths = plus(a.deaths, D["own"]);
+		a.kills = plus(a.kills, D["killed"]);
+		gameDeaths = plus(gameDeaths, D["own"]);
+		put("deaths_turn", D["own"], C());
+		_lbArr(D["list"]).forEach((d) => {
+			if (d && theField(d, "killerPi") === pi && theField(d, "pi") !== pi) {
+				const killerId = theField(d, "killerId");
+				if (killerId != null) {
+					const k = inWords(killerId);
+					a.killsByChar[k] = (a.killsByChar[k] ?? 0) + 1;
+				}
+				if (theField(d, "king")) a.kingKills++;
+			}
+		});
+		const S = _lbObj(out["spells"]);
+		a.spells = plus(a.spells, S["cast"]);
+		a.spellsOk = plus(a.spellsOk, S["ok"]);
+		gameSpells = plus(gameSpells, S["cast"]);
+		put("spells_turn", S["cast"], C());
+		_lbArr(S["list"]).forEach((s) => {
+			if (!isAnObjectReadByItsFields(s)) return;
+			const spell = s["spell"];
+			const sname = typeof spell === "string" && spell || "an unnamed spell";
+			a.spellCount[sname] = (a.spellCount[sname] ?? 0) + 1;
+			if (s["ok"] && _lbN(s["chance"]) > 0) put("longest_shot", s["chance"], C({ det: `${sname} at ${String(_lbN(s["chance"]))}%` }), "min");
+			if (s["ok"]) put("grandest_casting", s["lvl"], C({ det: sname }));
+		});
+	});
+	Object.entries(agg).forEach(([k, a]) => {
+		const pi = Number(k), C = (x) => lbCtx(pi, null, x);
+		put("captures_game", a.caps, C());
+		put("lost_game", a.lost, C());
+		put("battles_game", a.battles, C());
+		put("battles_won_game", a.won, C());
+		put("kills_game", a.unitsKilled, C());
+		put("losses_game", a.unitsLost, C());
+		put("lairs_game", a.lairsWon, C());
+		put("flights_game", a.fled, C());
+		put("spells_game", a.spells, C());
+		put("failed_spells_game", Number(a.spells) - Number(a.spellsOk), C());
+		put("champions_lost", a.deaths, C());
+		put("champions_slain", a.kills, C());
+		put("kingslayer", a.kingKills, C());
+		if (Number(a.battles) >= 4) put("best_win_rate", Math.round(1e3 * Number(a.won) / Number(a.battles)) / 10, C({ det: `${String(a.won)} of ${String(a.battles)} battles` }));
+		const topChar = Object.entries(a.killsByChar).sort((x, y) => y[1] - x[1])[0];
+		if (topChar) {
+			const ch = _lbArr(_lbObj(events.find((e) => e.player_index === pi && _lbArr(_lbObj(e.post)["characters"]).some((c) => c && String(theField(c, "id")) === topChar[0]))?.post)["characters"]).find((c) => c && String(theField(c, "id")) === topChar[0]);
+			put("deadliest_champion", topChar[1], C({ who: ch ? theField(ch, "name") : null }));
+		}
+		const topSpell = Object.entries(a.spellCount).sort((x, y) => y[1] - x[1])[0];
+		if (topSpell) put("favourite_spell", topSpell[1], C({ det: topSpell[0] }));
+	});
+	results.forEach((r) => {
+		const pi = r.player_index, f = _lbObj(r.final), C = (x) => lbCtx(pi, turns, x);
+		put("final_score", r.score, C());
+		put("final_provinces", f["provinces"], C());
+		put("final_gold", f["gold"], C());
+		put("final_strength", f["str"], C());
+		put("final_tax_share", f["taxShare"], C());
+		if (r.out_turn) put("earliest_out", r.out_turn, C({ det: (r.out_how ?? "") || "out" }), "min");
+	});
+	if (titleTop) Object.entries(titleTop).forEach(([k, v]) => {
+		put("title_" + k, v.merit, lbCtx(v.pi, turns, {
+			who: v.who,
+			lbl: v.name + " — highest rating",
+			det: v.name
+		}));
+	});
+	const G0 = {
+		pi: null,
+		t: null
+	};
+	put("longest_game", turns, G0);
+	put("shortest_game", turns, G0, "min");
+	put("most_realms", setup.realms, G0);
+	put("most_humans", setup.humans, G0);
+	put("biggest_world", Number(thisOrElse(setup.cols, 0)) * Number(thisOrElse(setup.rows, 0)), G0, "max");
+	put("most_battles_game", gameBattles, G0);
+	put("bloodiest_game", gameCasualties, G0);
+	put("most_spells_game", gameSpells, G0);
+	put("most_captures_game", gameCaps, G0);
+	put("most_deaths_game", gameDeaths, G0);
+	put("most_lairs_game", gameLairs, G0);
+	const finishedAt = (results.map((r) => r.created_at).filter((at) => Boolean(at)).sort()[0] ?? "") || kcClock.date().toISOString();
+	return {
+		game_id: inWords(gameId),
+		game_name: (gameRow?.name ?? "") || (any.game_name ?? "") || "Game " + gameId,
+		gm_user_id: (gameRow?.gm_user_id ?? "") || (currentUser ? currentUser.id : null),
+		started_at: (gameRow?.created_at ?? "") || null,
+		finished_at: finishedAt,
+		turns,
+		winner_realm: win ? win.realm : null,
+		winner_player: win ? win.is_bot ? null : personOf(win.player_index) : null,
+		winner_is_bot: win ? !!win.is_bot : null,
+		victory: (any.victory ?? "") || null,
+		setup,
+		standings,
+		records: rk.finish(),
+		totals: {
+			battles: gameBattles,
+			casualties: gameCasualties,
+			spells: gameSpells,
+			captures: gameCaps,
+			deaths: gameDeaths,
+			lairs: gameLairs,
+			events: events.length
+		},
+		build: `GM ${KC_BUILD_STAMP} lb${String(KC_LB_V)}`
+	};
+}
+/** `(e && e.message) || e` on what a `catch` caught: its message where it has one, else itself. */
+function theMessageOrTheValueCaught(e) {
+	return thisOrElse(e ? theField(e, "message") : e, e);
+}
+async function writeGameRecord(gameId, opts) {
+	if (!_kcHasLb) return false;
+	opts = opts ?? {};
+	try {
+		const gid = String(gameId);
+		const { data: results, error: rErr } = await thePagesDb.theStatistics.theResultsOfThisGame(gid);
+		if (rErr || !results?.length) return false;
+		const events = [];
+		for (let from = 0;; from += 500) {
+			const { data, error } = await thePagesDb.theStatistics.thisGamesTurnRecordsForItsEntryFromRowToRow(gid, from, from + 499);
+			if (error) {
+				_kcLbLastErr = "Could not read the turn history of game " + gid + ": " + error.message;
+				renderLeaderboardBanner();
+				return false;
+			}
+			events.push(...data ?? []);
+			if (!data || data.length < 500) break;
+		}
+		let gameRow = opts.gameRow ?? null, players = opts.players ?? null, gs = opts.gs ?? null;
+		if (!gameRow || !players || !gs) {
+			const { data: full } = await thePagesDb.theHallOfFamesGames.thisGameWithItsWorldAndRealms(gid);
+			if (full) {
+				gameRow = gameRow ?? full;
+				players = players ?? thisGamesSlots(full);
+				if (!gs) {
+					const p = parseGameState(full);
+					if (typeof p === "object" && p !== null && theField(p, "players")) gs = p;
+				}
+			}
+		}
+		const row = buildGameRecords(gid, gameRow, players ?? [], results, events, gs, await lbProfileNames(players));
+		if (!row) return false;
+		lbCountRow(row);
+		const entry = row;
+		const { data: old } = await thePagesDb.theHallOfFame.theGameMastersNotesOnThisGamesEntry(gid);
+		if (old) {
+			if (old.note) entry.note = old.note;
+			if (old.hidden) entry.hidden = true;
+			if (old.game_name) entry.game_name = old.game_name;
+		}
+		const { error } = await thePagesDb.theHallOfFame.writeTheseEntries([entry]);
+		if (error) {
+			_kcLbLastErr = error.message;
+			renderLeaderboardBanner();
+			return false;
+		}
+		_kcLbLastErr = null;
+		renderLeaderboardBanner();
+		return true;
+	} catch (e) {
+		_kcLbLastErr = String(theMessageOrTheValueCaught(e));
+		return false;
+	}
+}
+/** A game's slots as its read gives them, `full.game_players || []`: the list, or none for a read that held none. */
+function thisGamesSlots(full) {
+	return full.game_players ?? [];
+}
+var _lbProfCache = null;
+var _lbProfErr = null;
+/** The names kept so far, as a read or a write of the name of `id` meets them: for none (a rebuild began meanwhile),
+*  the TypeError that read or that write threw. */
+function theNamesKept(id, how) {
+	if (_lbProfCache === null) throw new TypeError(`Cannot ${how === "reading" ? "read" : "set"} properties of null (${how} '${id}')`);
+	return _lbProfCache;
+}
+async function lbProfileNames(players) {
+	if (!_lbProfCache) {
+		_lbProfCache = {};
+		_lbProfErr = null;
+		try {
+			const { data, error } = await thePagesDb.theAccountsNames.theNameOfEveryAccount();
+			if (error) _lbProfErr = error.message;
+			(data ?? []).forEach((r) => {
+				if (r.id && r.name) theNamesKept(r.id, "setting")[r.id] = r.name;
+			});
+			if (!error && !Object.keys(theNamesKeptAsAWhole()).length) _lbProfErr = "the profiles table returned no names at all";
+		} catch (e) {
+			_lbProfErr = String(theMessageOrTheValueCaught(e));
+		}
+	}
+	const want = [...new Set((players ?? []).map((p) => p?.user_id).filter((id) => Boolean(id)))];
+	const out = {};
+	want.forEach((id) => {
+		const name = theNamesKept(id, "reading")[id];
+		if (name) out[id] = name;
+	});
+	return out;
+}
+/** The names kept so far, as `Object.keys` meets them: for none, the TypeError it threw. */
+function theNamesKeptAsAWhole() {
+	if (_lbProfCache === null) throw new TypeError("Cannot convert undefined or null to object");
+	return _lbProfCache;
+}
+var _lbTally = {
+	games: 0,
+	humans: 0,
+	uids: 0,
+	named: 0
+};
+function lbCountRow(row) {
+	_lbTally.games++;
+	(row.standings ?? []).forEach((st) => {
+		if (!st || st.bot) return;
+		_lbTally.humans++;
+		if (st.uid) _lbTally.uids++;
+		if (st.player) _lbTally.named++;
+	});
+}
+async function backfillGameRecords(force) {
+	if (!_kcHasLb || !currentUser) return 0;
+	const btn = document.getElementById("lb-build-btn");
+	const say = (t) => {
+		const el = document.getElementById("lb-build-msg");
+		if (el) el.textContent = t;
+	};
+	try {
+		const { data: games } = await thePagesDb.theHallOfFamesGames.theFinishedGamesThisGameMasterRuns(currentUser.id);
+		const res = [];
+		for (let from = 0;; from += 1e3) {
+			const { data, error } = await thePagesDb.theStatistics.theGameOfEveryResultFromRowToRow(from, from + 999);
+			if (error) {
+				say("Could not read the finished games: " + error.message);
+				return 0;
+			}
+			res.push(...data ?? []);
+			if (!data || data.length < 1e3) break;
+		}
+		const withResults = new Set(res.map((r) => r.game_id));
+		const { data: have } = await thePagesDb.theHallOfFame.theGameOfEveryEntry();
+		const done = new Set((have ?? []).map((r) => r.game_id));
+		const todo = [...withResults].filter((id) => force || !done.has(id));
+		if (!todo.length) {
+			say("Every finished game already has a Hall-of-Fame record.");
+			return 0;
+		}
+		if (btn) Reflect.set(btn, "disabled", true);
+		_lbProfCache = null;
+		_lbTally.games = _lbTally.humans = _lbTally.uids = _lbTally.named = 0;
+		let n = 0;
+		for (const [i, id] of todo.entries()) {
+			say(`Building ${String(i + 1)} of ${String(todo.length)}…`);
+			if (await writeGameRecord(id, { gameRow: (games ?? []).find((x) => inWords(x.id) === id) ?? null })) n++;
+		}
+		const el = document.getElementById("lb-build-msg");
+		const t = _lbTally;
+		const out = [kcHtml`Recorded ${n} game${n !== 1 ? "s" : ""} · ${t.humans} human realm${t.humans !== 1 ? "s" : ""} · ${t.uids} with a player account · <strong>${t.named} with a name</strong> · built by <code>${KC_BUILD_STAMP} lb${KC_LB_V}</code>`];
+		if (t.humans && !t.named) out.push(kcHtml`<div class="msg-warning" style="margin-top:6px"><strong>No player names were resolved.</strong> A player's name lives in the <code>profiles</code> table (<code>game_players.display_name</code> is their realm), and this build could not read one for any of them.${_lbProfErr ? kcHtml` The table said: <em>${_lbProfErr}</em>.` : ""}<br>Either those accounts have no name saved — each player can set one with <strong>✏ Change Display Name</strong> in the player portal — or this GM account cannot read <code>profiles</code> under its Row-Level Security policy (the same policy the invite picker needs).</div>`);
+		else if (t.uids > t.named) out.push(kcHtml` <span style="color:#8a5a00">(${t.uids - t.named} account${t.uids - t.named !== 1 ? "s have" : " has"} no name saved yet)</span>`);
+		if (el) el.innerHTML = String(kcHtml`${out}`);
+		else say(String(kcHtml`${out}`));
+		if (btn) Reflect.set(btn, "disabled", false);
+		return n;
+	} catch (e) {
+		say("Failed: " + asAPlusWritesIt(theMessageOrTheValueCaught(e)));
+		if (btn) Reflect.set(btn, "disabled", false);
+		return 0;
+	}
+}
+function buildGameResultRows(gs, gameRow, players) {
+	if (!gs?.players) return [];
+	const bots = new Set((players ?? []).filter(isBotRow).map((p) => p.player_index));
+	const { rank } = telRankOrder(gs);
+	const go = gs.gameOver ?? {};
+	const victory = go.byReckoning ? "reckoning" : go.byElimination ? "elimination" : go.byConcession ? "concession" : gs.gameOver ? "other" : "unfinished";
+	const setup = {
+		mapSize: thisOrElse(thisOrElseWhatIsMade(gs.mapSize, () => gameMetaOf(gameRow)?.["mapSize"]), null),
+		cols: gs.world ? gs.world.cols : gs.world,
+		rows: gs.world ? gs.world.rows : gs.world,
+		seaPct: gs.seaPct ?? (gs.world ? gs.world.seaPct : gs.world),
+		realms: gs.players.length,
+		bots: bots.size,
+		humans: gs.players.length - bots.size,
+		difficulty: telBotDifficultyOf(gs),
+		diplomacy: gs.botDiplomacy === "hostile" ? "hostile" : "normal"
+	};
+	const standingsAtTheEnd = gs.gameOver?.standings ?? [];
+	return gs.players.map((pl, pi) => {
+		if (!pl) return null;
+		const snap = telRealmSnapshot(gs, pi);
+		let outTurn = null, outHow = null;
+		if (pl.conceded) {
+			outTurn = (pl.concededTurn ?? 0) || null;
+			outHow = "conceded";
+		} else if (pl._eliminated) {
+			outTurn = (pl._eliminatedTurn ?? 0) || null;
+			outHow = "eliminated";
+		}
+		return {
+			game_id: inWords(gameRow.id),
+			game_name: (gameRow.name ?? "") || null,
+			player_index: pi,
+			is_bot: bots.has(pi),
+			bot_difficulty: bots.has(pi) ? telBotDifficultyOf(gs) : null,
+			realm: pl.name || null,
+			race: pl.race || null,
+			alignment: pl.alignment || null,
+			rank: (rank[pi] ?? 0) || null,
+			score: Math.round(Number(standingsAtTheEnd.find((s) => s?.index === pi)?.score ?? 0)),
+			winner: go.winner === pi,
+			victory,
+			turns: (go.turn ?? 0) || (gs.turn ?? 0) || 0,
+			out_turn: outTurn,
+			out_how: outHow,
+			setup,
+			final: snap,
+			build: `GM ${KC_BUILD_STAMP} tel${String(KC_TEL_V)}`
+		};
+	}).filter((row) => row !== null);
+}
+async function writeGameResults(gs, gameRow, players) {
+	if (!_kcHasTel) return false;
+	const rows = buildGameResultRows(gs, gameRow, players);
+	if (!rows.length) return false;
+	const { error } = await thePagesDb.theStatistics.writeTheseResults(rows);
+	if (error) {
+		_kcTelLastErr = error.message;
+		renderTelemetryBanner();
+		return false;
+	}
+	return true;
+}
+async function backfillGameResults() {
+	if (!_kcHasTel || !currentUser) return 0;
+	try {
+		const { data: games, error } = await thePagesDb.theHallOfFamesGames.theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns(currentUser.id);
+		if (error || !games?.length) return 0;
+		const { data: have } = await thePagesDb.theStatistics.theGamesOfTheseGamesResults(games.map((g) => inWords(g.id)));
+		const done = new Set((have ?? []).map((r) => r.game_id));
+		let n = 0;
+		for (const g of games) {
+			if (done.has(inWords(g.id))) continue;
+			const { data: full } = await thePagesDb.theHallOfFamesGames.thisGamesIdNameAndWorldWithEveryColumnOfItsRealms(g.id);
+			if (!full) continue;
+			const gs = parseGameState(full);
+			if (typeof gs !== "object" || gs === null || !theField(gs, "players")) continue;
+			if (await writeGameResults(gs, full, thisGamesSlotsWithEveryColumn(full))) n++;
+		}
+		if (n) console.log(`[telemetry] recorded results for ${String(n)} finished game(s)`);
+		return n;
+	} catch {
+		return 0;
+	}
+}
+/** A game's slots, every column, as its read gives them, `full.game_players || []`. */
+function thisGamesSlotsWithEveryColumn(full) {
+	return full.game_players ?? [];
+}
+async function writeTurnTelemetry(gs, gameRow, players, tel, turn) {
+	if (!_kcHasTel || !gs?.players) return false;
+	const bots = new Set((players ?? []).filter(isBotRow).map((p) => p.player_index));
+	const { rank, standings } = telRankOrder(gs);
+	const rows = [];
+	gs.players.forEach((pl, pi) => {
+		if (!pl) return;
+		const post = telRealmSnapshot(gs, pi);
+		if (post) post._score = (standings.standings[pi]?.score ?? 0) || 0;
+		if (post) {
+			const held = [];
+			TITLE_DEFS.forEach((t) => {
+				const h = standings.titles[t.key];
+				if (h?.playerIndex !== pi || !(h.merit > 0)) return;
+				const charId = h.charId;
+				const ch = charId != null ? (gs.characters ?? []).find((c) => c?.id === charId) : null;
+				held.push({
+					key: t.key,
+					merit: Math.round(h.merit * 100) / 100,
+					who: ch ? ch.name : null
+				});
+			});
+			if (held.length) post.titles = held;
+		}
+		const pre = tel.pre?.[pi] ?? null;
+		rows.push({
+			game_id: inWords(gameRow.id),
+			turn,
+			player_index: pi,
+			is_bot: bots.has(pi),
+			bot_difficulty: bots.has(pi) ? telBotDifficultyOf(gs) : null,
+			realm: pl.name || null,
+			race: pl.race || null,
+			alignment: pl.alignment || null,
+			orders: tel.orders?.[pi] ?? null,
+			pre,
+			post,
+			outcomes: telOutcomesFor(gs, pi, tel, pre, post, rank[pi]),
+			build: `GM ${KC_BUILD_STAMP} tel${String(KC_TEL_V)}`
+		});
+	});
+	const { error } = await thePagesDb.theStatistics.writeTheseTurnRecords(rows);
+	if (error) {
+		_kcTelLastErr = error.message;
+		renderTelemetryBanner();
+		return false;
+	}
+	_kcTelLastErr = null;
+	if (gs.gameOver) {
+		await writeGameResults(gs, gameRow, players);
+		try {
+			await writeGameRecord(gameRow.id, {
+				gameRow,
+				players,
+				gs
+			});
+		} catch {}
+	}
+	return true;
+}
 // src/engine/bots/schools.ts
 var BOT_SCHOOLS = [
 	"elemental",
@@ -50489,18 +50845,6 @@ var BOT_SPECIALIST_SKILLS = {
 	slayer: "melee",
 	mage: "magic"
 };
-// src/engine/rules-on-plain-values/a-copy-made-through-json-and-typed-as-its-original.ts
-/** A copy of `value` made through JSON, as the Hunting Rumours fight on: the copy has the original's type once
-*  `itsJsonIsTheOriginals` has found its JSON the same as the original's (Theo's form, 2026-10-30, plan P1-10b14). */
-function aCopyMadeThroughJson(value) {
-	const copy = JSON.parse(JSON.stringify(value));
-	if (!itsJsonIsTheOriginals(copy, value)) throw new Error("a copy made through JSON differs from its original");
-	return copy;
-}
-/** Whether a copy's JSON is its original's: the check that types a copy made through JSON as its original. */
-function itsJsonIsTheOriginals(copy, original) {
-	return JSON.stringify(copy) === JSON.stringify(original);
-}
 // src/engine/bots/the-name-of-a-spell-by-its-slug.ts
 var THE_NAME_OF_EACH_SLUG = new Map([...Object.entries(SPELL_EFFECTS_THE_REGISTRY_HOLDS), ...Object.entries(ACTION_SPELLS_THE_REGISTRY_HOLDS_NO_EFFECT_FOR)].map(([slug, row]) => [slug, row.name]));
 /** The name SPELL_DEFS_P keys the spell by (the name an order's `target` and a save hold), for the slug the content
@@ -62931,6 +63275,22 @@ function heroOfTheRealm(G, pi, charId) {
 	const ch = theCharactersOf$1(G).find((c) => c && String(c.id) === key);
 	return ch?.player === pi ? ch : null;
 }
+/** What the GM's line lists of the heroes a realm sent orders for outside its service, from the keys as it sent them (in
+*  the order met): each key that is a hero of the game (any realm's, or one with no realm) by the hero's name, then
+*  the rest counted ("Brannoc, and 2 more that name no hero in the game"). */
+function theHeroesNamedAndTheRestCounted(G, keys) {
+	const names = [];
+	let theRest = 0;
+	keys.forEach((key) => {
+		const ch = /^\d+$/.test(key) ? theCharactersOf$1(G).find((c) => c && String(c.id) === key) : void 0;
+		if (ch) names.push(ch.name);
+		else theRest++;
+	});
+	if (theRest === 0) return names.join(", ");
+	const nameOrNames = theRest === 1 ? "names" : "name";
+	const theRestCounted = names.length ? `and ${String(theRest)} more that ${nameOrNames} no hero in the game` : `${String(theRest)} that ${nameOrNames} no hero in the game`;
+	return [...names, theRestCounted].join(", ");
+}
 /** The actions of an encounter a plan may name by their code alone, beside those a duel keeps (`COMBAT_ONLY_TACTICS`:
 *  Melee, Fire Arrow, Cast Spell and Flee, with an older form's names for them): Talk, Steal and Scout, as personal
 *  combat reads them (pcAct), each by its code and its name. */
@@ -63246,7 +63606,7 @@ function mergeTheRealmsSubmittedOrdersDeclarationsMessagesAndEncounterPlans(turn
 				delete ch._pendingSkillAllocation;
 			}
 		});
-		if (notItsOwn.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: what it sent for heroes not in its service (${notItsOwn.join(", ")}).`);
+		if (notItsOwn.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: what it sent for heroes not in its service (${theHeroesNamedAndTheRestCounted(G, notItsOwn)}).`);
 		if (notInAFormTheGameUses.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: orders not in a form the game uses, for heroes ${notInAFormTheGameUses.join(", ")}; each Defends in that phase instead.`);
 		if (planPartsSetAside.length) staleOrderWarnings.push(`⚠ Set aside from ${realmName}'s orders: parts of encounter plans that are not among what the game offers, for heroes ${planPartsSetAside.join(", ")}; each keeps the rest of his plan.`);
 	});
@@ -75121,7 +75481,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 						type: "explore",
 						fact: {
 							kind: "the lore of the items a lair gave up",
-							items: theItemsAsTheirLoreIsTold([bonus])
+							items: theItemsAsTheirLoreIsTold([bonus], itemLore)
 						},
 						audience: {
 							actor: c.player,
@@ -75163,7 +75523,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					type: "explore",
 					fact: {
 						kind: "the lore of the items a lair gave up",
-						items: theItemsAsTheirLoreIsTold([it])
+						items: theItemsAsTheirLoreIsTold([it], itemLore)
 					},
 					audience: {
 						actor: c.player,
@@ -75217,7 +75577,7 @@ function resolveSearchLairOrder(turnContext, c, ph, target, prov, player) {
 					type: "explore",
 					fact: {
 						kind: "the lore of the items a lair gave up",
-						items: theItemsAsTheirLoreIsTold([it])
+						items: theItemsAsTheirLoreIsTold([it], itemLore)
 					},
 					audience: {
 						actor: c.player,
@@ -84277,7 +84637,7 @@ function processOrder(turnContext, c, o, ph) {
 	const extra = o.extra || "";
 	const prov = provOf(turnContext, c);
 	const player = c.player === null ? void 0 : G.players[c.player];
-	if ((action === "move" || action === "encounter" || action === "pursue") && prov && prov._battleUnresolved && (asItsGuardReadsIt(c.armies) ?? []).length > 0) {
+	if ((action === "move" || action === "encounter") && prov && prov._battleUnresolved && (asItsGuardReadsIt(c.armies) ?? []).length > 0) {
 		if ((asItsGuardReadsIt(G.characters) ?? []).some((x) => x && (x.alive || x._leaderlessHost) && x.id !== c.id && x.location === prov.id && (asItsGuardReadsIt(x.armies) ?? []).length > 0 && (x.player == null || x.player !== c.player && areEnemies(turnContext, c.player, x.player))) || prov.owner !== c.player && (asItsGuardReadsIt(prov.neutralDefenders) ?? []).length > 0) {
 			emit(turnContext, {
 				type: "combat",
@@ -90314,6 +90674,10 @@ function _art(n) {
 	if (n.endsWith("s")) return n;
 	return (/^[aeiou]/i.test(n) ? "an " : "a ") + n;
 }
+/** One chronicle line for each item a lair gave up: "📜 The Blade of Fury — <its lore>", a relic marked LEGENDARY. */
+function theWordsOfTheItemsLore(items) {
+	return items.map((d) => `📜 The ${d.name}${isLegendaryItem(d) ? " (LEGENDARY)" : ""} — ${d.lore}`).join("\n");
+}
 /** What a site found is: an ancient ritual site, or guarded by its guardian. */
 function _rtTail(f) {
 	return f.isARitualSite ? `It is an ancient ritual site of the old gods — no guardian lairs here.` : `Legend says it is guarded by ${_art(f.guardianName)}.`;
@@ -90384,7 +90748,7 @@ function theWordsOfTheExploreAndSearchOrdersLine(fact) {
 		case "a hero notes how he carries what a lair gave up": return theWordsOfTheItemsAHeroGained(fact.theItemsHeGained);
 		case "a thief cannot get near a hoard's magic": return `${fact.heroName} eyes the hoard's magic but cannot get near it. ${fmtRoll(fact.chance, fact.roll)}`;
 		case "the realm's lore yields an extra find": return `Your realm's lore yields an extra find: the ${fact.itemName}!`;
-		case "the lore of the items a lair gave up": return itemLoreLines(fact.items);
+		case "the lore of the items a lair gave up": return theWordsOfTheItemsLore(fact.items);
 		case "a hero clears a lair and hauls out its magic": return `Victory! ${fact.heroName} claims ${String(fact.gold)}g from the ${fact.siteName} and hauls out ${itemNameList(fact.items, false)}.`;
 		case "among the bones a hero recovers what the fallen left": return `Among the bones of the fallen, ${fact.heroName} recovers ${itemNameList(fact.items, false)}.`;
 		case "a hero clears a lair that holds no magic": return `Victory! ${fact.heroName} claims ${String(fact.gold)}g from the ${fact.siteName}, though the lair holds no magic${fact.stolenItemNames.length ? ` — a thief got here first and lifted ${fact.stolenItemNames.join(", ")}` : ""}.`;
@@ -91683,11 +92047,46 @@ function buildReports(whatTheReportsRead) {
 	};
 }
 // src/ui/gm/turn-shell.ts
-async function runTurn(opts) {
-	opts = opts || {};
+/** The world resolveTurn hands back in words, parsed: an object, as the words of a game's state always are; its fields
+*  are read as its type claims (a maintainer's answer, 14 November). */
+function isTheWorldAsTheShellSavesIt(world) {
+	return typeof world === "object" && world !== null;
+}
+/** The world the turn left, parsed from its words: one that is no object (never: the words are a game's state) throws a
+*  TypeError, as reading or writing its turn mode did. */
+function theWorldTheTurnLeft(words) {
+	const world = JSON.parse(words);
+	if (isTheWorldAsTheShellSavesIt(world)) return world;
+	throw new TypeError(`Cannot read properties of ${String(world)} (reading 'turnMode')`);
+}
+/** The game to run, where the code reads it unguarded: none throws the TypeError reading its turn threw. */
+function theGameToRun(game) {
+	if (game === null) throw new TypeError("Cannot read properties of null (reading 'turn')");
+	return game;
+}
+/** The realms as loaded: none throws the TypeError filtering them threw. */
+function theRealmsAsLoaded(realms) {
+	if (realms === null) throw new TypeError("Cannot read properties of null (reading 'filter')");
+	return realms;
+}
+/** The realm's row as loaded, for the slot row a report is for: the turn keeps the rows it is handed as they are, so the
+*  report's row is one of them (none throws). */
+function theLoadedRowOf(realms, slot) {
+	const row = realms.find((r) => r === slot);
+	if (row === void 0) throw new TypeError("the report is for a realm the turn was not handed");
+	return row;
+}
+/** What a telemetry write threw, in the words the game list shows: its message, else itself in words. */
+function theTelemetrysFailureInWords(e) {
+	const message = e ? Reflect.get(Object(e), "message") : e;
+	if (message) return message;
+	return String(e);
+}
+async function runTurn(optsHanded) {
+	const opts = optsHanded ?? {};
 	const auto = !!opts.auto;
-	const gameRow = opts.game || currentGame;
-	const viewing = !!(currentGame && gameRow && currentGame.id === gameRow.id);
+	const gameRow = opts.game ?? currentGame;
+	const viewing = currentGame != null && currentGame.id === gameRow?.id;
 	const _detailMsg = document.getElementById("detail-msg");
 	const msg = !auto && _detailMsg ? _detailMsg : {
 		_v: "",
@@ -91696,12 +92095,13 @@ async function runTurn(opts) {
 		},
 		set innerHTML(v) {
 			this._v = v;
-			if (v) setAutoTurnStatus(kcHtml`<strong>⚙️ Auto-turn watcher</strong> · ${gameRow.name || ""} (${opts.reason || "auto"})<br>${v}`);
-			if (viewing && _detailMsg) _detailMsg.innerHTML = v;
+			if (v) setAutoTurnStatus(kcHtml`<strong>⚙️ Auto-turn watcher</strong> · ${theGame.name || ""} (${(opts.reason ?? "") || "auto"})<br>${v}`);
+			if (viewing && _detailMsg) _detailMsg.innerHTML = String(v);
 		}
 	};
-	const expectedTurnToRun = gameRow.turn;
-	if (!auto && !confirm(`Run Turn ${expectedTurnToRun}? This will resolve all submitted orders and advance the game. This cannot be undone.`)) {
+	const theGame = theGameToRun(gameRow);
+	const expectedTurnToRun = theGame.turn;
+	if (!auto && !confirm(`Run Turn ${String(expectedTurnToRun)}? This will resolve all submitted orders and advance the game. This cannot be undone.`)) {
 		msg.innerHTML = "";
 		return {
 			ok: false,
@@ -91719,10 +92119,10 @@ async function runTurn(opts) {
 	let seed = null;
 	let theSavesCheck = "";
 	try {
-		const { data: freshGame, error: gErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.thisGameEveryColumn(gameRow.id);
-		const { data: freshPlayers, error: pErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.everyRealmOfThisGame(gameRow.id);
+		const { data: freshGame, error: gErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.thisGameEveryColumn(theGame.id);
+		const { data: freshPlayers, error: pErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.everyRealmOfThisGame(theGame.id);
 		if (gErr || pErr || !freshGame) {
-			msg.innerHTML = kcHtml`<div class="msg-error">Could not load game: ${gErr?.message || pErr?.message}</div>`;
+			msg.innerHTML = kcHtml`<div class="msg-error">Could not load game: ${(gErr?.message ?? "") || pErr?.message}</div>`;
 			return {
 				ok: false,
 				committed: false,
@@ -91748,12 +92148,13 @@ async function runTurn(opts) {
 				error: whyTheSavesCheckStoppedTheTurnInWords(theStop)
 			};
 		}
-		ordersSnapshot = freshPlayers.filter((p) => p.user_id && p.orders).map((p) => ({
+		const realmsLoaded = theRealmsAsLoaded(freshPlayers);
+		ordersSnapshot = realmsLoaded.filter((p) => p.user_id && p.orders).map((p) => ({
 			id: p.id,
 			orders: p.orders,
-			submitted: !!p.orders_submitted
+			submitted: Boolean(asItsGuardReadsIt(p.orders_submitted))
 		}));
-		const { error: clearErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.clearTheOrdersOfEveryRealmOfThisGame(gameRow.id);
+		const { error: clearErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.clearTheOrdersOfEveryRealmOfThisGame(theGame.id);
 		if (clearErr) {
 			msg.innerHTML = kcHtml`<div class="msg-error">Could not start Turn ${expectedTurnToRun}: the submitted orders could not be cleared (${clearErr.message}). Nothing was changed, and the orders are still in. Try again.</div>`;
 			return {
@@ -91764,13 +92165,13 @@ async function runTurn(opts) {
 			};
 		}
 		_ordersCleared = true;
-		const playersWithOrders = freshPlayers.filter((p) => p.user_id && p.orders).length;
+		const playersWithOrders = realmsLoaded.filter((p) => p.user_id && p.orders).length;
 		msg.innerHTML = kcHtml`<div class="msg-info">⏳ Loaded orders from ${playersWithOrders} player${playersWithOrders !== 1 ? "s" : ""}. Resolving 5 phases…</div>`;
 		msg.innerHTML = kcHtml`<div class="msg-info">⏳ Resolving 5 phases…</div>`;
 		seed = Math.floor(kcRng() * 2 ** 32) || 1;
-		const resolved = resolveTurn(freshGame.game_state, freshPlayers, expectedTurnToRun, seed);
+		const resolved = resolveTurn(freshGame.game_state, realmsLoaded, expectedTurnToRun, seed);
 		msg.innerHTML = kcHtml`<div class="msg-info">⏳ Saving game state…</div>`;
-		G = JSON.parse(resolved.state);
+		G = theWorldTheTurnLeft(resolved.state);
 		{
 			const _tm = normalizeTurnMode(G.turnMode);
 			_tm.turnRanAt = kcClock.date().toISOString();
@@ -91778,7 +92179,7 @@ async function runTurn(opts) {
 			G.turnMode = _tm;
 		}
 		_saveSent = true;
-		const { data: _savedRow, error: saveErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.saveThisGameWhileOnThisTurnAndAnswerItsId(gameRow.id, expectedTurnToRun, {
+		const { data: _savedRow, error: saveErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.saveThisGameWhileOnThisTurnAndAnswerItsId(theGame.id, expectedTurnToRun, {
 			game_state: JSON.stringify(G),
 			...metaPatch(G),
 			turn: G.turn,
@@ -91787,36 +92188,37 @@ async function runTurn(opts) {
 		if (saveErr) throw new Error(`Error saving: ${saveErr.message}`);
 		if (!_savedRow) {
 			_saveConflict = true;
-			throw new Error(`Turn ${expectedTurnToRun} was already run elsewhere (another GM tab or device) — this run was discarded.`);
+			throw new Error(`Turn ${String(expectedTurnToRun)} was already run elsewhere (another GM tab or device) — this run was discarded.`);
 		}
 		_turnCommitted = true;
 		msg.innerHTML = kcHtml`<div class="msg-info">⏳ Generating turn reports…</div>`;
 		resolved.spyStealthAndInvisibilityStampedForTheReports();
 		const { reports, tel, gmLog } = buildReports(resolved.whatTheReportsRead());
-		let reportErrors = [];
+		const reportErrors = [];
 		for (const { gp, report } of reports) {
-			report.engineStamp = typeof runningBuildStamp === "function" ? runningBuildStamp() : null;
-			const { error: rErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.giveThisRealmItsTurnReport(gp.id, JSON.stringify(report));
-			if (rErr) reportErrors.push(gp.player_index + ": " + rErr.message);
+			const theReportStamped = report;
+			theReportStamped.engineStamp = runningBuildStamp();
+			const { error: rErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.giveThisRealmItsTurnReport(theLoadedRowOf(realmsLoaded, gp).id, JSON.stringify(report));
+			if (rErr) reportErrors.push(String(gp.player_index) + ": " + rErr.message);
 			try {
 				await thePagesDb.theTurnAsTheGameMasterRunsIt.writeThisLog({
-					game_id: gameRow.id,
+					game_id: theGame.id,
 					player_index: gp.player_index,
 					turn: G.turn - 1,
 					entries: report
 				});
-			} catch (snapErr) {}
+			} catch {}
 		}
 		await thePagesDb.theTurnAsTheGameMasterRunsIt.writeThisLog({
-			game_id: gameRow.id,
+			game_id: theGame.id,
 			player_index: -1,
 			turn: G.turn - 1,
 			entries: gmLog
 		});
 		try {
-			await writeTurnTelemetry(tel.gs, gameRow, freshPlayers, tel.collected, G.turn - 1);
+			await writeTurnTelemetry(tel.gs, theGame, realmsLoaded, tel.collected, G.turn - 1);
 		} catch (_te) {
-			_kcTelLastErr = _te && _te.message || String(_te);
+			_kcTelLastErr = theTelemetrysFailureInWords(_te);
 			console.warn("telemetry:", _te);
 		}
 		theSavesCheck = resolved.whereTheSaveDiffersFromThisBuildsSchema.length ? kcHtml`<div class="msg-error">⚠ ${whatTheSavesCheckFoundInWords(resolved.whereTheSaveDiffersFromThisBuildsSchema)}</div>` : "";
@@ -91832,9 +92234,9 @@ async function runTurn(opts) {
 		if (_saveSent && !_turnCommitted && !_saveConflict) {
 			let _turnNow = null;
 			try {
-				const { data: _g, error: _gErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.theTurnOfThisGameIfItIsThere(gameRow.id);
+				const { data: _g, error: _gErr } = await thePagesDb.theTurnAsTheGameMasterRunsIt.theTurnOfThisGameIfItIsThere(theGame.id);
 				if (!_gErr && _g) _turnNow = _g.turn;
-			} catch (_re) {}
+			} catch {}
 			if (_turnNow == null) _saveUnknown = true;
 			else if (_turnNow !== expectedTurnToRun) {
 				_turnCommitted = true;
@@ -91843,27 +92245,30 @@ async function runTurn(opts) {
 		}
 		let _restoreFailed = false;
 		if (_ordersCleared && !_saveConflict && !_turnCommitted && !_saveUnknown && ordersSnapshot.length > 0) try {
-			_restoreFailed = (await Promise.all(ordersSnapshot.map((snap) => thePagesDb.theTurnAsTheGameMasterRunsIt.putBackThisRealmsOrders(snap.id, snap.orders, snap.submitted)))).some((r) => r && r.error);
-		} catch (_re) {
+			_restoreFailed = (await Promise.all(ordersSnapshot.map((snap) => thePagesDb.theTurnAsTheGameMasterRunsIt.putBackThisRealmsOrders(snap.id, snap.orders, snap.submitted)))).some((r) => asItsGuardReadsIt(r) && r.error);
+		} catch {
 			_restoreFailed = true;
 		}
-		const _why = _saveConflict ? "Nothing was changed by this run." : _savedAnyway ? `The save answered with an error, but the game has moved on: Turn ${expectedTurnToRun} WAS saved. The orders for that turn are spent and have not been restored. No turn reports were sent; re-push reports or check the browser console (F12).` : _turnCommitted ? `Turn ${expectedTurnToRun} WAS resolved and saved — the failure came after the save, while writing reports. The orders for that turn are spent and have not been restored. Players may be missing this turn's report; re-push reports or check the browser console (F12).` : _saveUnknown ? `The save may or may not have gone through, and the game could not be read again to tell. The orders have NOT been restored, so the turn can't run twice. Reload the page: if the game is on Turn ${expectedTurnToRun + 1}, the turn was saved; if it is still on Turn ${expectedTurnToRun}, ask the players to send their orders again.` : !_ordersCleared ? "Nothing was changed by this run." : _restoreFailed ? "Check browser console (F12) for full details. The orders could NOT all be restored: ask the players to send theirs again." : "Check browser console (F12) for full details. Your orders have been restored.";
-		msg.innerHTML = kcHtml`<div class="msg-error">⚠ Resolution error: ${e.message}<br><small>${_why}</small></div>`;
+		const _why = _saveConflict ? "Nothing was changed by this run." : _savedAnyway ? `The save answered with an error, but the game has moved on: Turn ${String(expectedTurnToRun)} WAS saved. The orders for that turn are spent and have not been restored. No turn reports were sent; re-push reports or check the browser console (F12).` : _turnCommitted ? `Turn ${String(expectedTurnToRun)} WAS resolved and saved — the failure came after the save, while writing reports. The orders for that turn are spent and have not been restored. Players may be missing this turn's report; re-push reports or check the browser console (F12).` : _saveUnknown ? `The save may or may not have gone through, and the game could not be read again to tell. The orders have NOT been restored, so the turn can't run twice. Reload the page: if the game is on Turn ${String(expectedTurnToRun + 1)}, the turn was saved; if it is still on Turn ${String(expectedTurnToRun)}, ask the players to send their orders again.` : !_ordersCleared ? "Nothing was changed by this run." : _restoreFailed ? "Check browser console (F12) for full details. The orders could NOT all be restored: ask the players to send theirs again." : "Check browser console (F12) for full details. Your orders have been restored.";
+		msg.innerHTML = kcHtml`<div class="msg-error">⚠ Resolution error: ${theField(e, "message")}<br><small>${_why}</small></div>`;
 		return {
 			ok: false,
 			committed: _turnCommitted,
 			conflict: _saveConflict,
-			error: e.message,
+			error: theField(e, "message"),
 			seed
 		};
 	}
 	if (viewing) {
-		currentGame.turn = G.turn;
-		currentGame.status = G.gameOver ? "complete" : "active";
-		setTimeout(() => openGame(currentGame.id).then(() => {
-			const shown = document.getElementById("detail-msg");
-			if (theSavesCheck && shown && !shown.innerHTML) shown.innerHTML = theSavesCheck;
-		}), 2e3);
+		const theGameOpen = theGameOpenNow("set properties of null (setting 'turn')");
+		theGameOpen.turn = G.turn;
+		theGameOpen.status = G.gameOver ? "complete" : "active";
+		setTimeout(() => {
+			openGame(theGameOpenNow("read properties of null (reading 'id')").id).then(() => {
+				const shown = document.getElementById("detail-msg");
+				if (theSavesCheck && shown && !shown.innerHTML) shown.innerHTML = String(theSavesCheck);
+			});
+		}, 2e3);
 	} else if (auto && document.getElementById("sec-games")?.classList.contains("section-active")) loadGames();
 	return {
 		ok: true,
@@ -91873,6 +92278,11 @@ async function runTurn(opts) {
 	};
 }
 // src/ui/gm/auto-turn.ts
+/** The signed-in account, where the code reads it unguarded: for none, the TypeError reading its address threw. */
+function theSignedInAccount() {
+	if (currentUser === null) throw new TypeError("Cannot read properties of null (reading 'email')");
+	return currentUser;
+}
 var AUTO_WATCH_MS = 6e4;
 globalThis._autoWatcherTimer = null;
 globalThis._autoRunBusy = false;
@@ -91886,47 +92296,53 @@ function _autoLease(gameId, take) {
 			localStorage.removeItem(key);
 			return true;
 		}
-		const cur = JSON.parse(localStorage.getItem(key) || "null");
-		if (cur && cur.tab !== _tabId && Date.now() - cur.at < 12e5) return false;
+		const cur = JSON.parse((localStorage.getItem(key) ?? "") || "null");
+		if (cur && theField(cur, "tab") !== _tabId && Date.now() - Number(theField(cur, "at")) < 12e5) return false;
 		localStorage.setItem(key, JSON.stringify({
 			tab: _tabId,
 			at: Date.now()
 		}));
 		return true;
-	} catch (e) {
+	} catch {
 		return true;
 	}
 }
 async function refreshIfNewerBuild(g) {
-	const key = g.id + ":" + g.turn;
+	const key = g.id + ":" + String(g.turn);
 	try {
 		if (sessionStorage.getItem("kc_autorefresh") === key) return false;
-	} catch (e) {
+	} catch {
 		return false;
 	}
 	const newer = await checkForANewerVersion();
 	if (!newer) return false;
 	try {
 		sessionStorage.setItem("kc_autorefresh", key);
-	} catch (e) {
+	} catch {
 		return false;
 	}
 	setAutoTurnStatus(kcHtml`<strong>⚙️ Auto-turn watcher</strong> · a newer build of the GM portal is ready (build ${newer.commit.slice(0, 7)}) — reloading this tab before running ${g.name || "the game"} Turn ${g.turn}…`);
-	setTimeout(() => location.reload(), 400);
+	setTimeout(() => {
+		location.reload();
+	}, 400);
 	return true;
 }
 function startAutoTurnWatcher() {
 	if (_autoWatcherTimer) return;
-	_autoWatcherTimer = setInterval(autoTurnTick, AUTO_WATCH_MS);
-	setTimeout(autoTurnTick, 3e3);
+	_autoWatcherTimer = setInterval(() => {
+		autoTurnTick();
+	}, AUTO_WATCH_MS);
+	setTimeout(() => {
+		autoTurnTick();
+	}, 3e3);
 }
 async function autoTurnTick() {
 	if (!currentUser || _autoRunBusy) return;
 	_autoRunBusy = true;
 	try {
-		const { data, error } = _kcHasMeta ? await thePagesDb.theGameMastersGames.theActiveGamesThisGameMasterRuns(currentUser.id) : await thePagesDb.theGameMastersGames.theActiveGamesThisGameMasterRunsEveryColumn(currentUser.id);
-		if (error || !data) return;
-		const watched = data.filter((g) => !gameArchived(g)).map((g) => ({
+		const { data: theGamesRead, error } = _kcHasMeta ? await thePagesDb.theGameMastersGames.theActiveGamesThisGameMasterRuns(currentUser.id) : await thePagesDb.theGameMastersGames.theActiveGamesThisGameMasterRunsEveryColumn(currentUser.id);
+		if (error || !theGamesRead) return;
+		const watched = theGamesRead.filter((g) => !gameArchived(g)).map((g) => ({
 			g,
 			tm: turnModeOf(g)
 		})).filter((x) => x.tm.mode !== "manual");
@@ -91936,41 +92352,42 @@ async function autoTurnTick() {
 		}
 		const lines = [];
 		for (const { g, tm } of watched) {
-			const r = autoTurnReady(g, g.game_players || [], tm);
+			const r = autoTurnReady(g, asItsGuardReadsIt(g.game_players) ?? [], tm);
 			if (!r.ready) {
-				lines.push(`${g.name}: Turn ${g.turn} — ${r.reason}${tm.mode === "deadline" ? ` · deadline ${fmtDeadline(tm.nextDeadlineAt)}` : ""}`);
+				lines.push(`${g.name}: Turn ${String(g.turn)} — ${r.reason}${tm.mode === "deadline" ? ` · deadline ${fmtDeadline(tm.nextDeadlineAt)}` : ""}`);
 				continue;
 			}
-			if (_autoFailUntil.get(g.id) > Date.now()) {
-				lines.push(`${g.name}: Turn ${g.turn} — paused after a failed run, retrying ${fmtDeadline(new Date(_autoFailUntil.get(g.id)).toISOString())}`);
+			const pausedUntil = _autoFailUntil.get(g.id);
+			if (pausedUntil !== void 0 && pausedUntil > Date.now()) {
+				lines.push(`${g.name}: Turn ${String(g.turn)} — paused after a failed run, retrying ${fmtDeadline(new Date(pausedUntil).toISOString())}`);
 				continue;
 			}
 			if (await refreshIfNewerBuild(g)) return;
 			if (!_autoLease(g.id, true)) {
-				lines.push(`${g.name}: another GM tab is running Turn ${g.turn}`);
+				lines.push(`${g.name}: another GM tab is running Turn ${String(g.turn)}`);
 				continue;
 			}
-			lines.push(`${g.name}: ⏳ running Turn ${g.turn} (${r.reason})…`);
+			lines.push(`${g.name}: ⏳ running Turn ${String(g.turn)} (${r.reason})…`);
 			setAutoTurnStatus(kcHtml`<strong>⚙️ Auto-turn watcher</strong> · checked ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}${lines.map((l) => kcHtml`<br>${l}`)}`);
 			try {
-				if (currentGame && currentGame.id === g.id) {
+				if (currentGame?.id === g.id) {
 					currentGame.turn = g.turn;
 					if (g.game_state !== void 0) currentGame.game_state = g.game_state;
-					if (g.meta !== void 0) currentGame.meta = g.meta;
+					if (asItsGuardReadsIt(g.meta) !== void 0) currentGame.meta = g.meta;
 				}
 				const _res = await runTurn({
 					auto: true,
 					game: g,
 					reason: r.reason
 				});
-				if (_res && _res.ok === false) {
+				if (asItsGuardReadsIt(_res) && !_res.ok) {
 					_autoFailUntil.set(g.id, Date.now() + AUTO_FAIL_COOLDOWN_MS);
-					lines[lines.length - 1] = `${g.name}: ⚠ Turn ${g.turn} failed (${_res.error || "see console"}) — paused for ${Math.round(AUTO_FAIL_COOLDOWN_MS / 6e4)} min`;
+					lines[lines.length - 1] = `${g.name}: ⚠ Turn ${String(g.turn)} failed (${String(thisOrElse(_res.error, "see console"))}) — paused for ${String(Math.round(AUTO_FAIL_COOLDOWN_MS / 6e4))} min`;
 				} else _autoFailUntil.delete(g.id);
 			} catch (e) {
 				console.error("auto-turn error", e);
 				_autoFailUntil.set(g.id, Date.now() + AUTO_FAIL_COOLDOWN_MS);
-				lines[lines.length - 1] = `${g.name}: ⚠ ${e.message} — paused for ${Math.round(AUTO_FAIL_COOLDOWN_MS / 6e4)} min`;
+				lines[lines.length - 1] = `${g.name}: ⚠ ${String(theField(e, "message"))} — paused for ${String(Math.round(AUTO_FAIL_COOLDOWN_MS / 6e4))} min`;
 			} finally {
 				_autoLease(g.id, false);
 			}
@@ -91984,7 +92401,7 @@ async function autoTurnTick() {
 	}
 }
 async function init() {
-	document.getElementById("spinner").style.display = "none";
+	theElementWithTheId("spinner", HTMLElement).style.display = "none";
 	const { data: { session } } = await thePagesDb.signingIn.theSessionKeptInThisBrowser();
 	if (session) {
 		currentUser = session.user;
@@ -91992,31 +92409,31 @@ async function init() {
 	} else show("sec-auth");
 }
 async function doSignIn() {
-	const email = document.getElementById("si-email").value.trim();
-	const pwd = document.getElementById("si-password").value;
+	const email = theElementWithTheId("si-email", HTMLInputElement).value.trim();
+	const pwd = theElementWithTheId("si-password", HTMLInputElement).value;
 	const msg = document.getElementById("auth-msg");
 	if (!email || !pwd) {
-		msg.innerHTML = "<div class=\"msg-error\">Please enter your email and password.</div>";
+		theElementFound$1(msg).innerHTML = "<div class=\"msg-error\">Please enter your email and password.</div>";
 		return;
 	}
-	msg.innerHTML = "<div class=\"msg-info\">Signing in…</div>";
+	theElementFound$1(msg).innerHTML = "<div class=\"msg-info\">Signing in…</div>";
 	const { data, error } = await thePagesDb.signingIn.signInWithEmailAndPassword(email, pwd);
 	if (error) {
 		let m = error.message;
 		if (m.includes("Email not confirmed")) m = "Email not confirmed. In Supabase → Authentication → Providers → Email, turn off \"Confirm email\", then try again. Or confirm your account in Supabase → Authentication → Users.";
 		if (m.includes("Invalid login")) m = "Email or password incorrect.";
-		msg.innerHTML = kcHtml`<div class="msg-error">${m}</div>`;
+		theElementFound$1(msg).innerHTML = String(kcHtml`<div class="msg-error">${m}</div>`);
 		return;
 	}
 	currentUser = data.user;
 	onSignedIn();
 }
 async function onSignedIn() {
-	document.getElementById("gm-email-display").textContent = currentUser.email;
+	theElementWithTheId("gm-email-display", HTMLElement).textContent = theSignedInAccount().email ?? null;
 	if (!await gmPortalAllowed()) return;
-	document.getElementById("gm-role-label").textContent = _kcOverlord ? "Overlord · Master GM" : "Game Master";
-	document.getElementById("new-game-btn").style.display = _kcOverlord ? "none" : "";
-	document.getElementById("overlord-filter-wrap").style.display = _kcOverlord ? "block" : "none";
+	theElementWithTheId("gm-role-label", HTMLElement).textContent = _kcOverlord ? "Overlord · Master GM" : "Game Master";
+	theElementWithTheId("new-game-btn", HTMLElement).style.display = _kcOverlord ? "none" : "";
+	theElementWithTheId("overlord-filter-wrap", HTMLElement).style.display = _kcOverlord ? "block" : "none";
 	show("sec-games");
 	await probeGameMeta();
 	probeTelemetry().then((ok) => {
@@ -92138,7 +92555,6 @@ Object.assign(window, {
 	renderMessagingBanner,
 	renderTelemetryBanner,
 	SAGE_DISCOVERIES_P,
-	sb,
 	unitAbilityMult,
 	unitTypeOf,
 	writeGameRecord

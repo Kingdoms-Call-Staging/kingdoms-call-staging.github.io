@@ -1403,7 +1403,7 @@ function makeTheDbFromItsClient(client) {
 			theNameStatusAndTurnOfTheGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status,turn").eq("gm_user_id", gameMaster),
 			whichOfTheseGamesStillExist: (games) => client.from("games").select("id").in("id", games),
 			theIdNameAndStateOfTheFinishedGamesThisGameMasterRuns: (gameMaster) => client.from("games").select("id,name,status").eq("gm_user_id", gameMaster).eq("status", "complete"),
-			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(*)").eq("id", game).single()
+			thisGamesIdNameAndWorldWithEveryColumnOfItsRealms: (game) => client.from("games").select("id,name,game_state,game_players(player_index,user_id,turn_report)").eq("id", game).single()
 		},
 		theDispatches: {
 			oneDispatchsId: () => client.from("game_messages").select("id").limit(1),
@@ -1425,36 +1425,48 @@ function makeTheDbFromItsClient(client) {
 		},
 		thePlayersRealms: {
 			thisAccountsRealmsAndTheirOrdersFlags: (account) => client.from("game_players").select("id,game_id,player_index,orders_submitted").eq("user_id", account),
-			everyRealmOfThisAccount: (account) => client.from("game_players").select("*").eq("user_id", account),
+			everyRealmOfThisAccount: (account) => client.from("game_players").select("id,game_id,player_index,display_name,orders_submitted").eq("user_id", account),
 			theGamesOfThisAccountsRealms: (account) => client.from("game_players").select("game_id").eq("user_id", account),
 			thisAccountsRealmsInThisGame: (game, account) => client.from("game_players").select("id,player_index").eq("game_id", game).eq("user_id", account),
-			thisRealm: (id) => client.from("game_players").select("*").eq("id", id).single(),
-			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			thisRealm: (id) => client.from("game_players").select("id,game_id,player_index,orders_submitted,turn_report,orders").eq("id", id).single(),
+			joinWithThisRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			theSlotsOfTheseGames: (games) => client.rpc("get_game_slots", { p_games: games })
 		},
 		thePlayersGames: {
 			theTurnAndStateOfTheseGames: (games) => client.from("games").select("id,turn,status").in("id", games),
 			theseGamesForTheirCards: (games) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,created_at,meta").in("id", games),
-			theseGamesEveryColumn: (games) => client.from("games").select("*").in("id", games),
-			theGamesInSetup: () => client.from("games").select("*").eq("status", "setup"),
+			theseGamesEveryColumn: (games) => client.from("games").select("id,name,status,turn,game_state").in("id", games),
+			theGamesInSetup: () => client.from("games").select("id,name,gm_user_id,game_state,max_players").eq("status", "setup"),
 			thisGamesWorldAndState: (game) => client.from("games").select("game_state,status").eq("id", game).single(),
 			thisGameForItsReport: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_players,block_eliminated_msgs").eq("id", game).single(),
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single()
+			thisGameEveryColumn: (game) => client.from("games").select("game_state").eq("id", game).single()
 		},
-		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
+		theChroniclesLogs: { theLogOfThisRealmInThisTurn: (game, turn, realm) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", realm).limit(1) },
 		theOrders: {
-			saveThisRealmsDraft: (realm, orders) => client.from("game_players").update({
-				orders,
-				orders_submitted: false
-			}).eq("id", realm),
-			saveThisRealmsHeroOrder: (realm, orders) => client.from("game_players").update({ orders }).eq("id", realm),
-			reopenThisRealmsOrders: (realm) => client.from("game_players").update({ orders_submitted: false }).eq("id", realm),
-			submitThisRealmsOrders: (realm, orders, submittedAt) => client.from("game_players").update({
-				orders,
-				orders_submitted: true,
-				last_submitted_at: submittedAt
-			}).eq("id", realm),
-			theTurnOfThisGame: (game) => client.from("games").select("turn").eq("id", game).single()
+			saveThisRealmsDraft: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: false
+			}),
+			saveThisRealmsHeroOrder: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: null
+			}),
+			reopenThisRealmsOrders: (game, turn) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: null,
+				p_submitted: false
+			}),
+			submitThisRealmsOrders: (game, turn, orders) => client.rpc("submit_orders", {
+				p_game: game,
+				p_for_turn: turn,
+				p_orders: orders,
+				p_submitted: true
+			})
 		},
 		theGameMastersGames: {
 			oneGamesMeta: () => client.from("games").select("id,meta").limit(1),
@@ -1464,8 +1476,8 @@ function makeTheDbFromItsClient(client) {
 			everyGameNewestFirstFromRowToRowEveryColumn: (from, to) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).order("created_at", { ascending: false }).range(from, to),
 			theActiveGamesThisGameMasterRuns: (gameMaster) => client.from("games").select(A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
 			theActiveGamesThisGameMasterRunsEveryColumn: (gameMaster) => client.from("games").select(EVERY_COLUMN_OF_A_GAME_IN_THE_GAME_MASTERS_LIST).eq("gm_user_id", gameMaster).eq("status", "active"),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single(),
-			makeThisGame: (game) => client.from("games").insert(game).select().single(),
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single(),
+			makeThisGame: (game) => client.from("games").insert(game).select("id").single(),
 			thisGamesTurnAndWorld: (game) => client.from("games").select("id,turn,game_state").eq("id", game).single(),
 			theGamesThisGameMasterRunsWithNoMeta: (gameMaster) => client.from("games").select("id,game_state").eq("gm_user_id", gameMaster).is("meta", null),
 			changeThisGame: (game, change) => client.from("games").update(change).eq("id", game),
@@ -1474,7 +1486,7 @@ function makeTheDbFromItsClient(client) {
 			keepTheRealmsThatAreOutOfThisGameFromSendingDispatches: (game, keep) => client.from("games").update({ block_eliminated_msgs: keep }).eq("id", game).select("id,block_eliminated_msgs").maybeSingle()
 		},
 		theGameMastersRealms: { removeThisRealm: (realm) => client.from("game_players").delete().eq("id", realm) },
-		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("*").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
+		theGameMastersTurnLogs: { theWholeLogOfThisGameInThisTurn: (game, turn) => client.from("turn_logs").select("entries").eq("game_id", game).eq("turn", turn).eq("player_index", -1) },
 		theDeletionOfAGame: {
 			removeThisGamesTurnLogs: (game) => client.from("turn_logs").delete().eq("game_id", game),
 			removeThisGamesDispatches: (game) => client.from("game_messages").delete().eq("game_id", game),
@@ -1486,8 +1498,8 @@ function makeTheDbFromItsClient(client) {
 			removeThisGame: (game) => client.from("games").delete().eq("id", game)
 		},
 		theTurnAsTheGameMasterRunsIt: {
-			thisGameEveryColumn: (game) => client.from("games").select("*").eq("id", game).single(),
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			thisGameEveryColumn: (game) => client.from("games").select("turn,game_state").eq("id", game).single(),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,orders_submitted,turn_report,orders").eq("game_id", game),
 			clearTheOrdersOfEveryRealmOfThisGame: (game) => client.from("game_players").update({
 				orders: null,
 				orders_submitted: false
@@ -1502,9 +1514,9 @@ function makeTheDbFromItsClient(client) {
 			}).eq("id", realm)
 		},
 		theTurnZeroAsTheGameMasterRunsIt: {
-			everyRealmOfThisGame: (game) => client.from("game_players").select("*").eq("game_id", game),
+			everyRealmOfThisGame: (game) => client.from("game_players").select("id,user_id,player_index,display_name,turn_report").eq("game_id", game),
 			removeEveryBotsRealmOfThisGame: (game) => client.from("game_players").delete().eq("game_id", game).is("user_id", null),
-			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select().single(),
+			makeThisBotsRealm: (realm) => client.from("game_players").insert(realm).select("id").single(),
 			startThisGame: (game, change) => client.from("games").update(change).eq("id", game),
 			giveThisRealmItsFirstReport: (realm, report) => client.from("game_players").update({
 				turn_report: report,
@@ -1512,7 +1524,7 @@ function makeTheDbFromItsClient(client) {
 				orders_submitted: false
 			}).eq("id", realm),
 			writeThisLog: (log) => client.from("turn_logs").insert(log),
-			thisGameWithItsRealms: (game) => client.from("games").select("*, game_players(*)").eq("id", game).single()
+			thisGameWithItsRealms: (game) => client.from("games").select("id,name,gm_user_id,status,turn,max_turns,game_state,created_at,max_players,meta,block_eliminated_msgs, game_players(id,game_id,user_id,player_index,display_name,invite_code,orders_submitted,turn_report,orders)").eq("id", game).single()
 		}
 	};
 }
@@ -1534,13 +1546,11 @@ function makeThePagesDatabase(url, key, options) {
 	};
 }
 // src/ui/player/startup.ts
-var KC_DB_MIN = "20261015062128";
+var KC_DB_MIN = "20261115103705";
 if (typeof KC_CONFIG === "undefined") throw new Error("kc-config.js did not load: reload the page.");
 var SUPABASE_URL = KC_CONFIG.supabaseUrl;
 var SUPABASE_ANON_KEY = KC_CONFIG.supabaseKey;
-var thePagesDatabase = makeThePagesDatabase(SUPABASE_URL, SUPABASE_ANON_KEY);
-var sb = thePagesDatabase.client;
-var thePagesDb = thePagesDatabase.db;
+var thePagesDb = makeThePagesDatabase(SUPABASE_URL, SUPABASE_ANON_KEY).db;
 // src/content/mastery-orders-their-keys-names-skills-and-levels.ts
 /** The mastery orders, by key, in the order of MASTERY_ORDER_KEYS. */
 var THE_MASTERY_ORDERS = {
@@ -5493,11 +5503,8 @@ function theFormsReplayOfThePhasesBefore(report, orders, upToPhaseExclusive) {
 	for (let p = 0; p < upToPhaseExclusive; p++) {
 		theItemsAPhasesOrdersHandOver(report, orders, characters, items, byKey, p);
 		const added = theCompaniesAPhasesOrdersAddToEachGarrison(report, orders, armies, p);
-		const next = /* @__PURE__ */ new Map();
 		const goBack = /* @__PURE__ */ new Map();
-		characters.forEach((x) => {
-			next.set(x, theCompaniesAHeroLeadsAfterAPhase(report, orders, armies, garrisons, added, x, p, goBack));
-		});
+		const next = theCompaniesEachHeroLeadsAfterAPhase(report, orders, characters, armies, garrisons, added, p, goBack);
 		theGarrisonsAfterAPhase(report, orders, garrisons, added, p, goBack);
 		armies = next;
 	}
@@ -5637,61 +5644,69 @@ function theGarrisonsAfterAPhase(report, orders, garrisons, added, ph, goBack) {
 		beasts.forEach((a) => garr.push(a));
 	});
 }
-function theCompaniesAHeroLeadsAfterAPhase(report, orders, armies, garrisons, added, char, prevPh, goBack) {
+function theCompaniesEachHeroLeadsAfterAPhase(report, orders, characters, armies, garrisons, added, prevPh, goBack) {
+	const columns = /* @__PURE__ */ new Map();
+	characters.forEach((x) => {
+		columns.set(x, (armies.get(x) ?? []).slice());
+	});
+	const theArmyOrders = [
+		"Recruit Armies",
+		"Pick Up Army",
+		"Leave/Transfer Army",
+		"Disband Army"
+	];
+	const givesAnArmyOrder = (x) => theArmyOrders.includes(theFieldOrNoWords(theOrderField(orders, "action", x.id, prevPh)?.value));
+	if (!characters.some(givesAnArmyOrder)) return columns;
+	theHeroesInTheOrderTheTurnHasThemActInAPhase(report, orders, characters, prevPh).forEach((x) => {
+		theCompaniesAHeroMovesAsHeActs(report, orders, columns, garrisons, added, x, prevPh, goBack);
+	});
+	return columns;
+}
+function theCompaniesAHeroMovesAsHeActs(report, orders, columns, garrisons, added, char, prevPh, goBack) {
 	const charId = char.id;
-	let led = (armies.get(char) ?? []).slice();
+	const columnOf = (x) => theColumnTheReplayGivesHim(columns, x);
+	const asHeActs = (x) => columns.get(x);
 	const prevAction = theFieldOrNoWords(theOrderField(orders, "action", charId, prevPh)?.value);
 	const prevTarget = theFieldOrNoWords(theOrderField(orders, "target", charId, prevPh)?.value);
-	(report.characters ?? []).forEach((o) => {
-		if (o.id === charId) return;
-		const oAct = theFieldOrNoWords(theOrderField(orders, "action", o.id, prevPh)?.value);
-		const oTgt = theFieldOrNoWords(theOrderField(orders, "target", o.id, prevPh)?.value);
-		if (oAct === "Recruit Armies") {
-			const toks = theWordsAFieldHolds(oTgt).split(",").map((t) => t.trim());
-			const musters = whereTheCompaniesARecruitRaisesMuster(report, orders, o, prevPh, toks, toks.find((t) => t.startsWith("to:")) ?? "to:self", (x) => armies.get(x));
-			if (musters.dest === char) musters.toTheColumn.forEach((u) => led.push(u));
-		} else if (oAct === "Leave/Transfer Army") {
-			const oExtra = theFieldOrNoWords(theOrderField(orders, "extra", o.id, prevPh)?.value);
-			if (String(oExtra) !== String(charId)) return;
-			const oArm = theCompaniesTheReplayGivesTheHeroOfId(report, armies, o.id);
-			const handed = [];
-			if (theWordsAFieldHolds(oTgt).split(",").includes("all")) oArm.forEach((a) => handed.push(a));
-			else theWordsAFieldHolds(oTgt).split(",").filter(Boolean).forEach((val) => {
-				val = val.trim();
-				const a = oArm.find((x) => ((x.unitName ?? "") || x.type) === val);
-				if (a) handed.push(a);
-			});
-			whatAComradeTakesOfAHandOver(report, char, armies.get(char), handed).taken.forEach((a) => led.push(a));
-		}
-	});
 	if (prevAction === "Recruit Armies") {
+		const toks = theWordsAFieldHolds(prevTarget).split(",").map((t) => t.trim());
+		const toAComrade = whereTheCompaniesARecruitRaisesMuster(report, orders, char, prevPh, toks, toks.find((t) => t.startsWith("to:")) ?? "to:self", asHeActs);
+		if (toAComrade.dest !== char) {
+			const comrades = columns.get(toAComrade.dest);
+			if (comrades) toAComrade.toTheColumn.forEach((u) => comrades.push(u));
+		}
 		const wrap = theRecruitBoxesOf(orders, charId, prevPh);
 		if (wrap) {
 			const destSel = wrap.dest;
-			const musters = whereTheCompaniesARecruitRaisesMuster(report, orders, char, prevPh, wrap.ticked.map((cb) => theFieldOrNoWords(cb.value)), destSel ? destSel.value : "to:self", (x) => armies.get(x));
+			const musters = whereTheCompaniesARecruitRaisesMuster(report, orders, char, prevPh, wrap.ticked.map((cb) => theFieldOrNoWords(cb.value)), destSel ? destSel.value : "to:self", asHeActs);
+			const led = columnOf(char);
 			if (musters.dest === char) musters.toTheColumn.forEach((u) => led.push(u));
 		}
 	} else if (prevAction === "Pick Up Army") {
+		const led = columnOf(char);
 		const ploc = whereAHeroStandsAfterTheOrdersBefore(report, orders, charId, prevPh);
 		const pgarr = ploc ? theGarrisonAPickUpOfThePhaseSees(report, garrisons, added, ploc.id, charId) : [];
 		const { taken, left } = theCompaniesALeaderTakesUpToHisBeastCommandsRoom(theGarrisonPlacesAPickUpTakes(String(prevTarget), pgarr.length).map((i) => theCompanyAsTheFormCarriesIt(theOneAt(pgarr, i), false)), theRoomHisBeastCommandLeaves(char, led), asTheReportShowsIt);
 		taken.forEach((a) => led.push(a));
 		if (left.length && ploc) goBack.set(ploc.id, [...goBack.get(ploc.id) ?? [], ...left]);
 	} else if (prevAction === "Leave/Transfer Army" || prevAction === "Disband Army") {
+		const led = columnOf(char);
 		let removed = [];
-		if (prevTarget === "all") {
-			removed = led;
-			led = [];
-		} else theWordsAFieldHolds(prevTarget).split(",").filter(Boolean).forEach((val) => {
+		if (prevTarget === "all") removed = led.splice(0, led.length);
+		else theWordsAFieldHolds(prevTarget).split(",").filter(Boolean).forEach((val) => {
 			val = val.trim();
-			const idx = led.findIndex((a) => ((a.unitName ?? "") || a.type) === val);
+			const idx = led.findIndex((a) => a.type === val || a.unitName === val);
 			if (idx >= 0) removed.push(...led.splice(idx, 1));
 		});
 		const extra = prevAction === "Leave/Transfer Army" ? theOrderField(orders, "extra", charId, prevPh)?.value : "";
 		const recipient = extra !== "" && extra != null && inWords(extra) !== "-1" ? (report.characters ?? []).find((x) => String(x.id) === inWords(extra)) : null;
-		if (recipient) whatAComradeTakesOfAHandOver(report, recipient, armies.get(recipient), removed).left.forEach((a) => led.push(a));
+		const comrades = recipient ? columns.get(recipient) : void 0;
+		if (recipient && comrades) {
+			const { taken, left } = whatAComradeTakesOfAHandOver(report, recipient, comrades, removed);
+			taken.forEach((a) => comrades.push(a));
+			left.forEach((a) => led.push(a));
+		}
 	}
-	return led;
 }
 function theCompaniesTheReplayGivesTheHeroOfId(report, armies, charId) {
 	const char = (report.characters ?? []).find((x) => x.id === charId);
@@ -6113,7 +6128,7 @@ function theMagicLevelsAHerosPractisesBeforeAPhaseMayRaise(orders, c, ph) {
 /** The slots' caps, labels and the tiers' names and colours, read by any slot or tier. */
 var theSlotCaps = { ...KC_ITEM_SLOT_CAP };
 var theWondersByAlignment = { ...KC_GRAND_DESIGNS };
-var theSkillsNames$7 = SKILL_LABELS;
+var theSkillsNames$8 = SKILL_LABELS;
 /** A pair's leads, as `p.options` the filter made sure is a list. */
 function theLeadsOf$1(p) {
 	const options = p.options;
@@ -6367,7 +6382,7 @@ function renderPreSchool(charId) {
 	if (!disp || !(hidden instanceof HTMLInputElement)) return;
 	const school = (hidden.value || "").toLowerCase();
 	if (school) disp.innerHTML = String(kcHtml`<span style="display:inline-flex;align-items:center;gap:6px;background:#fff8e8;border:1px solid #c8922a;border-radius:2px;padding:3px 8px;font-size:.78rem">
-        <span style="color:#5a4208">Random <strong>${(theSkillsNames$7[school] ?? "") || school}</strong> spell</span>
+        <span style="color:#5a4208">Random <strong>${(theSkillsNames$8[school] ?? "") || school}</strong> spell</span>
         <button onclick="clearPreSchool(${kcArg(String(charId))})" title="Remove" style="background:var(--crimson);color:#fff;border:none;border-radius:2px;padding:0 6px;cursor:pointer;font-size:.7rem">✕</button>
       </span>
       <button onclick="openPreSchoolPicker(${kcArg(String(charId))})" style="font-size:.7rem;padding:3px 8px;border:1px solid var(--stone);background:var(--parchment-dark);cursor:pointer;border-radius:2px">Change</button>`);
@@ -6380,7 +6395,7 @@ function kcJoinP(list, sep) {
 }
 // src/ui/player/order-chances.ts
 /** The skills' names by key, read by any key (none is empty words). */
-var theSkillsNames$6 = SKILL_LABELS;
+var theSkillsNames$7 = SKILL_LABELS;
 var SPELLS_BY_SCHOOL = everySpellBySchool();
 function castChanceNote(c, spellName, optsHanded) {
 	const opts = optsHanded ?? {};
@@ -6389,10 +6404,10 @@ function castChanceNote(c, spellName, optsHanded) {
 	const rec = c?.castChance?.[school] ?? null;
 	if (opts.itemCast) return kcHtml`<div style="font-size:.72rem;color:var(--forest);margin-top:2px">🎲 Cast chance: <strong>95%</strong> — worked from the item, whatever your own skill.</div>`;
 	const lvl = rec ? rec.level : effMagicLvl(c, school);
-	if (Number(lvl) <= 0) return kcHtml`<div style="font-size:.72rem;color:var(--crimson);margin-top:2px">🎲 No ${(theSkillsNames$6[school] ?? "") || school} skill yet — this cast will fail unless a Practice order earlier this turn raises it.</div>`;
+	if (Number(lvl) <= 0) return kcHtml`<div style="font-size:.72rem;color:var(--crimson);margin-top:2px">🎲 No ${(theSkillsNames$7[school] ?? "") || school} skill yet — this cast will fail unless a Practice order earlier this turn raises it.</div>`;
 	if (school === "necromancy" && c?.necroAutoReady) return kcHtml`<div style="font-size:.72rem;color:var(--forest);margin-top:2px">🎲 Cast chance: <strong>100%</strong> — your Wailing Phylactery makes this turn's first Necromancy spell certain.</div>`;
 	const chance = rec ? rec.chance : Math.min(95, 30 + Number(lvl) * 10);
-	const bits = [`${(theSkillsNames$6[school] ?? "") || school} ${String(lvl)}`];
+	const bits = [`${(theSkillsNames$7[school] ?? "") || school} ${String(lvl)}`];
 	if (rec?.arcane) bits.push(`+${String(rec.arcane)}% Arcane Codex`);
 	if (rec?.mastery) bits.push(`+${String(rec.mastery)}% school mastery`);
 	if (rec?.discovery) bits.push(`+${String(rec.discovery)}% discoveries`);
@@ -6427,7 +6442,7 @@ function unitEmoji(type) {
 }
 // src/ui/player/skills-and-projections.ts
 /** The skills' names, the sources' kinds, marks and words, and the beasts' classes, read by any key. */
-var theSkillsNames$5 = SKILL_LABELS;
+var theSkillsNames$6 = SKILL_LABELS;
 var BONUS_KIND_P = {
 	item: {
 		c: "#9a6b12",
@@ -6516,7 +6531,7 @@ function skillRowHTML(c, style) {
 		const srcs = _skillSourcesP(c, k);
 		const cb = srcs.filter((s) => s.scope !== "always").reduce((sm, x) => sm + (Number(x.delta) || 0), 0);
 		if (Number(base) <= 0 && bonus <= 0 && cb <= 0) return "";
-		const label = (theSkillsNames$5[k] ?? "") || k;
+		const label = (theSkillsNames$6[k] ?? "") || k;
 		const always = srcs.filter((s) => s.scope === "always");
 		const rawTotal = always.reduce((s, x) => s + (Number(x.delta) || 0), 0);
 		const chips = [];
@@ -6654,7 +6669,7 @@ function theArmyCardsFiguresOfAColumn(arr, c, report) {
 				theShareHisDruidShortfallLeaves: theShareHisShortfallLeaves,
 				theKingsRace: kingdom.race,
 				hisRace: c.race,
-				theRealmsUnitStrengthEffects: [],
+				theRealmsUnitStrengthEffects: kingdom.theUnitStrengthEffectsOfItsDiscoveries ?? [],
 				heIsTheKing: !!c.isKing,
 				theItemsHeUses: theItemsAHeroUses(c.items ?? [], c),
 				theRealmsAlignment: kingdom.alignment,
@@ -6773,7 +6788,7 @@ function theDiplomaticChoices() {
 	return diploChoices;
 }
 /** The tables read by a key of words: the skills' names and the guardians' colours (no colour is ''). */
-var theSkillsNames$4 = SKILL_LABELS;
+var theSkillsNames$5 = SKILL_LABELS;
 var theGuardiansColours = GUARD_POWER_COLORS_P;
 var TERRAIN_COLORS_MAP = { ...KC_TERRAIN_COLORS };
 function makeTerrainIcon(svgNS, cx, cy, terrain) {
@@ -7243,7 +7258,7 @@ function popupKnownChars(pd, deadHeroes) {
 }
 function heroFameTextP(h) {
 	const ts = h?.topSkill ?? topSkillOf(h);
-	return ts ? `${skillFameLabelM(ts.level)} ${(theSkillsNames$4[ts.skill] ?? "") || ts.skill}` : "no notable skills";
+	return ts ? `${skillFameLabelM(ts.level)} ${(theSkillsNames$5[ts.skill] ?? "") || ts.skill}` : "no notable skills";
 }
 var MAP_SYMBOL_FONT = "'Noto Sans Symbols 2','Noto Sans Symbols','Segoe UI Symbol','Apple Symbols','Symbola','DejaVu Sans',sans-serif";
 function _setGlyphText(el, s) {
@@ -7458,7 +7473,7 @@ function theRowOf(p) {
 	return p.row;
 }
 /** The skills' names, read by any skill. */
-var theSkillsNames$3 = SKILL_LABELS;
+var theSkillsNames$4 = SKILL_LABELS;
 /** The hero's name, read where the notice reads it: a TypeError for no hero, as the read on none threw. */
 function theNameOfTheHero(ch) {
 	if (ch === null || ch === void 0) throw new TypeError(`Cannot read properties of ${String(ch)} (reading 'name')`);
@@ -7677,7 +7692,7 @@ function heirSelectorHTML(chars) {
 	const pip = (skill) => {
 		const lvl = Number(heir.skills?.[skill]) || 0;
 		const added = heirAddedTo(heir, skill);
-		const displayName = (theSkillsNames$3[skill] ?? "") || skill;
+		const displayName = (theSkillsNames$4[skill] ?? "") || skill;
 		const minusOff = added <= 0;
 		const plusOff = remaining <= 0 || added >= 2;
 		return kcHtml`<div class="skill-pip">
@@ -7768,7 +7783,7 @@ function tacticLabel(code) {
 	if (code.startsWith("CA:")) return `Cast Spell — ${code.slice(3)}`;
 	if (code.startsWith("CS:")) {
 		const school = code.slice(3);
-		return `Pre-battle: random ${(theSkillsNames$3[school] ?? "") || school} spell`;
+		return `Pre-battle: random ${(theSkillsNames$4[school] ?? "") || school} spell`;
 	}
 	const baseCode = code.split(":")[0];
 	return (ENCOUNTER_TACTICS.find((et) => et.code === baseCode)?.label ?? "") || code;
@@ -8816,12 +8831,14 @@ async function persistHeroOrder() {
 	const raw = parsed && typeof parsed === "object" ? parsed : {};
 	if (Reflect.get(raw, "orders") === void 0) Reflect.set(raw, "orders", {});
 	if (Reflect.get(raw, "encounterPlans") === void 0) Reflect.set(raw, "encounterPlans", {});
-	if (Reflect.get(raw, "forTurn") == null) Reflect.set(raw, "forTurn", Number(currentReport ? Number(currentReport._liveTurn) || currentReport.turn : currentReport) || 1);
+	const theFormsTurn = Number(currentReport ? Number(currentReport._liveTurn) || currentReport.turn : currentReport) || 1;
+	if (Reflect.get(raw, "forTurn") == null) Reflect.set(raw, "forTurn", theFormsTurn);
 	Reflect.set(raw, "heroOrder", heroOrder.slice());
 	const payload = JSON.stringify(raw);
-	const { error } = await thePagesDb.theOrders.saveThisRealmsHeroOrder(gp.id, payload);
+	const { error } = await thePagesDb.theOrders.saveThisRealmsHeroOrder(String(gp.game_id), theFormsTurn, payload);
 	if (error) {
-		console.warn("persistHeroOrder:", error.message);
+		const line = document.getElementById("orders-msg");
+		if (line) line.innerHTML = String(kcHtml`<div class="msg-error">Error: ${error.message}</div>`);
 		return;
 	}
 	gp.orders = payload;
@@ -8834,6 +8851,38 @@ function theElementWithTheId(id, kind, page = document) {
 	if (found === null) throw new TypeError(`the page holds no element with the id "${id}"`);
 	if (!(found instanceof kind)) throw new TypeError(`the page's element with the id "${id}" is a <${found.tagName.toLowerCase()}>, not of the kind asked for`);
 	return found;
+}
+// src/ui/shared/a-value-of-any-kind-read-as-javascript-reads-it.ts
+/** `value[key]` as JavaScript reads it (a game's state as parsed from JSON): for none, the TypeError that read throws. */
+function theField(value, key) {
+	if (value === null || value === void 0) throw new TypeError(`Cannot read properties of ${String(value)} (reading '${String(key)}')`);
+	return Reflect.get(Object(value), key);
+}
+/** `a || b` on values of any kind (a game's state as parsed): `a` where it is truthy, else `b`. */
+function thisOrElse$1(a, b) {
+	if (a) return a;
+	return b;
+}
+/** Whether a value is a list (of values of any kind). */
+function isAList(value) {
+	return Array.isArray(value);
+}
+/** A list a value of a game's state holds, as `.some` reads it: any other value throws the TypeError `.some` threw. */
+function theListToSearch(value) {
+	if (isAList(value)) return value;
+	throw new TypeError("the value searched is not a list");
+}
+/** `new Date(value)` on a value of any kind (a deadline as a game's state holds it), as the constructor reads it. */
+function theDateOf(value) {
+	const made = Reflect.construct(Date, [value]);
+	if (made instanceof Date) return made;
+	throw new TypeError("the Date constructor made no date");
+}
+/** A database's refusal (its message, code and hint: not an Error), thrown as it is for the catch that reads it (lint's
+*  `only-throw-error` refuses an object of a known type that isn't an Error, and wrapping it would lose its hint). Both
+*  pages throw it (plan P1-16r moved it here from `ui/player/dispatches.ts`). */
+function theRefusalAsThrown(error) {
+	return error;
 }
 // src/ui/player/dispatches.ts
 var MSG_POLL_MS = 8e3;
@@ -8880,9 +8929,6 @@ function theWordsOfWhatTheDispatchesMet(e) {
 		if (message) words = message;
 	}
 	return String(words);
-}
-function theRefusalAsThrown(error) {
-	return error;
 }
 function theLiveTurnHeldBy(holder) {
 	return holder && Reflect.get(Object(holder), "_liveTurn");
@@ -9836,32 +9882,6 @@ function show(id) {
 		else setupDeskLayout();
 	}
 }
-// src/ui/shared/a-value-of-any-kind-read-as-javascript-reads-it.ts
-/** `value[key]` as JavaScript reads it (a game's state as parsed from JSON): for none, the TypeError that read throws. */
-function theField(value, key) {
-	if (value === null || value === void 0) throw new TypeError(`Cannot read properties of ${String(value)} (reading '${String(key)}')`);
-	return Reflect.get(Object(value), key);
-}
-/** `a || b` on values of any kind (a game's state as parsed): `a` where it is truthy, else `b`. */
-function thisOrElse$1(a, b) {
-	if (a) return a;
-	return b;
-}
-/** Whether a value is a list (of values of any kind). */
-function isAList(value) {
-	return Array.isArray(value);
-}
-/** A list a value of a game's state holds, as `.some` reads it: any other value throws the TypeError `.some` threw. */
-function theListToSearch(value) {
-	if (isAList(value)) return value;
-	throw new TypeError("the value searched is not a list");
-}
-/** `new Date(value)` on a value of any kind (a deadline as a game's state holds it), as the constructor reads it. */
-function theDateOf(value) {
-	const made = Reflect.construct(Date, [value]);
-	if (made instanceof Date) return made;
-	throw new TypeError("the Date constructor made no date");
-}
 // src/ui/player/game-lists.ts
 /** A game's state parsed from its JSON text: any value. */
 function theStateParsed(text) {
@@ -10350,6 +10370,10 @@ function cancelSubmit() {
 	theElementWithTheId("orders-msg", HTMLElement).innerHTML = "";
 	restoreSubmitWrap("Submit");
 }
+/** Shows a save of the orders refused, in the database's words, in the order form's message line. */
+function showTheRefusalOfASaveInTheOrderForm(message) {
+	theElementWithTheId("orders-msg", HTMLElement).innerHTML = String(kcHtml`<div class="msg-error">Error: ${message}</div>`);
+}
 async function doSaveOrders() {
 	const chars = currentReport?.characters ?? [];
 	const orders = {};
@@ -10411,9 +10435,9 @@ async function doSaveOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: _draftTurn
 	});
-	const { error: saveErr } = await thePagesDb.theOrders.saveThisRealmsDraft(gp.id, _payload);
+	const { error: saveErr } = await thePagesDb.theOrders.saveThisRealmsDraft(String(gp.game_id), _draftTurn, _payload);
 	if (saveErr) {
-		console.error("Save draft error:", saveErr.message);
+		showTheRefusalOfASaveInTheOrderForm(saveErr.message);
 		return;
 	}
 	if (currentGamePlayer) currentGamePlayer.orders = _payload;
@@ -10433,14 +10457,7 @@ async function doSubmitOrders() {
 		btn.disabled = true;
 		btn.textContent = "Saving…";
 	}
-	const { data: freshGame } = await thePagesDb.theOrders.theTurnOfThisGame(String(currentGamePlayer?.game_id));
 	const expectedTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
-	if (freshGame && freshGame.turn !== expectedTurn) {
-		const resolved = String(kcHtml`<div class="msg-error">⚠ The GM has already resolved this turn. Your orders were not saved — please reload the page to see your new turn report.</div>`);
-		theElementWithTheId("orders-msg", HTMLElement).innerHTML = resolved;
-		restoreSubmitWrap("Submit");
-		return;
-	}
 	if (!currentGamePlayer?.id) {
 		theElementWithTheId("orders-msg", HTMLElement).innerHTML = "<div class=\"msg-error\">Session error — please reload the page.</div>";
 		restoreSubmitWrap("Submit");
@@ -10565,10 +10582,9 @@ async function doSubmitOrders() {
 		heroOrder: currentHeroOrderP(),
 		forTurn: expectedTurn
 	});
-	const { error } = await thePagesDb.theOrders.submitThisRealmsOrders(currentGamePlayer.id, _subPayload, (/* @__PURE__ */ new Date()).toISOString());
+	const { error } = await thePagesDb.theOrders.submitThisRealmsOrders(String(currentGamePlayer.game_id), expectedTurn, _subPayload);
 	if (error) {
-		const refused = String(kcHtml`<div class="msg-error">Error: ${error.message}</div>`);
-		theElementWithTheId("orders-msg", HTMLElement).innerHTML = refused;
+		showTheRefusalOfASaveInTheOrderForm(error.message);
 		restoreSubmitWrap("Submit");
 		return;
 	}
@@ -10612,7 +10628,7 @@ function thePointsSpent() {
 	return Object.values(joinSkills).reduce((s, v) => s + v, 0);
 }
 /** The skills' names and their descriptions, read by any skill's name. */
-var theSkillsNames$2 = SKILL_LABELS;
+var theSkillsNames$3 = SKILL_LABELS;
 async function showJoinGame(gameId, gameName, maxP, joined, gmName, worldSize) {
 	joiningGame = {
 		id: gameId,
@@ -10677,7 +10693,7 @@ function renderSkillGrid() {
 	theElementWithTheId("join-pts-remaining", HTMLElement).textContent = `${String(remaining)} point${remaining !== 1 ? "s" : ""} remaining`;
 	const pip = (skill) => {
 		const lvl = Number(joinSkills[skill]) || 0;
-		const displayName = (theSkillsNames$2[skill] ?? "") || skill;
+		const displayName = (theSkillsNames$3[skill] ?? "") || skill;
 		return kcHtml`<div class="skill-pip">
       <button onclick="adjustSkill(${kcArg(skill)},-1)" ${lvl <= 0 ? "disabled" : ""}>−</button>
       <span class="sk-name" onmousemove="showSkillTip(event,${kcArg(skill)})" onmouseleave="hideSkillTip()">${displayName}</span>
@@ -10695,7 +10711,7 @@ function showSkillTip(ev, skill) {
 		tip.id = "skill-info-tip";
 		document.body.appendChild(tip);
 	}
-	tip.innerHTML = String(kcHtml`<strong>${(theSkillsNames$2[skill] ?? "") || skill}</strong><br>${SKILL_INFO[skill] ?? ""}`);
+	tip.innerHTML = String(kcHtml`<strong>${(theSkillsNames$3[skill] ?? "") || skill}</strong><br>${SKILL_INFO[skill] ?? ""}`);
 	tip.style.display = "block";
 	const pad = 14, w = tip.offsetWidth || 250, h = tip.offsetHeight || 80;
 	let x = ev.clientX + pad, y = ev.clientY + pad;
@@ -11364,7 +11380,7 @@ var SPELL_HINTS = {
 };
 // src/ui/player/titles.ts
 /** The tables read by a key of words: the skills' names, the masteries by skill and level. */
-var theSkillsNames$1 = SKILL_LABELS;
+var theSkillsNames$2 = SKILL_LABELS;
 var theMasteries = MASTERY_UNLOCKS;
 /** A title of the holders' table by its key, which `Object.keys` has just found: a TypeError for none, as the read did. */
 /** A skill's masteries by level, for a skill the filter has just found in the table: a TypeError for none, as the read
@@ -11401,7 +11417,7 @@ function renderMastery(report) {
 			}
 			const lines = effs.map((e) => kcHtml`<div style="font-size:.76rem;padding:1px 0 1px 10px"><span style="color:var(--gold);font-family:Cinzel,serif;font-size:.68rem">L${e.L}</span> ${e.d}</div>`);
 			return kcHtml`<div style="margin:3px 0 5px">
-        <div style="font-size:.8rem"><strong>${(theSkillsNames$1[k] ?? "") || k} ${lvl}</strong></div>
+        <div style="font-size:.8rem"><strong>${(theSkillsNames$2[k] ?? "") || k} ${lvl}</strong></div>
         ${lines}
       </div>`;
 		});
@@ -13695,7 +13711,7 @@ function theValueOfThePagesFieldOrNone(id) {
 	return el ? theValueOfAField(el) : void 0;
 }
 /** The skills' names, read by any school. */
-var theSkillsNames = SKILL_LABELS;
+var theSkillsNames$1 = SKILL_LABELS;
 /** A value the code reads a field of: itself, and for none the TypeError that read threw. */
 function thereForItsField(value, what) {
 	if (value === null || value === void 0) throw new TypeError(`Cannot read properties of ${String(value)} (reading '${what}')`);
@@ -14205,14 +14221,14 @@ function addEncounterTactic(charId, code) {
 		});
 		const _epTallyHtml = kcJoinP(Object.entries(_epTally).map(([sch, t]) => {
 			const full = t.used >= t.limit;
-			return kcHtml`<span style="font-size:.62rem;padding:1px 6px;border-radius:2px;background:${full ? "#f2dede" : "#e8f0e0"};color:${full ? "#a33" : "#3a5a2a"};border:1px solid ${full ? "#d8a0a0" : "#b8c9a8"}">${(theSkillsNames[sch] ?? "") || sch} ${t.used}/${t.limit}${full ? " — full" : ""}</span>`;
+			return kcHtml`<span style="font-size:.62rem;padding:1px 6px;border-radius:2px;background:${full ? "#f2dede" : "#e8f0e0"};color:${full ? "#a33" : "#3a5a2a"};border:1px solid ${full ? "#d8a0a0" : "#b8c9a8"}">${(theSkillsNames$1[sch] ?? "") || sch} ${t.used}/${t.limit}${full ? " — full" : ""}</span>`;
 		}), " ");
 		picker.innerHTML = String(kcHtml`<div style="font-family:Cinzel,serif;font-size:.7rem;color:#5a4208;margin-bottom:4px">Choose a combat spell — casts used this encounter, per school:</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px">${_epTallyHtml}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px">
         ${availSpells.map(({ school, spell, level, practising, blocked, reason, used, limit }) => {
 			const limitNote = ` ${String(used)}/${String(limit)}`;
-			const labelExtra = practising ? kcHtml`<span style="color:#5a3f08;font-size:.63rem">(${(theSkillsNames[school] ?? "") || school} — practising${limitNote})</span>` : kcHtml`<span style="color:${blocked ? "#bbb" : "var(--stone)"};font-size:.63rem">(${(theSkillsNames[school] ?? "") || school}${level == null ? "" : " " + String(level)}${limitNote})</span>`;
+			const labelExtra = practising ? kcHtml`<span style="color:#5a3f08;font-size:.63rem">(${(theSkillsNames$1[school] ?? "") || school} — practising${limitNote})</span>` : kcHtml`<span style="color:${blocked ? "#bbb" : "var(--stone)"};font-size:.63rem">(${(theSkillsNames$1[school] ?? "") || school}${level == null ? "" : " " + String(level)}${limitNote})</span>`;
 			const blockedNote = blocked ? kcHtml`<span style="color:#c44;font-size:.6rem"> ✗ ${reason}</span>` : "";
 			return blocked ? kcHtml`<button disabled style="font-size:.75rem;padding:4px 9px;border:1px solid #ddd;background:#f5f5f5;color:#bbb;border-radius:2px;cursor:not-allowed">
                 ${spell} ${labelExtra}${blockedNote}
@@ -14257,7 +14273,7 @@ function confirmEPSpell(charId, spell, school, level, limitShown) {
 	}
 	const limit = limitShown != null && isFinite(limitShown) ? limitShown : combatSpellsAllowedPerSchoolEachFight(level ?? 0);
 	if (current.filter((t) => t.startsWith("CA:") && SPELL_TO_SCHOOL[t.slice(3)] === school).length >= limit) {
-		alert(`${(theSkillsNames[school] ?? "") || school}${(level ?? 0) > 0 ? ` Lv${String(level)}` : ""}: you can cast at most ${String(limit)} combat spell${limit !== 1 ? "s" : ""} of this school per encounter. Remove one first.`);
+		alert(`${(theSkillsNames$1[school] ?? "") || school}${(level ?? 0) > 0 ? ` Lv${String(level)}` : ""}: you can cast at most ${String(limit)} combat spell${limit !== 1 ? "s" : ""} of this school per encounter. Remove one first.`);
 		return;
 	}
 	current.push(`CA:${spell}`);
@@ -14359,9 +14375,10 @@ async function allocateHeirSkill(charId, skill, delta) {
 async function reviseOrders() {
 	const gp = currentGamePlayer;
 	if (!gp) return;
-	const { error } = await thePagesDb.theOrders.reopenThisRealmsOrders(String(gp.id));
+	const theFormsTurn = (currentReport?._liveTurn ?? 0) || (currentReport?.turn ?? 0) || 1;
+	const { error } = await thePagesDb.theOrders.reopenThisRealmsOrders(String(gp.game_id), theFormsTurn);
 	if (error) {
-		console.error(error);
+		showTheRefusalOfASaveInTheOrderForm(error.message);
 		return;
 	}
 	setOrdersSubmittedUI(false);
@@ -14371,59 +14388,173 @@ async function reviseOrders() {
 	theElementWithTheId("submit-btn", HTMLButtonElement).textContent = `Resubmit Orders for Turn ${inWords(thisOrThat(thisOrThat(currentReport?._liveTurn, currentReport?.turn), 1))}`;
 }
 // src/ui/player/report.ts
+/** A row an answer gave, which the code reads unchecked: for none, the TypeError the read threw. */
+function theRowAnswered(row, field) {
+	if (row === null) throw new TypeError(`Cannot read properties of null (reading '${field}')`);
+	return row;
+}
+/** Whether a turn report, parsed from its JSON or as the database holds it, is an object, which the page then reads as
+*  the report (a list passes too, as it did). On the maintainer's answer of 14 November this is all it checks: the
+*  report's parts are read as the report's types claim, unchecked, as before. */
+/** `{ ...levels }` on a value of any kind, as a draft parsed from JSON holds an heir's levels: its own fields copied (a
+*  JSON value has no other kind of field), none for none. */
+function theLevelsCopied(levels) {
+	if (levels === null || levels === void 0) return {};
+	return Object.fromEntries(Object.entries(levels));
+}
+/** An item of the pack the card shows, which it reads the name of: for none, the TypeError that read threw. */
+function theItemShown(it) {
+	if (it === null || it === void 0) throw new TypeError(`Cannot read properties of ${String(it)} (reading 'name')`);
+	return it;
+}
+/** A title or a perk a hero's card names: for none, the TypeError the read of its name threw. */
+function theTitleShown(tt) {
+	if (tt === null || tt === void 0) throw new TypeError(`Cannot read properties of ${String(tt)} (reading 'name')`);
+	return tt;
+}
+/** A hero's name the army card splits for his first name: for none, the TypeError the split threw. */
+function theNameToSplit(name) {
+	if (name === void 0) throw new TypeError("Cannot read properties of undefined (reading 'split')");
+	return name;
+}
+/** The army card's figures for the company at `i` of the column they were worked out for (one a company): for none, the
+*  TypeError the destructuring threw. */
+function theFiguresOfTheCompanyAt(units, i) {
+	const figures = units[i];
+	if (figures === void 0) throw new TypeError(`Cannot destructure the figures of the company ${String(i)}`);
+	return figures;
+}
+/** The skills' names by any key. */
+var theSkillsNames = SKILL_LABELS;
+/** A spied skill's level above nothing (`v > 0`, as a number). */
+function aSpiedLevelAboveNothing(skill) {
+	return Number(skill[1]) > 0;
+}
+/** A season by a phase that may be missing (`SEASONS[phase]`): none for none. */
+function theSeasonOf(seasons, phase) {
+	return phase === void 0 ? void 0 : seasons[phase];
+}
+/** A group the code has just filed under a key it now lists (a Map's keys, Object.keys or entries): for none, the
+*  TypeError the read of it threw. */
+function theGroupFiled(group, what) {
+	if (group === void 0) throw new TypeError(`Cannot read properties of undefined (reading '${what}')`);
+	return group;
+}
+/** A discovery the card files by its kind: for none, the TypeError the read of its kind threw. */
+function theDiscoveryFiled(d) {
+	if (d === null || d === void 0) throw new TypeError(`Cannot read properties of ${String(d)} (reading 'category')`);
+	return d;
+}
+/** The page's diplomatic choices this turn, which the code writes into: for none, the TypeError that write threw. */
+function theDiplomaticChoicesHeld() {
+	if (diploChoices === null) throw new TypeError("Cannot read properties of null (setting the realm's declaration)");
+	return diploChoices;
+}
+/** Whether a hero of the game's saved state, as parsed from JSON, is an object, which the chronicle then reads as its hero
+*  (the same check as the report's, isATurnReport). */
+function isAHeroOfTheSavedGame(c) {
+	return typeof c === "object" && c !== null;
+}
+/** The realm `pi`'s heroes among the game's saved heroes (`c.player === pi`): a gap throws the TypeError that read threw;
+*  any other value that is no object has no realm. */
+function theRealmsHeroesIn(allChars, pi) {
+	return allChars.filter((c) => {
+		if (c === null || c === void 0) throw new TypeError(`Cannot read properties of ${String(c)} (reading 'player')`);
+		return isAHeroOfTheSavedGame(c) && c.player === pi;
+	});
+}
+/** Whether a line of the GM's log, as parsed from JSON, is an object, which the chronicle then reads as its line (the same
+*  check as the report's, isATurnReport). */
+function isALineOfTheGmsLog(e) {
+	return typeof e === "object" && e !== null;
+}
+/** `targets.includes(realm)` on a line's targets of any kind, as JavaScript calls it: a list's, or words' (which read the
+*  realm as words); any other value has no `includes`, the TypeError the call threw. */
+function theTargetsHold(targets, realm) {
+	if (isAList(targets)) return targets.includes(realm);
+	if (typeof targets === "string") return targets.includes(String(realm));
+	throw new TypeError("(e.targets || []).includes is not a function");
+}
+/** An element's inline style, as `el.style` reads it (an HTML, SVG or MathML element's): one with none gives the TypeError
+*  the read of its `display` threw. */
+function theInlineStyleOf(el) {
+	const style = Reflect.get(el, "style");
+	if (style instanceof CSSStyleDeclaration) return style;
+	throw new TypeError("Cannot read properties of undefined (reading 'display')");
+}
+function isATurnReport(held) {
+	return typeof held === "object" && held !== null;
+}
+/** The turn report the seat holds, as the page reads it: its JSON parsed, or the value itself, `{}` for none. Anything
+*  but an object throws the TypeError the page's first write on it (`_liveTurn`) threw. */
+function theTurnReportOf(seat) {
+	const held = typeof seat.turn_report === "string" ? theStateParsed(seat.turn_report) : thisOrElse$1(seat.turn_report, {});
+	if (isATurnReport(held)) return held;
+	if (held === null) throw new TypeError("Cannot set properties of null (setting '_liveTurn')");
+	throw new TypeError(`Cannot create property '_liveTurn' on ${typeof held} '${inWords(held)}'`);
+}
 async function openReport(gamePlayerId) {
 	currentGamePlayerId = gamePlayerId;
 	try {
 		history.replaceState(null, "", location.pathname + location.search + "#game=" + encodeURIComponent(gamePlayerId));
-	} catch (e) {}
+	} catch {}
 	show("sec-report");
 	{
 		const _ntb = document.getElementById("new-turn-banner");
 		if (_ntb) _ntb.style.display = "none";
 	}
-	document.getElementById("report-title").textContent = "Loading…";
-	const { data: gp, error } = await thePagesDb.thePlayersRealms.thisRealm(gamePlayerId);
+	theElementWithTheId("report-title", HTMLElement).textContent = "Loading…";
+	const { data: gpAnswered, error } = await thePagesDb.thePlayersRealms.thisRealm(gamePlayerId);
 	if (error) {
-		document.getElementById("report-title").textContent = "Error: " + error.message;
+		theElementWithTheId("report-title", HTMLElement).textContent = "Error: " + error.message;
 		return;
 	}
-	const { data: g, error: gErr } = await thePagesDb.thePlayersGames.thisGameForItsReport(gp.game_id);
+	const gp = theRowAnswered(gpAnswered, "game_id");
+	const { data: gAnswered, error: gErr } = await thePagesDb.thePlayersGames.thisGameForItsReport(gp.game_id);
 	if (gErr) {
-		document.getElementById("report-title").textContent = "Error loading game: " + gErr.message;
+		theElementWithTheId("report-title", HTMLElement).textContent = "Error loading game: " + gErr.message;
 		return;
 	}
-	gp.games = g;
+	gp.games = gAnswered;
 	currentGamePlayer = gp;
-	currentGamePlayer._liveTurn = g.turn || 1;
-	const report = typeof gp.turn_report === "string" ? JSON.parse(gp.turn_report) : gp.turn_report || {};
+	const g = theRowAnswered(gAnswered, "turn");
+	gp._liveTurn = g.turn || 1;
+	const report = theTurnReportOf(gp);
 	currentReport = report;
-	currentReport._liveTurn = g.turn || 1;
+	report._liveTurn = g.turn || 1;
 	try {
-		const _draft = typeof gp.orders === "string" ? JSON.parse(gp.orders || "{}") : gp.orders || {};
-		const _ks = _draft && _draft.kingSkills;
-		(currentReport.characters || []).forEach((c) => {
+		const _draft = typeof gp.orders === "string" ? theStateParsed(gp.orders || "{}") : thisOrElse$1(gp.orders, {});
+		const _ks = _draft && theField(_draft, "kingSkills");
+		(report.characters ?? []).forEach((c) => {
 			if (!c._isHeir) return;
-			const a = _ks && _ks[c.id];
+			const a = _ks && theField(_ks, c.id);
 			if (a) {
-				if (a.base) c._heirBase = { ...a.base };
-				if (a.skills) c.skills = { ...a.skills };
-				if (typeof a.pending === "number") c._pendingSkillAllocation = a.pending;
-				if (a.name) c.name = a.name;
-				if (a.temper) c.temper = a.temper;
+				const base = theField(a, "base");
+				if (base) c._heirBase = theLevelsCopied(base);
+				const skills = theField(a, "skills");
+				if (skills) c.skills = theLevelsCopied(skills);
+				const pending = theField(a, "pending");
+				if (typeof pending === "number") c._pendingSkillAllocation = pending;
+				const name = theField(a, "name");
+				if (name) Reflect.set(c, "name", name);
+				const temper = theField(a, "temper");
+				if (temper) Reflect.set(c, "temper", temper);
 			}
-			if (!c._heirBase) c._heirBase = { ...c.skills || {} };
+			c._heirBase ??= { ...c.skills ?? {} };
 		});
-	} catch (e) {}
+	} catch {}
 	diploChoices = {};
 	discoveryChoices = {};
 	reckoningCall = false;
 	concedeGame = false;
 	viewingReport = report;
-	initMessaging(gp.game_id, gp.player_index, report, g).catch((e) => console.warn("Dispatches:", e));
-	const liveTurn = g.turn != null ? g.turn : 1;
+	initMessaging(gp.game_id, gp.player_index, report, g).catch((e) => {
+		console.warn("Dispatches:", e);
+	});
+	const liveTurn = asItsGuardReadsIt(g.turn) ?? 1;
 	const resolvedTurn = Math.max(0, (g.turn || 1) - 1);
-	document.getElementById("report-title").textContent = `${g.name} — Turn ${liveTurn}`;
-	document.getElementById("orders-turn-num").textContent = Math.max(1, liveTurn);
+	theElementWithTheId("report-title", HTMLElement).textContent = `${g.name} — Turn ${String(liveTurn)}`;
+	theElementWithTheId("orders-turn-num", HTMLElement).textContent = String(Math.max(1, liveTurn));
 	const navEl = document.getElementById("turn-nav-btns");
 	if (navEl) {
 		navEl.innerHTML = "";
@@ -14431,36 +14562,39 @@ async function openReport(gamePlayerId) {
 			for (let d = 0; d <= resolvedTurn; d++) {
 				const btn = document.createElement("button");
 				const lbl = snapshotTurnLabel(d);
-				btn.textContent = `T${lbl}`;
-				btn.dataset.turn = d;
-				btn.title = d === 0 ? `Turn ${lbl} — the founding report, your starting position` : `Turn ${lbl} — the report you received then`;
+				btn.textContent = `T${String(lbl)}`;
+				btn.dataset["turn"] = String(d);
+				btn.title = d === 0 ? `Turn ${String(lbl)} — the founding report, your starting position` : `Turn ${String(lbl)} — the report you received then`;
 				btn.onclick = (() => {
 					const turn = d;
 					const pi = gp.player_index;
 					const cur = resolvedTurn;
-					return () => turn === cur ? returnToCurrentReport() : loadPastReport(gp.game_id, pi, turn);
+					return () => {
+						if (turn === cur) returnToCurrentReport();
+						else loadPastReport(gp.game_id, pi, turn);
+					};
 				})();
 				navEl.appendChild(btn);
 			}
-			navEl.dataset.resolved = resolvedTurn;
+			navEl.dataset["resolved"] = String(resolvedTurn);
 			viewedTurn = null;
 			refreshTurnNavHighlight();
 		}
 	}
-	document.getElementById("prev-report-banner").style.display = "none";
+	theElementWithTheId("prev-report-banner", HTMLElement).style.display = "none";
 	const submitted = gp.orders_submitted;
-	document.getElementById("report-status-pill").innerHTML = submitted ? "<span class=\"pill pill-blue\">✓ Orders submitted</span>" : g.status === "active" ? "<span class=\"pill pill-amber\">⏳ Orders needed</span>" : "<span class=\"pill pill-green\">Waiting to start</span>";
+	theElementWithTheId("report-status-pill", HTMLElement).innerHTML = submitted ? "<span class=\"pill pill-blue\">✓ Orders submitted</span>" : g.status === "active" ? "<span class=\"pill pill-amber\">⏳ Orders needed</span>" : "<span class=\"pill pill-green\">Waiting to start</span>";
 	{
 		const _dl = document.getElementById("turn-deadline-line");
 		if (_dl) {
 			const t = turnDeadlineText(g);
 			_dl.style.display = t ? "block" : "none";
-			_dl.innerHTML = t;
+			_dl.innerHTML = String(t);
 		}
 	}
 	if (report.waitingForTurn0 || g.turn === 0) {
-		document.getElementById("report-kingdom").innerHTML = "<div class=\"msg-info\">The GM is setting up the game world. Check back soon — your turn report will appear here once Turn 0 has been run.</div>";
-		document.getElementById("report-provinces").innerHTML = "";
+		theElementWithTheId("report-kingdom", HTMLElement).innerHTML = "<div class=\"msg-info\">The GM is setting up the game world. Check back soon — your turn report will appear here once Turn 0 has been run.</div>";
+		theElementWithTheId("report-provinces", HTMLElement).innerHTML = "";
 		{
 			const _ri = document.getElementById("report-intel");
 			if (_ri) _ri.innerHTML = "";
@@ -14471,25 +14605,25 @@ async function openReport(gamePlayerId) {
 			const _lr = document.getElementById("report-lairs");
 			if (_lr) _lr.innerHTML = "";
 		}
-		document.getElementById("orders-card").style.display = "none";
+		theElementWithTheId("orders-card", HTMLElement).style.display = "none";
 		refreshOrdersVisibility(false);
 		return;
 	}
-	document.getElementById("orders-card").style.display = "block";
+	theElementWithTheId("orders-card", HTMLElement).style.display = "block";
 	refreshOrdersVisibility(true);
 	currentGamePlayer = gp;
-	buildOrdersForm(report.characters || [], gp.orders_submitted, gp.orders, g.turn);
+	buildOrdersForm(report.characters ?? [], gp.orders_submitted, gp.orders, g.turn);
 	renderReportView(report);
 }
 function renderReportView(report) {
-	buildChronicle(report.lastTurnLog || [], report.characters || []);
-	const kingdom = report.kingdom || {};
-	const chars = report.characters || [];
-	const taxIncome = kingdom.taxIncome || 0;
-	const armyWages = kingdom.armyWages || 0;
-	const heroWages = kingdom.heroWages || 0;
+	buildChronicle(report.lastTurnLog ?? [], report.characters ?? []);
+	const kingdom = report.kingdom ?? {};
+	const chars = report.characters ?? [];
+	const taxIncome = (kingdom.taxIncome ?? 0) || 0;
+	const armyWages = (kingdom.armyWages ?? 0) || 0;
+	const heroWages = (kingdom.heroWages ?? 0) || 0;
 	const netIncome = taxIncome - armyWages - heroWages;
-	const playerAlignment = kingdom.alignment || "Neutral";
+	const playerAlignment = (kingdom.alignment ?? "") || "Neutral";
 	const alignSummary = {
 		Divine: `Your realm walks in the light of the divine. All heroes recover twice as much HP when they Rest (60% of maximum HP rather than the usual 30%). Your White Magic spells draw on deeper power — Bless Province adds 80% of a province's tax value rather than 60%, and when the KING works the blessing in person, the province yields a full 100% more. Should any of your characters — king or hero — fall, divine grace will return them to life after one full turn in death, restored to half health but stripped of armies and items — but ONLY upon consecrated ground: they rise in the nearest consecrated province you still hold, and the miracle spends that province's consecration. If the realm holds no consecrated province when the time comes, the grace is lost (a fallen king is then succeeded by an heir). Consecrate: your king may sanctify owned provinces, up to his White skill level at once (not the home province or its neighbours, and never two side by side — the crown's hearth was already anointed at the coronation, and the gods bid you carry the light outward). Consecrated ground yields +50% tax, its defenders are twice as likely to fight with fanatical zeal, Undead and Evil hosts attacking it fight at −15%, and it is where your fallen are restored. Guard it: a consecrated province that is captured loses its consecration at once, and each unit of the army that takes it has a 50% chance to gain an experience level. Your armies fight with a 50% chance of fanatical zeal — the highest of any alignment. But beware: your court is priced at the far end of the alignment spectrum — dark-hearted heroes cost dearly, and Undead heroes will never serve you at all.`,
 		Good: `Your realm is known for honour and fellowship. Your armies fight with a solid 40% chance of fanaticism — second only to the Divine. Banner of Fellowship: allied contingents converging on the same battle unify 15% more readily under your honourable cause. Righteous Defence: any army defending a province you own fights at +10% — your soldiers know the ground they hold is held justly. Call to Arms: once per turn your king may summon the folk of any owned humanoid province — wherever they happen to be — and a free Green garrison unit of that province's native type musters to defend it. Sitting close to the centre of the alignment spectrum, most wandering heroes serve you cheaply.`,
@@ -14498,7 +14632,7 @@ function renderReportView(report) {
 		Pagan: `Your realm draws on ancient and forgotten powers. Your king walks the wild places from birth — Explorer 1 from the outset. Perform Rite at discovered ritual sites (now found across much of the world, commonest in wild Creature and Monster country): the Wild Hunt binds two of the province's creatures to your host as Veterans until the end of the following turn, and a Blood Offering sacrifices units to empower an equal number of others (+2 quality tiers each, to Elite). Blood Harvest: +1g per enemy unit your characters destroy in victory. Your armies fight with a 15% chance of fanaticism.`,
 		Evil: `Your realm rules through fear and domination. Your king commands Druid 1 from the outset, and all Monster armies follow your heroes without any Druid skill requirement (every level of Druid a commander does hold adds +20% to them), though a hero leads at most as many Creature and Monster units as his Druid level. You begin beside a Monster province you can lead from turn one, and there is always at least one within two provinces of your home. When your forces win decisively, a Terror effect lingers — any army defending that province in the next battle fights at −10% strength, broken by what they witnessed — and by Reign of Fear your Monsters fight at ×1.5 when they attack a province your own Terror still grips. Monster armies — Cave Trolls, Manticore Pride, Basilisk Brood, Sea Giants, Eldritch Kraken, Elder Dragons, Titan Warbeasts, Dread Hydras and Shark Shoals — fight with savage fury under your command — a host with any of them in it fights at ×1.25 in every battle (no roll; it does not stack with zeal, the stronger counts). When one of your heroes conquers a province, he treats it by the conquest doctrine set on his orders: Terror plunders 50% of the province's tax value in gold at once; Enslave takes no gold but presses the beaten folk into a free Green garrison unit, and the province pays 1g less tax for 3 turns (only where the folk are humanoid: anywhere else, he plunders). Your armies fight with a 25% base chance of fanaticism.`,
 		Undead: `Your realm defies death itself. Your king commands Necromancy 1 from the outset and begins with a unit of Skeletal Shieldwall Levies at their side. All skeletal armies under your banner are exempt from the Druid penalty, cost only 1g upkeep each, and fight with undying fanaticism in EVERY battle — ×1.5 (+50%) when the king leads them in person, ×1.3 (+30%) under any other commander — the whole host is lifted. Harvest the Field: any of your characters standing where armies have fallen may raise one grave as a Skeletal unit for 2g — no magic, no Necromancy skill, just corpse-carters and cold work. Deathless March: a force of skeletons alone can never be cut down in flight — with no line of retreat they simply stand and hold the ground, because the dead do not panic. Battlefield graves in your provinces decay at half the normal rate, preserving more fallen armies for the Skeletal Armies spell. But beware: your court is priced at the far end of the alignment spectrum — righteous heroes cost dearly, and Divine heroes will never serve you at all.`
-	}[playerAlignment] || "";
+	}[playerAlignment] ?? "";
 	const alignColours = {
 		Divine: "#c8922a",
 		Good: "#2d6a2d",
@@ -14508,9 +14642,9 @@ function renderReportView(report) {
 		Evil: "#8a1c1c",
 		Undead: "#3a1a6a"
 	};
-	const alignBanner = alignSummary ? kcHtml`
-    <div style="background:#fdf8ee;border-left:4px solid ${alignColours[playerAlignment] || "#888"};padding:8px 12px;margin-bottom:10px;border-radius:0 3px 3px 0">
-      <div style="font-family:'Cinzel',serif;font-size:.72rem;color:${alignColours[playerAlignment] || "#888"};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;font-weight:700">${{
+	const realmCard = kcHtml`${alignSummary ? kcHtml`
+    <div style="background:#fdf8ee;border-left:4px solid ${(alignColours[playerAlignment] ?? "") || "#888"};padding:8px 12px;margin-bottom:10px;border-radius:0 3px 3px 0">
+      <div style="font-family:'Cinzel',serif;font-size:.72rem;color:${(alignColours[playerAlignment] ?? "") || "#888"};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;font-weight:700">${{
 		Divine: "✨",
 		Good: "⚔",
 		Druidic: "🌿",
@@ -14518,22 +14652,20 @@ function renderReportView(report) {
 		Pagan: "🔥",
 		Evil: "💀",
 		Undead: "💀"
-	}[playerAlignment] || ""} ${playerAlignment} Realm</div>
+	}[playerAlignment] ?? ""} ${playerAlignment} Realm</div>
       <div style="font-size:.78rem;color:#444;line-height:1.5">${bulletizeDesc(alignSummary)}</div>
-    </div>` : "";
-	const cmGuide = playerAlignment === "Druidic" || playerAlignment === "Evil" ? kcHtml`
+    </div>` : ""}${playerAlignment === "Druidic" || playerAlignment === "Evil" ? kcHtml`
     <div style="font-size:.72rem;color:var(--stone);background:#f5f0e8;border:1px solid var(--stone);border-radius:2px;padding:5px 8px;margin-bottom:8px">
       ${playerAlignment === "Druidic" ? kcHtml`🌿 <strong>Druidic bonuses</strong> — <span style="color:#1d5a1d"><strong>[C] Creature</strong></span> armies get no Druid penalty and fight at ×1.5 in forest/jungle; every level of Druid your commander holds adds +20% to them. Your king starts with Druid +1.` : ""}
       ${playerAlignment === "Evil" ? kcHtml`💀 <strong>Evil bonuses</strong> — <span style="color:#701010"><strong>[M] Monster</strong></span> armies get no Druid penalty and lift the whole host to ×1.25 in every battle (not stacking with zeal); every level of Druid your commander holds adds +20% to them. Your king starts with Druid +1. On decisive wins: Terror effect, and Reign of Fear — your Monsters fight ×1.5 attacking ground your Terror grips. On province conquest, by each hero's doctrine: Terror plunders 50% of its tax; Enslave presses a free Green garrison unit, and the province pays 1g less tax for 3 turns.` : ""}
       <br><span style="color:#1d5a1d;font-weight:600">[C] Creatures:</span> Thunderbirds, Forest Ents, Great Bears, Stone Giants, Unicorn Herd, Mammoth Host, Crimson Rocs, Whale Cohort, Great Turtles
       ${playerAlignment === "Evil" ? kcHtml`<br><span style="color:#701010;font-weight:600">[M] Monsters:</span> Cave Trolls, Manticore Pride, Basilisk Brood, Sea Giants, Eldritch Kraken, Elder Dragons, Titan Warbeasts, Dread Hydras, Shark Shoals` : ""}
-    </div>` : "";
-	document.getElementById("report-kingdom").innerHTML = kcHtml`${alignBanner}${cmGuide}
+    </div>` : ""}
     <div class="report-grid">
-      <div class="stat-box"><div class="stat-label">Treasury</div><div class="stat-value">${kingdom.gold || 0}g</div></div>
+      <div class="stat-box"><div class="stat-label">Treasury</div><div class="stat-value">${(kingdom.gold ?? 0) || 0}g</div></div>
       <div class="stat-box"><div class="stat-label">Tax Income</div><div class="stat-value">${taxIncome}g/turn</div>${(() => {
-		const K = (k) => kingdom[k] || 0;
-		const sage = kingdom.sageDiscG != null ? kingdom.sageDiscG : K("sdRecords") + K("sdAgri") + K("sdMining") + K("sdAqueduct") + K("sdCreed") + K("interestBonus");
+		const K = (k) => (kingdom[k] ?? 0) || 0;
+		const sage = kingdom.sageDiscG ?? K("sdRecords") + K("sdAgri") + K("sdMining") + K("sdAqueduct") + K("sdCreed") + K("interestBonus");
 		const bonuses = [
 			[K("consecG"), "consecrated ground"],
 			[K("neutralTradeBonus"), "Neutral trade"],
@@ -14548,24 +14680,24 @@ function renderReportView(report) {
 		].filter((b) => b[0] > 0);
 		const eq = K("earthquakeReduction"), ens = K("enslaveReduction");
 		const bonusSum = bonuses.reduce((a, b) => a + b[0], 0);
-		const rawBase = kingdom.rawTaxBase != null ? kingdom.rawTaxBase : Math.max(0, taxIncome - bonusSum + eq + ens);
+		const rawBase = kingdom.rawTaxBase ?? Math.max(0, taxIncome - bonusSum + eq + ens);
 		const row = (txt, col) => kcHtml`<div style="font-size:.62rem;color:${col};margin-top:1px;line-height:1.3">${txt}</div>`;
 		return kcHtml`${[
-			row(`Base province tax: ${rawBase}g`, "var(--stone)"),
-			bonuses.map((b) => row(`+${b[0]}g ${b[1]}`, "#2d7a2d")),
+			row(`Base province tax: ${String(rawBase)}g`, "var(--stone)"),
+			bonuses.map((b) => row(`+${String(b[0])}g ${b[1]}`, "#2d7a2d")),
 			bonuses.length ? "" : row("no bonuses", "var(--stone)"),
-			K("taxBonusCutG") > 0 ? row(`−${K("taxBonusCutG")}g of item tax gold above the ${K("taxBonusCapG")}g cap (5% of base tax)`, "#8a6d1f") : ""
-		]}${eq > 0 ? row(`−${eq}g lost to earthquake damage`, "#c00") : ""}${ens > 0 ? row(`−${ens}g enslaved provinces seethe`, "#c00") : ""}${kcHtml`<div style="font-size:.6rem;color:var(--stone);margin-top:2px;line-height:1.3">projected for next turn — this turn's actual take is under Kingdom Events</div>`}`;
+			K("taxBonusCutG") > 0 ? row(`−${String(K("taxBonusCutG"))}g of item tax gold above the ${String(K("taxBonusCapG"))}g cap (5% of base tax)`, "#8a6d1f") : ""
+		]}${eq > 0 ? row(`−${String(eq)}g lost to earthquake damage`, "#c00") : ""}${ens > 0 ? row(`−${String(ens)}g enslaved provinces seethe`, "#c00") : ""}${kcHtml`<div style="font-size:.6rem;color:var(--stone);margin-top:2px;line-height:1.3">projected for next turn — this turn's actual take is under Kingdom Events</div>`}`;
 	})()}</div>
-      <div class="stat-box"><div class="stat-label">Army Wages</div><div class="stat-value" style="color:${armyWages > 0 ? "#c00" : "inherit"}">${armyWages}g/turn</div>${(kingdom.hostLeaderG || 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.hostLeaderG}g the Host-Leader</div>` : ""}${(kingdom.orcSpoilsG || 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.orcSpoilsG}g Orcish war-spoils</div>` : ""}${kingdom.nextArmyWages != null && kingdom.nextArmyWages !== kingdom.armyWages ? kcHtml`<div style="font-size:.62rem;color:#2a2419;margin-top:2px;line-height:1.3">next turn: ${kingdom.nextArmyWages}g</div>` : ""}</div>
-      <div class="stat-box"><div class="stat-label">Hero Wages</div><div class="stat-value" style="color:${heroWages > 0 ? "#c00" : "inherit"}">${heroWages}g/turn</div>${(kingdom.heroWageDisc || 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.heroWageDisc}g wage discounts</div>` : ""}${kingdom.nextHeroWages != null && kingdom.nextHeroWages !== kingdom.heroWages ? kcHtml`<div style="font-size:.62rem;color:#2a2419;margin-top:2px;line-height:1.3">next turn: ${kingdom.nextHeroWages}g</div>` : ""}</div>
+      <div class="stat-box"><div class="stat-label">Army Wages</div><div class="stat-value" style="color:${armyWages > 0 ? "#c00" : "inherit"}">${armyWages}g/turn</div>${(kingdom.hostLeaderG ?? 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.hostLeaderG}g the Host-Leader</div>` : ""}${(kingdom.orcSpoilsG ?? 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.orcSpoilsG}g Orcish war-spoils</div>` : ""}${kingdom.nextArmyWages != null && kingdom.nextArmyWages !== kingdom.armyWages ? kcHtml`<div style="font-size:.62rem;color:#2a2419;margin-top:2px;line-height:1.3">next turn: ${kingdom.nextArmyWages}g</div>` : ""}</div>
+      <div class="stat-box"><div class="stat-label">Hero Wages</div><div class="stat-value" style="color:${heroWages > 0 ? "#c00" : "inherit"}">${heroWages}g/turn</div>${(kingdom.heroWageDisc ?? 0) > 0 ? kcHtml`<div style="font-size:.62rem;color:#1d5a1d;margin-top:2px;line-height:1.3">after −${kingdom.heroWageDisc}g wage discounts</div>` : ""}${kingdom.nextHeroWages != null && kingdom.nextHeroWages !== kingdom.heroWages ? kcHtml`<div style="font-size:.62rem;color:#2a2419;margin-top:2px;line-height:1.3">next turn: ${kingdom.nextHeroWages}g</div>` : ""}</div>
       <div class="stat-box"><div class="stat-label">Net Income</div><div class="stat-value" style="color:${netIncome >= 0 ? "#2d7a2d" : "#c00"}">${netIncome >= 0 ? "+" : ""}${netIncome}g/turn</div></div>
-      <div class="stat-box"><div class="stat-label">Provinces</div><div class="stat-value">${(report.ownedProvinces || []).length}</div></div>
+      <div class="stat-box"><div class="stat-label">Provinces</div><div class="stat-value">${(report.ownedProvinces ?? []).length}</div></div>
     </div>
     ${chars.filter((c) => c.alive !== false).map((c) => {
-		const hpPct = dispFloor(c.hp / c.maxHp * 100) || 0;
+		const hpPct = dispFloor(Number(c.hp) / Number(c.maxHp) * 100) || 0;
 		const skillRow = skillRowHTML(c, "inline");
-		const effSpd = (c.armies || []).length === 0 ? 5 : c.effectiveSpeed != null ? c.effectiveSpeed : Math.min(...(c.armies || []).map((a) => a.speed || 3));
+		const effSpd = (c.armies ?? []).length === 0 ? 5 : c.effectiveSpeed ?? Math.min(...(c.armies ?? []).map((a) => (a.speed ?? 0) || 3));
 		return kcHtml`<div class="char-card">
         <div class="char-card-head">
           <span style="font-size:.9rem">${c.isKing ? "👑" : "⚔"}</span>
@@ -14574,44 +14706,53 @@ function renderReportView(report) {
           <span style="font-size:.7rem;color:var(--stone)">HP ${c.hp}/${c.maxHp}</span>
         </div>
         <div class="char-detail" style="background:#fdf5e0;border:1px solid var(--parchment-dark);border-radius:2px;padding:5px 10px 6px;font-size:.76rem;line-height:1.6;display:flex;flex-wrap:wrap;gap:8px">
-          <span style="flex-basis:100%;width:100%;color:var(--stone)">${formatRace(c.race)} · ${c.alignment || "—"} · ${c.temper || "—"}${c.temperEff && c.temperEff !== c.temper ? kcHtml` <span style="color:#6a4a9a">(fights as ${c.temperEff} — equipped item)</span>` : ""}</span>
+          <span style="flex-basis:100%;width:100%;color:var(--stone)">${formatRace(c.race)} · ${(c.alignment ?? "") || "—"} · ${(c.temper ?? "") || "—"}${c.temperEff && c.temperEff !== c.temper ? kcHtml` <span style="color:#6a4a9a">(fights as ${c.temperEff} — equipped item)</span>` : ""}</span>
           <span><strong>HP:</strong> ${c.hp}/${c.maxHp}</span>
-          <span>📍 In ${provLinkHtml(c.locationId, c.locationName || "Unknown")}</span>
+          <span>📍 In ${provLinkHtml(c.locationId, (c.locationName ?? "") || "Unknown")}</span>
           <span style="color:var(--forest)" title="1 province per phase used to move, +1 per province conquered"><strong>Move:</strong> ${effSpd} province${effSpd !== 1 ? "s" : ""}/turn</span>
-          ${!c.isKing ? kcHtml`<span><strong>Pay:</strong> ${c.pay || 1}g/turn</span>` : ""}
+          ${!c.isKing ? kcHtml`<span><strong>Pay:</strong> ${thisOrElse$1(c.pay, 1)}g/turn</span>` : ""}
           ${skillRow}
-          ${itemsForDisplayP(c).map((i) => kcHtml`<div style="flex-basis:100%;width:100%;color:var(--item-ink);font-weight:600">${itemAcquiredTagP(i)}🔮 ${itemLoreTip(i, i.name)}${itemTierTagP(i)}${itemBoundTag(i, c)}${itemUsableBy(i, c) ? itemSlotTag(i, c) : ""}${i.desc ? kcHtml` <span style="color:var(--item-desc);font-weight:400">(${i.desc})</span>` : ""}</div>`)}
+          ${itemsForDisplayP(c).map((iHeld) => {
+			const i = theItemShown(iHeld);
+			return kcHtml`<div style="flex-basis:100%;width:100%;color:var(--item-ink);font-weight:600">${itemAcquiredTagP(i)}🔮 ${itemLoreTip(i, i.name)}${itemTierTagP(i)}${itemBoundTag(i, c)}${itemUsableBy(i, c) ? itemSlotTag(i, c) : ""}${i.desc ? kcHtml` <span style="color:var(--item-desc);font-weight:400">(${i.desc})</span>` : ""}</div>`;
+		})}
           ${(() => {
-			const maj = c.titlesHeld || [], min = c.minorHeld || [];
+			const maj = c.titlesHeld ?? [], min = c.minorHeld ?? [];
 			if (!maj.length && !min.length) return "";
-			return kcHtml`<div style="flex-basis:100%;width:100%;margin-top:5px;border-top:1px dashed var(--parchment-dark);padding-top:4px"><div style="font-size:.64rem;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Titles &amp; perks</div>${maj.map((tt) => kcHtml`<div style="font-size:.72rem;margin-top:3px"><span style="background:#fdf3d8;border:1px solid var(--gold);border-radius:2px;padding:0 4px;font-family:'Cinzel',serif;color:#5a3f08">🏆 ${tt.name}</span> <span style="color:#231e16">${tt.perk || ""}</span></div>`)}${min.map((tt) => kcHtml`<div style="font-size:.72rem;margin-top:2px"><span style="background:#eef3e6;border:1px solid #b8c9a8;border-radius:2px;padding:0 4px;color:#3a5a2a">🎖 ${tt.name}</span> <span style="color:#231e16">${tt.perk || ""}</span></div>`)}</div>`;
+			return kcHtml`<div style="flex-basis:100%;width:100%;margin-top:5px;border-top:1px dashed var(--parchment-dark);padding-top:4px"><div style="font-size:.64rem;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Titles &amp; perks</div>${maj.map((ttHeld) => {
+				const tt = theTitleShown(ttHeld);
+				return kcHtml`<div style="font-size:.72rem;margin-top:3px"><span style="background:#fdf3d8;border:1px solid var(--gold);border-radius:2px;padding:0 4px;font-family:'Cinzel',serif;color:#5a3f08">🏆 ${tt.name}</span> <span style="color:#231e16">${tt.perk ?? ""}</span></div>`;
+			})}${min.map((ttHeld) => {
+				const tt = theTitleShown(ttHeld);
+				return kcHtml`<div style="font-size:.72rem;margin-top:2px"><span style="background:#eef3e6;border:1px solid #b8c9a8;border-radius:2px;padding:0 4px;color:#3a5a2a">🎖 ${tt.name}</span> <span style="color:#231e16">${tt.perk ?? ""}</span></div>`;
+			})}</div>`;
 		})()}
           ${(() => {
-			const arr = c.armies || [];
+			const arr = c.armies ?? [];
 			const head = kcHtml`<div style="flex-basis:100%;width:100%;margin-top:5px;border-top:1px dashed var(--parchment-dark);padding-top:4px"><div style="font-size:.64rem;color:var(--stone);text-transform:uppercase;letter-spacing:.05em">Armies leading</div>`;
 			if (arr.length === 0) return kcHtml`${head}<div style="font-size:.75rem;color:#3a3224">No armies led — moves 5 provinces/turn on its own.</div></div>`;
 			const { druLevel, units, totalStr, totalCost, druidUnits, druidShort } = theArmyCardsFiguresOfAColumn(arr, c, report);
 			const lines = arr.map((a, i) => {
-				const { creature, monster, req, effDru, shortfall, mastery, kingRaceMatch, leadRaceMatch, feudLed, bs } = units[i];
+				const { creature, monster, req, effDru, shortfall, mastery, kingRaceMatch, leadRaceMatch, feudLed, bs } = theFiguresOfTheCompanyAt(units, i);
 				const mast = mastery > 0 ? kcHtml` <span style="color:#1d5a1d;font-size:.66rem">+${mastery}% Druid mastery</span>` : "";
 				const pen = shortfall > 0 ? kcHtml` <span style="color:var(--crimson);font-size:.68rem">−${shortfall * 20}% str (Druid ${effDru}/${req})</span>` : "";
 				const raceBoost = kingRaceMatch || leadRaceMatch ? kcHtml` <span style="color:#1d5a1d;font-size:.66rem">+${kingRaceMatch && leadRaceMatch ? 44 : 20}% kin</span>` : "";
 				const feudTag = feudLed ? kcHtml` <span style="color:var(--crimson);font-size:.66rem">−20% feud</span>` : "";
 				const tag = creature || monster ? kcHtml` <span style="color:#1d5a1d;font-size:.62rem">[${creature ? "Creature" : "Monster"}]</span>` : "";
-				return kcHtml`<div style="font-size:.75rem">${unitAbilityTip(a.type, kcHtml`${unitEmoji(a.type)} <span style="color:${reportColour(kingdom.color) || "var(--ink)"}">${armyLabel(a, { noMove: true })}</span>`)} <span style="color:var(--stone);font-size:.66rem">str ${bs}${a.moveRate != null ? ` · move ${a.moveRate}${a.moveKind === "sea" ? " (sea)" : a.moveKind === "air" ? " (air)" : ""}` : ""}</span>${tag}${raceBoost}${feudTag}${mast}${pen}</div>`;
+				return kcHtml`<div style="font-size:.75rem">${unitAbilityTip(a.type, kcHtml`${unitEmoji(a.type)} <span style="color:${(reportColour(kingdom.color) ?? "") || "var(--ink)"}">${armyLabel(a, { noMove: true })}</span>`)} <span style="color:var(--stone);font-size:.66rem">str ${bs}${a.moveRate != null ? ` · move ${String(a.moveRate)}${a.moveKind === "sea" ? " (sea)" : a.moveKind === "air" ? " (air)" : ""}` : ""}</span>${tag}${raceBoost}${feudTag}${mast}${pen}</div>`;
 			});
-			const effSpd2 = c.effectiveSpeed != null ? c.effectiveSpeed : Math.min(...arr.map((a) => a.speed || 3));
+			const effSpd2 = c.effectiveSpeed ?? Math.min(...arr.map((a) => (a.speed ?? 0) || 3));
 			const { _airNote, _seaNote } = theArmyCardsAirAndSeaNotesOfAColumn(arr, c);
-			const druNote = druidUnits > 0 ? kcHtml` · 🌿 ${druidUnits} unit${druidUnits !== 1 ? "s" : ""} need Druid ${druidShort > 0 ? kcHtml`<span style="color:var(--crimson)">(${druidShort} under-led — losing strength)</span>` : kcHtml`<span style="color:#1d5a1d">(${c.name.split(" ")[0]} qualifies)</span>`}` : "";
-			const summary = kcHtml`<div style="margin-top:3px;font-size:.7rem;color:var(--stone);border-top:1px dotted var(--parchment-dark);padding-top:2px">⚔ Total strength <strong>${totalStr}</strong> <span style="font-size:.64rem">(before your discoveries, the ground, the foe and the battle's tactics)</span> · 🏃 Move <strong>${effSpd2}</strong> province${effSpd2 !== 1 ? "s" : ""}/turn · 💰 Upkeep <strong>${totalCost}g/turn</strong>${druNote}${_airNote}${_seaNote}</div>`;
+			const druNote = druidUnits > 0 ? kcHtml` · 🌿 ${druidUnits} unit${druidUnits !== 1 ? "s" : ""} need Druid ${druidShort > 0 ? kcHtml`<span style="color:var(--crimson)">(${druidShort} under-led — losing strength)</span>` : kcHtml`<span style="color:#1d5a1d">(${theNameToSplit(c.name).split(" ")[0]} qualifies)</span>`}` : "";
+			const summary = kcHtml`<div style="margin-top:3px;font-size:.7rem;color:var(--stone);border-top:1px dotted var(--parchment-dark);padding-top:2px">⚔ Total strength <strong>${totalStr}</strong> <span style="font-size:.64rem">(before the ground, the foe and the battle's tactics)</span> · 🏃 Move <strong>${effSpd2}</strong> province${effSpd2 !== 1 ? "s" : ""}/turn · 💰 Upkeep <strong>${totalCost}g/turn</strong>${druNote}${_airNote}${_seaNote}</div>`;
 			const _typeCounts = {};
 			arr.forEach((a) => {
 				const k = a.type || "unit";
-				_typeCounts[k] = (_typeCounts[k] || 0) + 1;
+				_typeCounts[k] = (_typeCounts[k] ?? 0) + 1;
 			});
-			const _typeLine = Object.keys(_typeCounts).map((k) => `${unitEmoji(k)} ${_typeCounts[k] > 1 ? _typeCounts[k] + "× " : ""}${k}`).join(", ");
-			const _airSpd = c.effectiveAirSpeed != null ? c.effectiveAirSpeed : 0;
-			const _seaSpd = c.effectiveSeaSpeed != null ? c.effectiveSeaSpeed : 0;
+			const _typeLine = Object.entries(_typeCounts).map(([k, n]) => `${unitEmoji(k)} ${Number(n) > 1 ? String(n) + "× " : ""}${k}`).join(", ");
+			const _airSpd = c.effectiveAirSpeed ?? 0;
+			const _seaSpd = c.effectiveSeaSpeed ?? 0;
 			const _paceBits = [kcHtml`🏃 Land <strong>${effSpd2}</strong>`];
 			if (_airSpd > 0) _paceBits.push(kcHtml`🦅 Flying <strong>${_airSpd}</strong>`);
 			if (_seaSpd > 0) _paceBits.push(kcHtml`⚓ Sea <strong>${_seaSpd}</strong>`);
@@ -14625,43 +14766,44 @@ function renderReportView(report) {
         </div>
       </div>`;
 	})}`;
-	const provs = [...report.ownedProvinces || []].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-	document.getElementById("report-provinces").innerHTML = provs.length ? provs.map((p) => kcHtml`<div class="prov-entry">
+	theElementWithTheId("report-kingdom", HTMLElement).innerHTML = String(realmCard);
+	const provs = [...report.ownedProvinces ?? []].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+	const provincesCard = provs.length ? provs.map((p) => kcHtml`<div class="prov-entry">
         <div class="prov-name">${p.name} <span style="font-size:.7rem;color:var(--stone);font-family:serif">${capitalise(p.terrain)}</span></div>
         <div class="prov-detail">
-          Tax: ${p.tax}g/turn · ${formatRace(p.race)} · Explored: ${p.explored || 0}%<br>
-          ${(p.features || []).filter((f) => f.discovered && !f.cleared).length > 0 ? kcHtml`Known lairs: ${kcJoinP(p.features.filter((f) => f.discovered && !f.cleared).map((f) => _lairName(f)), ", ")}` : "No lairs discovered yet"}
-          ${(p.features || []).filter((f) => f.cleared).length > 0 ? kcHtml`<br>Cleared: ${kcJoinP(p.features.filter((f) => f.cleared).map((f) => _lairName(f)), ", ")}` : ""}
-          <br>Recruitable: ${(p.armyTypes || []).length ? kcJoinP(p.armyTypes.map((t) => unitAbilityTip(t, `${unitEmoji(t)} ${t}`)), " · ") : "none"}
-          ${(p.garrisonArmies || []).length ? kcHtml`<br><strong>Garrisoned (unled):</strong>${p.garrisonArmies.map((a) => kcHtml`<br>${unitAbilityTip(a.type, kcHtml`${unitEmoji(a.type)} <span style="color:${reportColour(kingdom.color) || "var(--ink)"}">${armyLabel(a)}</span>`)}`)}` : ""}
-          ${(p.neutralDefenders || []).length ? kcHtml`<br><strong>Defenders:</strong>${p.neutralDefenders.map((d) => kcHtml`<br>${unitAbilityTip(d.type, kcHtml`${unitEmoji(d.type)} <span style="color:#231e16">${armyLabel(d)}</span>`)}`)}` : ""}
+          Tax: ${p.tax}g/turn · ${formatRace(p.race)} · Explored: ${(p.explored ?? 0) || 0}%<br>
+          ${(p.features ?? []).filter((f) => f.discovered && !f.cleared).length > 0 ? kcHtml`Known lairs: ${kcJoinP((p.features ?? []).filter((f) => f.discovered && !f.cleared).map((f) => _lairName(f)), ", ")}` : "No lairs discovered yet"}
+          ${(p.features ?? []).filter((f) => f.cleared).length > 0 ? kcHtml`<br>Cleared: ${kcJoinP((p.features ?? []).filter((f) => f.cleared).map((f) => _lairName(f)), ", ")}` : ""}
+          <br>Recruitable: ${(p.armyTypes ?? []).length ? kcJoinP((p.armyTypes ?? []).map((t) => unitAbilityTip(t, `${unitEmoji(t)} ${t}`)), " · ") : "none"}
+          ${(p.garrisonArmies ?? []).length ? kcHtml`<br><strong>Garrisoned (unled):</strong>${(p.garrisonArmies ?? []).map((a) => kcHtml`<br>${unitAbilityTip(a.type, kcHtml`${unitEmoji(a.type)} <span style="color:${(reportColour(kingdom.color) ?? "") || "var(--ink)"}">${armyLabel(a)}</span>`)}`)}` : ""}
+          ${(p.neutralDefenders ?? []).length ? kcHtml`<br><strong>Defenders:</strong>${(p.neutralDefenders ?? []).map((d) => kcHtml`<br>${unitAbilityTip(d.type, kcHtml`${unitEmoji(d.type)} <span style="color:#231e16">${armyLabel(d)}</span>`)}`)}` : ""}
           ${provinceGrandDesignHTML(p)}
           ${terrorNoteP(p, true)}
         </div>
       </div>`) : kcHtml`<div style="color:#3a3224;font-size:.85rem">No provinces owned yet.</div>`;
-	report.intel;
-	const sightings = report.heroSightings || [];
-	const knownFeatures = report.knownFeatures || [];
-	const mercs = report.mercIntel || [];
-	let intelHtml = [];
-	let otherForcesHtml = [];
-	let lairsHtml = [];
-	const visDeadHeroes = report.visibleDeadHeroes || [];
+	theElementWithTheId("report-provinces", HTMLElement).innerHTML = String(provincesCard);
+	const sightings = report.heroSightings ?? [];
+	const knownFeatures = report.knownFeatures ?? [];
+	const mercs = report.mercIntel ?? [];
+	const intelHtml = [];
+	const otherForcesHtml = [];
+	const lairsHtml = [];
+	const visDeadHeroes = report.visibleDeadHeroes ?? [];
 	if (visDeadHeroes.length > 0) {
 		otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#46275f;margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">💀 Fallen Heroes</div>`);
 		otherForcesHtml.push(visDeadHeroes.map((h) => kcHtml`<div class="intel-entry" style="border-left-color:#5a3a7a;background:#f8f0ff">
       <strong>${h.name}</strong> <span style="color:#701010">(dead)</span>${h.race || h.alignment ? ` (${[h.race, h.alignment].filter(Boolean).join(", ")})` : ""} ${deadHeroRealmTagP(h, report)} when they fell — body lies in ${h.locationName} (fell turn ${h.killedOnTurn})<br>
-      <span style="font-size:.78rem">${h.topSkill ? kcHtml`${skillFameLabelM(h.topSkill.level)} <span style="color:var(--gold)">${SKILL_LABELS[h.topSkill.skill] || h.topSkill.skill}</span>` : "No notable skills"}</span><br>
+      <span style="font-size:.78rem">${h.topSkill ? kcHtml`${skillFameLabelM(h.topSkill.level)} <span style="color:var(--gold)">${(theSkillsNames[h.topSkill.skill] ?? "") || h.topSkill.skill}</span>` : "No notable skills"}</span><br>
       ${(h.servedOther !== void 0 ? h.servedOther : h.player != null && !h.isOwn) ? kcHtml`<span style="font-size:.72rem;color:#701010">⛔ Sworn to another crown in life — Resurrect will not raise them for you. Only your own fallen and heroes who never served a rival can be brought back.</span>` : h.inVisibleProv ? kcHtml`<span style="font-size:.72rem;color:#46275f">💀 A hero with the Resurrect spell can raise them from this province.</span>` : kcHtml`<span style="font-size:.72rem;color:#332c20">Last known location — send a caster with the Resurrect spell to their province to raise them.</span>`}
     </div>`));
 	}
-	const graveIntel = (report.graveIntel || []).filter((g) => g && g.detail && g.detail.length > 0);
+	const graveIntel = (report.graveIntel ?? []).filter((g) => Boolean(g?.detail && g.detail.length > 0));
 	if (graveIntel.length > 0) {
 		otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#2e2e2e;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">💀 Graveyards Known</div>`);
 		otherForcesHtml.push(graveIntel.map((g) => {
-			const det = g.detail && g.detail.length ? kcHtml`<span style="color:#46275f">The dead:</span> ${g.detailPartial ? "at least " : ""}${g.detail.map((d) => `${d.n}× ${d.k}`).join(", ")}${g.detailPartial ? kcHtml` <span style="color:#332c20">— Grave-sight names only the crack and elite; lesser dead may lie here unseen.</span>` : ""}${g.detailTurn && g.detailTurn !== g.turn ? kcHtml` <span style="color:#3a3224">(read turn ${g.detailTurn})</span>` : ""}` : kcHtml`<span style="color:#2f281c">Graves lie here — how many, and what they hold, is unknown.</span>`;
+			const det = g.detail?.length ? kcHtml`<span style="color:#46275f">The dead:</span> ${g.detailPartial ? "at least " : ""}${g.detail.map((d) => `${String(d.n)}× ${d.k}`).join(", ")}${g.detailPartial ? kcHtml` <span style="color:#332c20">— Grave-sight names only the crack and elite; lesser dead may lie here unseen.</span>` : ""}${g.detailTurn && g.detailTurn !== g.turn ? kcHtml` <span style="color:#3a3224">(read turn ${g.detailTurn})</span>` : ""}` : kcHtml`<span style="color:#2f281c">Graves lie here — how many, and what they hold, is unknown.</span>`;
 			return kcHtml`<div class="intel-entry" style="border-left-color:#4a4a4a;background:#f6f6f4">
-        <strong>${g.name}</strong> <span style="color:#332c20;font-size:.78rem">(seen on turn ${g.turn != null ? g.turn : "?"})</span><br>
+        <strong>${g.name}</strong> <span style="color:#332c20;font-size:.78rem">(seen on turn ${g.turn ?? "?"})</span><br>
         <span style="font-size:.78rem">${det}</span><br>
         <span style="font-size:.72rem;color:#332c20">Older knowledge — these graves may since have been raised or rotted away.</span>
       </div>`;
@@ -14670,7 +14812,7 @@ function renderReportView(report) {
 	if (mercs.length > 0) {
 		otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#701010;margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Mercenary Bands</div>`);
 		otherForcesHtml.push(mercs.map((m) => kcHtml`<div class="intel-entry" style="border-left-color:#8a1c1c;background:#fff8f8">
-      <strong>${m.unitName || m.type}</strong> (${m.quality} ${m.type}) — ${m.location}<br>
+      <strong>${(m.unitName ?? "") || m.type}</strong> (${m.quality} ${m.type}) — ${m.location}<br>
       <span style="font-size:.72rem;color:#6a3030">Available for hire — use Recruit Armies in ${m.location}.</span>
     </div>`));
 	}
@@ -14681,8 +14823,9 @@ function renderReportView(report) {
 		if (wanderers.length > 0) {
 			otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:var(--gold);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Wandering Heroes</div>`);
 			otherForcesHtml.push(wanderers.map((s) => {
-				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${SKILL_LABELS[s.topSkill.skill] || s.topSkill.skill}</span>` : "no known skills";
-				const skillLine = s.spiedSkills && Object.keys(s.spiedSkills).some((k) => s.spiedSkills[k] > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(s.spiedSkills).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${SKILL_LABELS[k] || k} ${v}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
+				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${(theSkillsNames[s.topSkill.skill] ?? "") || s.topSkill.skill}</span>` : "no known skills";
+				const spied = s.spiedSkills;
+				const skillLine = spied && Object.keys(spied).some((k) => Number(spied[k]) > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(spied).filter(aSpiedLevelAboveNothing).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${(theSkillsNames[k] ?? "") || k} ${String(v)}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
 				return kcHtml`<div class="intel-entry" style="border-left-color:#c8922a">
           ⚔ <strong>${s.name}</strong> (${s.race}, ${s.alignment}) — ${s.locationName}<br>
           <span style="font-size:.78rem">${skillLine}${spiedExtraP(s)}${s.armyBand ? kcHtml` · <span style="color:#2f281c">${s.armyBand}</span>` : ""} · ${s.pay != null ? kcHtml`Hire for <strong>${s.pay}g/turn</strong>` : kcHtml`<span style="color:#a33">Will not serve your crown (alignment gulf)</span>`}${s.inOwnedProvince ? kcHtml` · <span style="color:#8fbc5a">In your province</span>` : ""}</span>
@@ -14692,8 +14835,9 @@ function renderReportView(report) {
 		if (chieftains.length > 0) {
 			otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#8a6a2a;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Local Chieftains</div>`);
 			otherForcesHtml.push(chieftains.map((s) => {
-				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${SKILL_LABELS[s.topSkill.skill] || s.topSkill.skill}</span>` : "no known skills";
-				const skillLine = s.spiedSkills && Object.keys(s.spiedSkills).some((k) => s.spiedSkills[k] > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(s.spiedSkills).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${SKILL_LABELS[k] || k} ${v}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
+				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${(theSkillsNames[s.topSkill.skill] ?? "") || s.topSkill.skill}</span>` : "no known skills";
+				const spied = s.spiedSkills;
+				const skillLine = spied && Object.keys(spied).some((k) => Number(spied[k]) > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(spied).filter(aSpiedLevelAboveNothing).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${(theSkillsNames[k] ?? "") || k} ${String(v)}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
 				return kcHtml`<div class="intel-entry" style="border-left-color:#8a6a2a">
           🛡 <strong style="color:${CHIEFTAIN_MARKER_COLOR}">${s.name}</strong> (local chieftain — ${s.race}, ${s.alignment}) — ${s.locationName}<br>
           <span style="font-size:.78rem">${skillLine}${spiedExtraP(s)}${s.armyBand ? kcHtml` · <span style="color:#2f281c">${s.armyBand}</span>` : ""}${s.inOwnedProvince ? kcHtml` · <span style="color:#8fbc5a">In your province</span>` : ""}</span>
@@ -14703,8 +14847,9 @@ function renderReportView(report) {
 		if (enemies.length > 0) {
 			otherForcesHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#7a1c1c;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Enemy Heroes</div>`);
 			otherForcesHtml.push(enemies.map((s) => {
-				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${SKILL_LABELS[s.topSkill.skill] || s.topSkill.skill}</span>` : "no known skills";
-				const skillLine = s.spiedSkills && Object.keys(s.spiedSkills).some((k) => s.spiedSkills[k] > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(s.spiedSkills).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${SKILL_LABELS[k] || k} ${v}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
+				const topStr = s.topSkill ? kcHtml`<span style="color:var(--gold)">${(theSkillsNames[s.topSkill.skill] ?? "") || s.topSkill.skill}</span>` : "no known skills";
+				const spied = s.spiedSkills;
+				const skillLine = spied && Object.keys(spied).some((k) => Number(spied[k]) > 0) ? kcHtml`<span style="color:#1d5a1d">🔍 Skills (spied turn ${s.spiedTurn}):</span> ${Object.entries(spied).filter(aSpiedLevelAboveNothing).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${(theSkillsNames[k] ?? "") || k} ${String(v)}`).join(", ")}` : s.topSkill ? kcHtml`${skillFameLabelM(s.topSkill.level)} ${topStr}` : "No known skills";
 				return kcHtml`<div class="intel-entry" style="border-left-color:#7a1c1c">
           👁 <strong>${s.name}</strong> of ${s.kingdom}${s.race || s.alignment ? ` (${[s.race, s.alignment].filter(Boolean).join(", ")})` : ""} — ${s.locationName}<br>
           <span style="font-size:.78rem">${skillLine}${spiedExtraP(s)}${s.armyBand ? kcHtml` · <span style="color:#2f281c">${s.armyBand}</span>` : ""}${s.inOwnedProvince ? kcHtml` · <span style="color:#e05050">In your territory</span>` : ""}</span>
@@ -14712,18 +14857,19 @@ function renderReportView(report) {
 			}));
 		}
 	}
-	const provinceEvents = report.provinceEvents || [];
+	const provinceEvents = report.provinceEvents ?? [];
 	if (provinceEvents.length > 0) {
 		intelHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:var(--stone);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">Province Reports</div>`);
 		const SEASONS_E = KC_SEASONS.slice();
 		const _evByProv = /* @__PURE__ */ new Map();
 		provinceEvents.forEach((ev) => {
-			const key = ev.provName || "Unknown province";
-			if (!_evByProv.has(key)) _evByProv.set(key, []);
-			_evByProv.get(key).push(ev);
+			const key = (ev.provName ?? "") || "Unknown province";
+			const here = _evByProv.get(key) ?? [];
+			_evByProv.set(key, here);
+			here.push(ev);
 		});
 		[..._evByProv.keys()].sort((a, b) => a.localeCompare(b)).forEach((prov) => {
-			const rows = _evByProv.get(prov).slice().sort((a, b) => (a.phase ?? 99) - (b.phase ?? 99)).map((ev) => {
+			const rows = theGroupFiled(_evByProv.get(prov), "slice").slice().sort((a, b) => (a.phase ?? 99) - (b.phase ?? 99)).map((ev) => {
 				const phLbl = ev.phase != null && ev.phase >= 0 && ev.phase <= 4 ? SEASONS_E[ev.phase] : null;
 				return kcHtml`<div style="padding:1px 0;font-size:.76rem">${phLbl ? kcHtml`<span style="color:var(--stone);font-size:.66rem">${phLbl}: </span>` : ""}${ev.text}</div>`;
 			});
@@ -14733,13 +14879,16 @@ function renderReportView(report) {
       </div>`);
 		});
 	}
-	const spiedProvIntel = (report.provinceCharIntel || []).filter((p) => p.spied);
+	const spiedProvIntel = (report.provinceCharIntel ?? []).filter((p) => p.spied);
 	if (spiedProvIntel.length > 0) {
 		intelHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#1d5a1d;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">🔍 Spied Provinces</div>`);
 		spiedProvIntel.forEach((pc) => {
-			const others = (pc.characters || []).filter((ch) => ch.category !== "own");
+			const others = (pc.characters ?? []).filter((ch) => ch.category !== "own");
 			const roster = others.length > 0 ? others.map((ch) => {
-				return kcHtml`<div style="padding:1px 0;font-size:.78rem">${ch.category === "enemy" ? kcHtml`<strong${ch.color ? kcHtml` style="color:${reportColour(ch.color)}"` : ""}>${ch.name}</strong>${ch.isKing ? " 👑" : ""} of ${ch.kingdom || "an enemy realm"}` : kcHtml`<strong${ch.isNeutralGuard ? kcHtml` style="color:${CHIEFTAIN_MARKER_COLOR}"` : ""}>${ch.name}</strong>${ch.isNeutralGuard ? " (local chieftain)" : " (wandering)"}`}${ch.armies && ch.armies.length > 0 ? ` — ${ch.armies.map((a) => armyLabel(a, { short: true })).join(", ")}` : ch.armyBand ? ch.armyBand === "no armies" ? "" : ` — leads ${ch.armyBand}` : ch.armyCount > 0 ? ` — leads ${ch.armyCount} unit${ch.armyCount !== 1 ? "s" : ""}` : ""}${ch.spiedSkills && Object.keys(ch.spiedSkills).some((k) => ch.spiedSkills[k] > 0) ? kcHtml`<br><span style="font-size:.72rem;color:#1d5a1d">🔍 Skills:</span> ${Object.entries(ch.spiedSkills).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${SKILL_LABELS[k] || k} ${v}`).join(", ")}` : ""}</div>`;
+				const who = ch.category === "enemy" ? kcHtml`<strong${ch.color ? kcHtml` style="color:${reportColour(ch.color)}"` : ""}>${ch.name}</strong>${ch.isKing ? " 👑" : ""} of ${(ch.kingdom ?? "") || "an enemy realm"}` : kcHtml`<strong${ch.isNeutralGuard ? kcHtml` style="color:${CHIEFTAIN_MARKER_COLOR}"` : ""}>${ch.name}</strong>${ch.isNeutralGuard ? " (local chieftain)" : " (wandering)"}`;
+				const force = ch.armies && ch.armies.length > 0 ? ` — ${ch.armies.map((a) => armyLabel(a, { short: true })).join(", ")}` : ch.armyBand ? ch.armyBand === "no armies" ? "" : ` — leads ${ch.armyBand}` : ch.armyCount !== void 0 && ch.armyCount > 0 ? ` — leads ${String(ch.armyCount)} unit${ch.armyCount !== 1 ? "s" : ""}` : "";
+				const spied = ch.spiedSkills;
+				return kcHtml`<div style="padding:1px 0;font-size:.78rem">${who}${force}${spied && Object.keys(spied).some((k) => Number(spied[k]) > 0) ? kcHtml`<br><span style="font-size:.72rem;color:#1d5a1d">🔍 Skills:</span> ${Object.entries(spied).filter(aSpiedLevelAboveNothing).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${(theSkillsNames[k] ?? "") || k} ${String(v)}`).join(", ")}` : ""}</div>`;
 			}) : kcHtml`<div style="padding:1px 0;font-size:.76rem;color:#2f281c">No other characters present at turn's end.</div>`;
 			intelHtml.push(kcHtml`<div class="intel-entry" style="border-left-color:#2d7a2d;background:#f2faf2">
         <strong style="font-family:'Cinzel',serif;font-size:.76rem">${pc.provName}</strong>
@@ -14747,18 +14896,18 @@ function renderReportView(report) {
       </div>`);
 		});
 	}
-	const spyActivity = report.spyActivity || [];
+	const spyActivity = report.spyActivity ?? [];
 	if (spyActivity.length > 0) {
 		const SEASONS_SA = KC_SEASONS.slice();
 		intelHtml.push(kcHtml`<div style="font-family:'Cinzel',serif;font-size:.72rem;color:#2d6a7a;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">🔍 Spy Activity Reports</div>`);
 		spyActivity.forEach((sa) => {
-			const rows = (sa.lines || []).map((l) => {
+			const rows = (sa.lines ?? []).map((l) => {
 				const phLbl = l.phase != null && l.phase >= 0 && l.phase <= 4 ? SEASONS_SA[l.phase] : null;
 				return kcHtml`<div style="padding:1px 0;font-size:.76rem">${phLbl ? kcHtml`<span style="color:var(--stone);font-size:.66rem">${phLbl}: </span>` : ""}${l.text}</div>`;
 			});
 			intelHtml.push(kcHtml`<div class="intel-entry" style="border-left-color:#2d6a7a;background:#f2f8fa">
         <strong style="font-family:'Cinzel',serif;font-size:.76rem">${sa.provName}</strong>
-        <div style="font-size:.68rem;color:#2f281c;margin-bottom:2px">Watched by your agent from ${SEASONS_SA[sa.sincePhase] || "later that turn"} onward:</div>
+        <div style="font-size:.68rem;color:#2f281c;margin-bottom:2px">Watched by your agent from ${(theSeasonOf(SEASONS_SA, sa.sincePhase) ?? "") || "later that turn"} onward:</div>
         ${rows}
       </div>`);
 		});
@@ -14779,10 +14928,11 @@ function renderReportView(report) {
 			Powerful: "💀",
 			Legendary: "🔥"
 		};
-		const _knownWeak = report && report.knownGuardianWeaknesses || {};
+		const _knownWeak = report.knownGuardianWeaknesses ?? {};
 		const featureCard = (f) => {
-			const pColor = POWER_COLORS[f.monsterPower] || "#7a5510";
-			const pIcon = POWER_ICONS[f.monsterPower] || "?";
+			const pColor = (POWER_COLORS[String(f.monsterPower)] ?? "") || "#7a5510";
+			const pIcon = (POWER_ICONS[String(f.monsterPower)] ?? "") || "?";
+			const weakness = _knownWeak[String(f.monster)];
 			const powerBadge = f.monsterPower && !f.cleared ? kcHtml`<span style="background:${pColor};color:#fff;font-size:.65rem;padding:1px 5px;border-radius:2px;margin-left:4px">${pIcon} ${f.monsterPower}</span>` : "";
 			if (f.ritualSite) return kcHtml`<div class="intel-entry" style="border-left-color:#5a0a9a">
           🌙 <strong>${f.name}</strong>
@@ -14790,23 +14940,25 @@ function renderReportView(report) {
         </div>`;
 			return kcHtml`<div class="intel-entry" style="border-left-color:${f.cleared ? "#888" : f.isOwned ? "#2d7a2d" : "#c8922a"}">
         ${f.cleared ? "✓" : "⭐"} <strong${f.cleared ? "" : kcHtml` style="color:${pColor}"`}>${f.name}</strong>${powerBadge}
-        ${f.cleared ? kcHtml`<span style="color:#332c20">(cleared — no guardian)</span>` : kcHtml`<br><span style="font-size:.78rem;color:${pColor}">Guardian: ${f.monster}${f.monsterCat ? kcHtml` <span style="opacity:.8">(${f.monsterCat.toLowerCase()})</span>` : ""}</span>${!f.cleared && _knownWeak[f.monster] ? kcHtml`<br><span style="font-size:.76rem;color:#7a1c7a">\u{1F4A5} Weakness known \u2014 <strong>${_knownWeak[f.monster].name}</strong>: ${_knownWeak[f.monster].desc}.</span>` : ""}${_rumourLine(f)}`}
+        ${f.cleared ? kcHtml`<span style="color:#332c20">(cleared — no guardian)</span>` : kcHtml`<br><span style="font-size:.78rem;color:${pColor}">Guardian: ${f.monster}${f.monsterCat ? kcHtml` <span style="opacity:.8">(${f.monsterCat.toLowerCase()})</span>` : ""}</span>${!f.cleared && weakness ? kcHtml`<br><span style="font-size:.76rem;color:#7a1c7a">\u{1F4A5} Weakness known \u2014 <strong>${weakness.name}</strong>: ${weakness.desc}.</span>` : ""}${_rumourLine(f)}`}
       </div>`;
 		};
 		const _rumourLine = (f) => {
 			const r = f.rumour;
 			if (!r || f.cleared) return "";
-			const items = (r.items || []).length ? `, and ${(r.items || []).join(", ")}` : (r.stolen || []).length ? ` \u2014 its magic (${r.stolen.join(", ")}) was already lifted by a thief` : " — no magic lies there";
-			const wield = (r.wields || []).length ? kcHtml` <span style="color:#701010">It wields ${r.wields.join(", ")} against all comers.</span>` : "";
+			const items = (r.items ?? []).length ? `, and ${(r.items ?? []).join(", ")}` : (r.stolen ?? []).length ? ` \u2014 its magic (${(r.stolen ?? []).join(", ")}) was already lifted by a thief` : " — no magic lies there";
+			const wield = (r.wields ?? []).length ? kcHtml` <span style="color:#701010">It wields ${(r.wields ?? []).join(", ")} against all comers.</span>` : "";
 			return kcHtml`<br><span style="font-size:.76rem;color:#6b5a2a">\u{1F4B0} Hoard known (turn ${r.turn}) \u2014 exactly <strong>${r.gold}g</strong>${items}.${wield}</span>`;
 		};
 		const featuresByProvince = {};
 		knownFeatures.forEach((f) => {
-			const key = f.province || "Unknown province";
-			(featuresByProvince[key] = featuresByProvince[key] || []).push(f);
+			const key = (f.province ?? "") || "Unknown province";
+			const here = featuresByProvince[key] ?? [];
+			featuresByProvince[key] = here;
+			here.push(f);
 		});
 		lairsHtml.push(Object.keys(featuresByProvince).sort((a, b) => a.localeCompare(b)).map((prov) => {
-			const feats = featuresByProvince[prov];
+			const feats = theGroupFiled(featuresByProvince[prov], "map");
 			const cards = feats.map(featureCard);
 			return kcHtml`<div style="font-family:'Cinzel',serif;font-size:.76rem;color:#3a2a10;font-weight:700;margin:8px 0 2px;letter-spacing:.03em">📍 ${prov} <span style="color:var(--stone);font-weight:normal;font-size:.68rem">(${feats.length} lair${feats.length !== 1 ? "s" : ""})</span></div>${cards}`;
 		}));
@@ -14816,22 +14968,24 @@ function renderReportView(report) {
 		if (_ri) {
 			const _sec = document.getElementById("intel-reports-section");
 			const _other = _sec ? _sec.querySelectorAll(".log-entry").length : 0;
-			_ri.innerHTML = intelHtml.length ? kcHtml`${intelHtml}` : _other ? "" : kcHtml`<em style="color:#3a3224;font-size:.85rem">No intelligence gathered yet. Visit or spy provinces to learn more.</em>`;
+			_ri.innerHTML = String(intelHtml.length ? kcHtml`${intelHtml}` : _other ? "" : kcHtml`<em style="color:#3a3224;font-size:.85rem">No intelligence gathered yet. Visit or spy provinces to learn more.</em>`);
 		}
 	}
 	const _ofEl = document.getElementById("report-other-forces");
-	if (_ofEl) _ofEl.innerHTML = otherForcesHtml.length ? kcHtml`${otherForcesHtml}` : kcHtml`<em style="color:#3a3224;font-size:.85rem">No mercenary bands or loose heroes sighted yet.</em>`;
+	if (_ofEl) _ofEl.innerHTML = String(otherForcesHtml.length ? kcHtml`${otherForcesHtml}` : kcHtml`<em style="color:#3a3224;font-size:.85rem">No mercenary bands or loose heroes sighted yet.</em>`);
 	const _lrEl = document.getElementById("report-lairs");
-	if (_lrEl) _lrEl.innerHTML = lairsHtml.length ? kcHtml`${lairsHtml}` : kcHtml`<em style="color:#3a3224;font-size:.85rem">No lairs discovered yet. Explore or scout provinces to find them.</em>`;
-	const discoveries = report.discoveries || [];
+	if (_lrEl) _lrEl.innerHTML = String(lairsHtml.length ? kcHtml`${lairsHtml}` : kcHtml`<em style="color:#3a3224;font-size:.85rem">No lairs discovered yet. Explore or scout provinces to find them.</em>`);
+	const discoveries = report.discoveries ?? [];
 	const discEl = document.getElementById("report-discoveries");
 	if (discEl) {
-		if (discoveries.length === 0) discEl.innerHTML = kcHtml`<em style="color:#3a3224;font-size:.85rem">No discoveries yet. Give Research orders to your scholars (Sage 1+).</em>`;
+		if (discoveries.length === 0) discEl.innerHTML = String(kcHtml`<em style="color:#3a3224;font-size:.85rem">No discoveries yet. Give Research orders to your scholars (Sage 1+).</em>`);
 		else {
 			const catMap = {};
-			discoveries.forEach((d) => {
-				if (!catMap[d.category]) catMap[d.category] = [];
-				catMap[d.category].push(d);
+			discoveries.forEach((dHeld) => {
+				const d = theDiscoveryFiled(dHeld);
+				const here = catMap[String(d.category)] ?? [];
+				catMap[String(d.category)] = here;
+				here.push(d);
 			});
 			const catColors = {
 				Military: "#7a1c1c",
@@ -14841,16 +14995,16 @@ function renderReportView(report) {
 				Heroic: "#8a6a1a",
 				Special: "#3a7a6a"
 			};
-			discEl.innerHTML = Object.entries(catMap).map(([cat, discs]) => kcHtml`
+			discEl.innerHTML = String(Object.entries(catMap).map(([cat, discs]) => kcHtml`
         <div style="margin-bottom:12px">
-          <div style="font-family:Cinzel,serif;font-size:.72rem;color:${catColors[cat] || "#555"};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">
+          <div style="font-family:Cinzel,serif;font-size:.72rem;color:${(catColors[cat] ?? "") || "#555"};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">
             ${cat}
           </div>
-          ${discs.map((d) => kcHtml`<div class="intel-entry" style="border-left-color:${catColors[cat] || "#555"}">
+          ${theGroupFiled(discs, "map").map((d) => kcHtml`<div class="intel-entry" style="border-left-color:${(catColors[cat] ?? "") || "#555"}">
             <strong>${d.name}</strong> <span style="color:#3a3224;font-size:.72rem">(Turn ${d.turnDiscovered})</span><br>
             <span style="font-size:.8rem">${d.desc}</span>
           </div>`)}
-        </div>`);
+        </div>`));
 		}
 	}
 	renderDiplomacy(report);
@@ -14861,17 +15015,17 @@ function renderReportView(report) {
 	const _repaintMap = () => {
 		try {
 			renderPlayerMap(report);
-		} catch (e) {}
+		} catch {}
 	};
 	if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(_repaintMap));
 	else setTimeout(_repaintMap, 0);
 	try {
 		ensureProvinceLinking();
-	} catch (e) {}
+	} catch {}
 }
 function setDiploChoice(idx, val) {
-	if (val == null || val === "null") delete diploChoices[idx];
-	else diploChoices[idx] = val;
+	if (val == null || val === "null") Reflect.deleteProperty(theDiplomaticChoicesHeld(), idx);
+	else theDiplomaticChoicesHeld()[idx] = val;
 	if (currentReport) renderDiplomacy(currentReport);
 }
 function _setSecCollapsed(sec, collapse) {
@@ -14883,14 +15037,16 @@ function _setSecCollapsed(sec, collapse) {
 	}
 }
 function toggleBattleFold(btn) {
-	const box = btn && btn.closest(".battle-fold");
+	const box = btn?.closest(".battle-fold");
 	if (!box) return;
 	const full = box.querySelector(".bf-full"), short = box.querySelector(".bf-short");
 	if (!full || !short) return;
-	const open = full.style.display === "none";
-	full.style.display = open ? "block" : "none";
-	short.style.display = open ? "none" : "block";
-	box.querySelectorAll(".bf-toggle").forEach((b) => b.setAttribute("aria-expanded", open ? "true" : "false"));
+	const open = theInlineStyleOf(full).display === "none";
+	theInlineStyleOf(full).display = open ? "block" : "none";
+	theInlineStyleOf(short).display = open ? "none" : "block";
+	box.querySelectorAll(".bf-toggle").forEach((b) => {
+		b.setAttribute("aria-expanded", open ? "true" : "false");
+	});
 }
 function toggleSection(btn) {
 	const sec = btn.closest(".card, .orders-char-block, .char-chronicle");
@@ -14906,7 +15062,9 @@ function collapseAllSections(scopeSel, collapse) {
 	});
 }
 function collapseAllChronicle(collapse) {
-	document.querySelectorAll("#report-log .char-chronicle").forEach((sec) => _setSecCollapsed(sec, collapse));
+	document.querySelectorAll("#report-log .char-chronicle").forEach((sec) => {
+		_setSecCollapsed(sec, collapse);
+	});
 }
 function initReportCollapsers() {
 	const col = document.getElementById("rp-report-col");
@@ -14920,7 +15078,9 @@ function initReportCollapsers() {
 		b.innerHTML = "&#9662;";
 		b.setAttribute("aria-expanded", "true");
 		b.title = "Minimise / maximise this section";
-		b.addEventListener("click", () => toggleSection(b));
+		b.addEventListener("click", () => {
+			toggleSection(b);
+		});
 		h.appendChild(b);
 	});
 }
@@ -14932,43 +15092,46 @@ function refreshOpenReport() {
 async function loadPastReport(gameId, playerIndex, turn) {
 	viewedTurn = turn;
 	refreshTurnNavHighlight();
-	const banner = document.getElementById("prev-report-banner");
+	const banner = theElementWithTheId("prev-report-banner", HTMLElement);
 	banner.style.display = "block";
 	const pi = playerIndex;
-	document.getElementById("orders-card").style.display = "none";
+	theElementWithTheId("orders-card", HTMLElement).style.display = "none";
 	refreshOrdersVisibility(false);
 	const sw = document.getElementById("orders-submit-wrap");
 	if (sw) sw.style.display = "none";
-	document.getElementById("orders-msg").innerHTML = "";
-	document.getElementById("save-msg").style.display = "none";
+	theElementWithTheId("orders-msg", HTMLElement).innerHTML = "";
+	theElementWithTheId("save-msg", HTMLElement).style.display = "none";
 	let snapshot = null;
 	try {
 		const { data: snapRows } = await thePagesDb.theChroniclesLogs.theLogOfThisRealmInThisTurn(gameId, turn, pi);
-		if (snapRows && snapRows[0] && snapRows[0].entries) {
-			const e = snapRows[0].entries;
-			snapshot = typeof e === "string" ? JSON.parse(e) : e;
-		}
-	} catch (err) {
+		const e = snapRows?.[0]?.entries;
+		if (e) snapshot = typeof e === "string" ? theStateParsed(e) : e;
+	} catch {
 		snapshot = null;
 	}
-	banner.innerHTML = kcHtml`Viewing Turn ${snapshotTurnLabel(turn)}${turn === 0 ? " (founding)" : ""} — read only. <button onclick="returnToCurrentReport()" style="margin-left:8px;font-size:.72rem;padding:2px 7px;border:1px solid #c8922a;background:transparent;color:#5a3f08;cursor:pointer;border-radius:2px">← Current Turn</button>`;
+	banner.innerHTML = String(kcHtml`Viewing Turn ${snapshotTurnLabel(turn)}${turn === 0 ? " (founding)" : ""} — read only. <button onclick="returnToCurrentReport()" style="margin-left:8px;font-size:.72rem;padding:2px 7px;border:1px solid #c8922a;background:transparent;color:#5a3f08;cursor:pointer;border-radius:2px">← Current Turn</button>`);
 	if (snapshot) {
-		viewingReport = snapshot;
-		renderReportView(snapshot);
+		const shown = isATurnReport(snapshot) ? snapshot : {};
+		viewingReport = shown;
+		renderReportView(shown);
 		return;
 	}
 	const { data: logs } = await thePagesDb.theChroniclesLogs.theLogOfThisRealmInThisTurn(gameId, turn, -1);
 	const { data: g } = await thePagesDb.thePlayersGames.thisGameEveryColumn(gameId);
-	const allChars = (g?.game_state || {}).characters || [];
-	const ownCharIds = new Set(allChars.filter((c) => c.player === pi).map((c) => c.id));
-	const entries = (logs && logs[0]?.entries || []).filter((e) => {
-		if ((e.targets || []).includes(pi)) return true;
+	const allChars = theListToSearch(thisOrElse$1(theField(thisOrElse$1(g?.game_state, {}), "characters"), []));
+	const ownCharIds = new Set(theRealmsHeroesIn(allChars, pi).map((c) => c.id));
+	const entries = theListToSearch(thisOrElse$1(logs?.[0]?.entries, [])).filter((e) => {
+		if (e === null || e === void 0) throw new TypeError(`Cannot read properties of ${String(e)} (reading 'targets')`);
+		if (!isALineOfTheGmsLog(e)) return false;
+		if (theTargetsHold(thisOrElse$1(e.targets, []), pi)) return true;
 		if (e.actor === pi) return true;
 		if (e.charId != null && ownCharIds.has(e.charId)) return true;
-		if (Array.isArray(e.charIds) && e.charIds.some((id) => ownCharIds.has(id))) return true;
+		const charIds = e.charIds;
+		if (isAList(charIds) && charIds.some((id) => ownCharIds.has(id))) return true;
 		return false;
 	}).map((e) => {
-		let cid = e.charId != null && ownCharIds.has(e.charId) ? e.charId : Array.isArray(e.charIds) ? e.charIds.find((id) => ownCharIds.has(id)) ?? null : null;
+		const charIds = e.charIds;
+		const cid = e.charId != null && ownCharIds.has(e.charId) ? e.charId : isAList(charIds) ? charIds.find((id) => ownCharIds.has(id)) ?? null : null;
 		return {
 			type: e.type,
 			text: e.text,
@@ -14976,18 +15139,18 @@ async function loadPastReport(gameId, playerIndex, turn) {
 			phase: e.phase ?? null
 		};
 	});
-	if (entries.length > 0) buildChronicle(entries, allChars.filter((c) => c.player === pi));
-	else if (turn === 0) document.getElementById("report-log").innerHTML = kcHtml`<div class="log-entry system">Your realm is founded. The realm awaits your first commands.</div>`;
-	banner.innerHTML = kcHtml`Viewing Turn ${snapshotTurnLabel(turn)} — read only. <span style="opacity:.8">(map history isn't available for this turn — showing the current map)</span> <button onclick="returnToCurrentReport()" style="margin-left:8px;font-size:.72rem;padding:2px 7px;border:1px solid #c8922a;background:transparent;color:#5a3f08;cursor:pointer;border-radius:2px">← Current Turn</button>`;
+	if (entries.length > 0) buildChronicle(entries, theRealmsHeroesIn(allChars, pi));
+	else if (turn === 0) theElementWithTheId("report-log", HTMLElement).innerHTML = String(kcHtml`<div class="log-entry system">Your realm is founded. The realm awaits your first commands.</div>`);
+	banner.innerHTML = String(kcHtml`Viewing Turn ${snapshotTurnLabel(turn)} — read only. <span style="opacity:.8">(map history isn't available for this turn — showing the current map)</span> <button onclick="returnToCurrentReport()" style="margin-left:8px;font-size:.72rem;padding:2px 7px;border:1px solid #c8922a;background:transparent;color:#5a3f08;cursor:pointer;border-radius:2px">← Current Turn</button>`);
 }
 function returnToCurrentReport() {
 	viewedTurn = null;
 	refreshTurnNavHighlight();
-	document.getElementById("prev-report-banner").style.display = "none";
-	document.getElementById("orders-card").style.display = "block";
+	theElementWithTheId("prev-report-banner", HTMLElement).style.display = "none";
+	theElementWithTheId("orders-card", HTMLElement).style.display = "block";
 	refreshOrdersVisibility(true);
 	const submitWrap = document.getElementById("orders-submit-wrap");
-	const _submitted = !!(currentGamePlayer && currentGamePlayer.orders_submitted);
+	const _submitted = !!currentGamePlayer?.orders_submitted;
 	if (submitWrap && !_submitted && !submitWrap.querySelector("#submit-btn")) restoreSubmitWrap("Submit");
 	if (submitWrap) submitWrap.style.display = "flex";
 	viewingReport = currentReport;
@@ -15211,7 +15374,7 @@ async function onSignedIn() {
 		loadAllGames().then(() => {
 			startUpdatePolling();
 		}).catch(() => {});
-		await openReport(_gm[1]);
+		await openReport(String(_gm[1]));
 		return;
 	}
 	show("sec-games");
@@ -15498,7 +15661,6 @@ Object.assign(window, {
 	renderReckoningOrders,
 	renderReportView,
 	renderTitles,
-	sb,
 	setMsgChannel,
 	terrorNoteP,
 	unitTypeOf,
